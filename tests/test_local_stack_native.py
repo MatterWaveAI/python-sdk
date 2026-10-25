@@ -82,7 +82,7 @@ def test_org_usage_and_webhooks_refuse_a_key_without_their_scopes(client: Matter
     with pytest.raises(PermissionDeniedError):
         client.webhooks.list()
     with pytest.raises(PermissionDeniedError):
-        client.webhooks.create("https://example.com/hook", ["message.completed"])
+        client.webhooks.create("https://app.matterwave.ai/hook", ["message.completed"])
 
 
 def test_attachments_upload_get_download_delete(client: MatterWave) -> None:
