@@ -1,0 +1,403 @@
+"""The requests the native API clients make: keys, usage, webhooks,
+attachments, library and shares. Pure, like the rest of `_base`: each
+function returns the `Request` a method sends, and the sync and async
+clients in `_resources.py` differ only in how they wait for it.
+
+Bodies leave out what the caller did not pass. Where the server reads an
+explicit null as "clear it" (a key's expiry, networks, rate limit or
+scopes), `UNSET` marks "not passed" and None is sent as null.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from datetime import datetime
+from typing import IO, Any
+from urllib.parse import parse_qsl, urlsplit
+
+from ._base import UNSET, Request, _segment
+
+# --- keys ----------------------------------------------------------------------
+
+
+def _key_path(key_id: str, suffix: str = "") -> str:
+    return f"/api/keys/{_segment('key_id', key_id)}{suffix}"
+
+
+def _instant(value: datetime | str) -> str:
+    """An absolute expiry. The server refuses one without an offset rather
+    than guess the zone, so a naive datetime is refused here first."""
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            raise ValueError("expires_at must carry a timezone")
+        return value.isoformat()
+    return value
+
+
+def _key_settings(
+    *,
+    scopes: Sequence[str] | None,
+    expires_in_days: int | None,
+    expires_at: datetime | str | None,
+    allowed_cidrs: Sequence[str] | None,
+    rpm_limit: int | None,
+) -> dict[str, Any]:
+    """The fields a key is minted with and `update` may change; UNSET is
+    left out, None goes as null."""
+    if expires_in_days not in (None, UNSET) and expires_at not in (None, UNSET):
+        raise ValueError("pass expires_in_days or expires_at, not both")
+    body: dict[str, Any] = {}
+    if scopes is not UNSET:
+        body["scopes"] = list(scopes) if scopes is not None else None
+    if expires_in_days is not UNSET:
+        body["expires_in_days"] = expires_in_days
+    if expires_at is not UNSET:
+        body["expires_at"] = _instant(expires_at) if expires_at is not None else None
+    if allowed_cidrs is not UNSET:
+        body["allowed_cidrs"] = list(allowed_cidrs) if allowed_cidrs is not None else None
+    if rpm_limit is not UNSET:
+        body["rpm_limit"] = rpm_limit
+    return body
+
+
+def list_keys_request() -> Request:
+    return Request("GET", "/api/keys", None, keyed=True, stream=False)
+
+
+def create_key_request(
+    name: str,
+    *,
+    scopes: Sequence[str] | None,
+    expires_in_days: int | None,
+    expires_at: datetime | str | None,
+    allowed_cidrs: Sequence[str] | None,
+    rpm_limit: int | None,
+) -> Request:
+    if not name or not name.strip():
+        raise ValueError("a key must have a name")
+    settings = _key_settings(
+        scopes=scopes,
+        expires_in_days=expires_in_days,
+        expires_at=expires_at,
+        allowed_cidrs=allowed_cidrs,
+        rpm_limit=rpm_limit,
+    )
+    # On creation None and omitted mean the same (the default), so nulls are dropped.
+    body = {"name": name, **{k: v for k, v in settings.items() if v is not None}}
+    return Request("POST", "/api/keys", body, keyed=True, stream=False)
+
+
+def update_key_request(
+    key_id: str,
+    *,
+    name: str | None,
+    scopes: Sequence[str] | None,
+    expires_in_days: int | None,
+    expires_at: datetime | str | None,
+    allowed_cidrs: Sequence[str] | None,
+    rpm_limit: int | None,
+) -> Request:
+    body = _key_settings(
+        scopes=scopes,
+        expires_in_days=expires_in_days,
+        expires_at=expires_at,
+        allowed_cidrs=allowed_cidrs,
+        rpm_limit=rpm_limit,
+    )
+    if name is not None:
+        if not name.strip():
+            raise ValueError("a key must have a name")
+        body["name"] = name
+    if not body:
+        raise ValueError(
+            "update needs one of name, scopes, expires_in_days, expires_at, allowed_cidrs, "
+            "rpm_limit"
+        )
+    return Request("PATCH", _key_path(key_id), body, keyed=True, stream=False)
+
+
+def rotate_key_request(key_id: str) -> Request:
+    return Request("POST", _key_path(key_id, "/rotate"), None, keyed=True, stream=False)
+
+
+def revoke_key_request(key_id: str) -> Request:
+    return Request("DELETE", _key_path(key_id), None, keyed=True, stream=False)
+
+
+# --- usage ---------------------------------------------------------------------
+
+
+def _period_params(period: str | None) -> dict[str, str]:
+    return {"period": period} if period is not None else {}
+
+
+def my_usage_request() -> Request:
+    return Request("GET", "/api/me/usage", None, keyed=True, stream=False)
+
+
+def org_usage_request(period: str | None) -> Request:
+    return Request(
+        "GET", "/api/org/usage", None, keyed=True, stream=False, params=_period_params(period)
+    )
+
+
+def org_usage_csv_request(period: str | None) -> Request:
+    return Request(
+        "GET",
+        "/api/org/usage.csv",
+        None,
+        keyed=True,
+        stream=False,
+        headers={"Accept": "text/csv"},
+        params=_period_params(period),
+    )
+
+
+# --- webhooks ------------------------------------------------------------------
+
+
+def _endpoint_path(endpoint_id: str, suffix: str = "") -> str:
+    return f"/api/org/webhooks/{_segment('endpoint_id', endpoint_id)}{suffix}"
+
+
+def list_webhooks_request() -> Request:
+    return Request("GET", "/api/org/webhooks", None, keyed=True, stream=False)
+
+
+def create_webhook_request(url: str, events: Sequence[str], description: str | None) -> Request:
+    if not events:
+        raise ValueError("subscribe to at least one event")
+    body: dict[str, Any] = {"url": url, "events": list(events)}
+    if description is not None:
+        body["description"] = description
+    return Request("POST", "/api/org/webhooks", body, keyed=True, stream=False)
+
+
+def get_webhook_request(endpoint_id: str) -> Request:
+    return Request("GET", _endpoint_path(endpoint_id), None, keyed=True, stream=False)
+
+
+def update_webhook_request(
+    endpoint_id: str,
+    *,
+    url: str | None,
+    events: Sequence[str] | None,
+    description: str | None,
+    enabled: bool | None,
+) -> Request:
+    # The server reads an omitted field and a null one alike, as "unchanged".
+    body: dict[str, Any] = {}
+    if url is not None:
+        body["url"] = url
+    if events is not None:
+        if not events:
+            raise ValueError("subscribe to at least one event")
+        body["events"] = list(events)
+    if description is not None:
+        body["description"] = description
+    if enabled is not None:
+        body["enabled"] = enabled
+    if not body:
+        raise ValueError("update needs one of url, events, description, enabled")
+    return Request("PATCH", _endpoint_path(endpoint_id), body, keyed=True, stream=False)
+
+
+def delete_webhook_request(endpoint_id: str) -> Request:
+    return Request("DELETE", _endpoint_path(endpoint_id), None, keyed=True, stream=False)
+
+
+def rotate_webhook_secret_request(endpoint_id: str) -> Request:
+    return Request("POST", _endpoint_path(endpoint_id, "/rotate"), None, keyed=True, stream=False)
+
+
+def test_webhook_request(endpoint_id: str) -> Request:
+    return Request("POST", _endpoint_path(endpoint_id, "/test"), None, keyed=True, stream=False)
+
+
+DELIVERY_STATUSES = ("pending", "sending", "delivered", "failed")
+
+
+def list_deliveries_request(endpoint_id: str, status: str | None) -> Request:
+    if status is not None and status not in DELIVERY_STATUSES:
+        raise ValueError(f"status must be one of {', '.join(DELIVERY_STATUSES)}, got {status!r}")
+    return Request(
+        "GET",
+        _endpoint_path(endpoint_id, "/deliveries"),
+        None,
+        keyed=True,
+        stream=False,
+        params={"status": status} if status is not None else {},
+    )
+
+
+def redeliver_request(endpoint_id: str, delivery_id: str) -> Request:
+    suffix = f"/deliveries/{_segment('delivery_id', delivery_id)}/redeliver"
+    return Request("POST", _endpoint_path(endpoint_id, suffix), None, keyed=True, stream=False)
+
+
+# --- attachments ---------------------------------------------------------------
+
+
+def _attachment_path(attachment_id: str, suffix: str = "") -> str:
+    return f"/api/attachments/{_segment('attachment_id', attachment_id)}{suffix}"
+
+
+def upload_attachment_request(
+    file: bytes | IO[bytes], filename: str, conversation_id: str | None
+) -> Request:
+    """The server decides the type from the bytes and never reads the part's
+    content type, so none is guessed here. The bytes are read whole so a
+    retried upload sends the same file again."""
+    if not filename:
+        raise ValueError("filename must be non-empty")
+    data = file if isinstance(file, bytes) else file.read()
+    params = {"conversation_id": conversation_id} if conversation_id is not None else {}
+    return Request(
+        "POST",
+        "/api/attachments",
+        None,
+        keyed=True,
+        stream=False,
+        params=params,
+        files={"file": (filename, data, "application/octet-stream")},
+    )
+
+
+def get_attachment_request(attachment_id: str) -> Request:
+    return Request("GET", _attachment_path(attachment_id), None, keyed=True, stream=False)
+
+
+def delete_attachment_request(attachment_id: str) -> Request:
+    return Request("DELETE", _attachment_path(attachment_id), None, keyed=True, stream=False)
+
+
+def download_attachment_request(download_url: str) -> Request:
+    """The signed `download_url` an attachment carries, fetched with the
+    key: the server wants the signature and the caller both."""
+    parts = urlsplit(download_url)
+    segments = parts.path.strip("/").split("/")
+    if len(segments) != 4 or segments[:2] != ["api", "attachments"] or segments[3] != "content":
+        raise ValueError(f"not an attachment download URL: {download_url!r}")
+    return Request(
+        "GET",
+        _attachment_path(segments[2], "/content"),
+        None,
+        keyed=True,
+        stream=False,
+        headers={"Accept": "*/*"},
+        params=dict(parse_qsl(parts.query)),
+    )
+
+
+def attachment_limits_request() -> Request:
+    return Request("GET", "/api/attachments/limits/me", None, keyed=True, stream=False)
+
+
+# --- library -------------------------------------------------------------------
+
+
+def _folder_path(folder_id: str) -> str:
+    return f"/api/library/folders/{_segment('folder_id', folder_id)}"
+
+
+def _library_conversation_path(conversation_id: str, suffix: str) -> str:
+    return f"/api/library/conversations/{_segment('conversation_id', conversation_id)}{suffix}"
+
+
+def get_library_request() -> Request:
+    return Request("GET", "/api/library", None, keyed=True, stream=False)
+
+
+def library_search_request(q: str, cursor: str | None, limit: int | None) -> Request:
+    params = {"q": q}
+    if cursor is not None:
+        params["cursor"] = cursor
+    if limit is not None:
+        params["limit"] = str(limit)
+    return Request("GET", "/api/search", None, keyed=True, stream=False, params=params)
+
+
+def create_folder_request(name: str) -> Request:
+    return Request("POST", "/api/library/folders", {"name": name}, keyed=True, stream=False)
+
+
+def update_folder_request(folder_id: str, name: str | None, position: int | None) -> Request:
+    body: dict[str, Any] = {}
+    if name is not None:
+        body["name"] = name
+    if position is not None:
+        body["position"] = position
+    if not body:
+        raise ValueError("update needs a name or a position")
+    return Request("PATCH", _folder_path(folder_id), body, keyed=True, stream=False)
+
+
+def delete_folder_request(folder_id: str) -> Request:
+    return Request("DELETE", _folder_path(folder_id), None, keyed=True, stream=False)
+
+
+def move_conversation_request(conversation_id: str, folder_id: str | None) -> Request:
+    # `folder_id` is always sent: null is "back to the main list", and the
+    # server requires the key so an empty body is not read as that.
+    return Request(
+        "PUT",
+        _library_conversation_path(conversation_id, "/folder"),
+        {"folder_id": folder_id},
+        keyed=True,
+        stream=False,
+    )
+
+
+def create_tag_request(name: str) -> Request:
+    return Request("POST", "/api/library/tags", {"name": name}, keyed=True, stream=False)
+
+
+def delete_tag_request(tag_id: str) -> Request:
+    path = f"/api/library/tags/{_segment('tag_id', tag_id)}"
+    return Request("DELETE", path, None, keyed=True, stream=False)
+
+
+def set_tags_request(conversation_id: str, tag_ids: Sequence[str]) -> Request:
+    return Request(
+        "PUT",
+        _library_conversation_path(conversation_id, "/tags"),
+        {"tag_ids": list(tag_ids)},
+        keyed=True,
+        stream=False,
+    )
+
+
+# --- shares --------------------------------------------------------------------
+
+
+def _share_conversation_path(conversation_id: str, suffix: str) -> str:
+    return f"/api/conversations/{_segment('conversation_id', conversation_id)}{suffix}"
+
+
+def create_share_request(conversation_id: str, expires_in_s: int | None) -> Request:
+    return Request(
+        "POST",
+        _share_conversation_path(conversation_id, "/share"),
+        {"expires_in_s": expires_in_s},
+        keyed=True,
+        stream=False,
+    )
+
+
+def list_shares_request(conversation_id: str) -> Request:
+    path = _share_conversation_path(conversation_id, "/shares")
+    return Request("GET", path, None, keyed=True, stream=False)
+
+
+def list_my_shares_request() -> Request:
+    return Request("GET", "/api/me/shares", None, keyed=True, stream=False)
+
+
+def revoke_share_request(share_id: str) -> Request:
+    path = f"/api/shares/{_segment('share_id', share_id)}"
+    return Request("DELETE", path, None, keyed=True, stream=False)
+
+
+def view_share_request(token: str) -> Request:
+    """The public read: no key, the link's token is the whole credential."""
+    return Request("GET", f"/api/share/{_segment('token', token)}", None, keyed=False, stream=False)
