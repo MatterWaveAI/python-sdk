@@ -6,6 +6,12 @@ it, with the same method and path, and every operation in it must be
 exposed here, so neither side can grow without the other noticing. The
 request parameters of `chat.completions.create` are checked against the
 request schema the same way.
+
+The document is read from the platform checkout when this repo sits inside
+it; a standalone checkout reads the snapshot in tests/openapi.json, copied
+from the export. The /api routes are not in the export (it is the `/v1`
+contract), so they are held to the API by the mocked-transport tests
+instead.
 """
 
 from __future__ import annotations
@@ -20,7 +26,9 @@ import pytest
 from matterwave_sdk import APP_OPERATIONS, OPERATIONS, MatterWave
 from matterwave_sdk.frames import FRAMES_BY_EVENT, TERMINAL_FRAMES, UnknownFrame, frame_from_event
 
-OPENAPI = Path(__file__).resolve().parents[3] / "docs" / "developers" / "openapi.json"
+_MONOREPO = Path(__file__).resolve().parents[3] / "docs" / "developers" / "openapi.json"
+_SNAPSHOT = Path(__file__).resolve().parent / "openapi.json"
+OPENAPI = _MONOREPO if _MONOREPO.exists() else _SNAPSHOT
 
 # How the client spells the request fields it renames. `metadata` is the
 # OpenAI-reserved bag the conversation id rides in; `stream_options` is a

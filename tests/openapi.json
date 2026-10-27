@@ -1,0 +1,2407 @@
+{
+  "components": {
+    "headers": {
+      "X-Request-Id": {
+        "description": "The request's id, on every response including refusals. Quote it when reporting a problem; the server's logs are keyed by it.",
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "schemas": {
+      "ApiIndex": {
+        "additionalProperties": false,
+        "properties": {
+          "api_version": {
+            "title": "Api Version",
+            "type": "string"
+          },
+          "capabilities": {
+            "additionalProperties": true,
+            "title": "Capabilities",
+            "type": "object"
+          },
+          "compatible_with": {
+            "title": "Compatible With",
+            "type": "string"
+          },
+          "docs": {
+            "title": "Docs",
+            "type": "string"
+          },
+          "endpoints": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Endpoints",
+            "type": "array"
+          },
+          "extensions": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Extensions",
+            "type": "object"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "object": {
+            "const": "api",
+            "title": "Object",
+            "type": "string"
+          },
+          "release": {
+            "title": "Release",
+            "type": "string"
+          },
+          "stability": {
+            "$ref": "#/components/schemas/Stability"
+          }
+        },
+        "required": [
+          "object",
+          "name",
+          "api_version",
+          "release",
+          "compatible_with",
+          "endpoints",
+          "capabilities",
+          "stability",
+          "extensions",
+          "docs"
+        ],
+        "title": "ApiIndex",
+        "type": "object"
+      },
+      "AssistantMessage": {
+        "additionalProperties": false,
+        "description": "`content` is null on a pure tool-call turn, as OpenAI shapes it.",
+        "properties": {
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "role": {
+            "const": "assistant",
+            "title": "Role",
+            "type": "string"
+          },
+          "tool_calls": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ToolCall"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tool Calls"
+          }
+        },
+        "required": [
+          "role",
+          "content"
+        ],
+        "title": "AssistantMessage",
+        "type": "object"
+      },
+      "ChatCompletion": {
+        "additionalProperties": false,
+        "properties": {
+          "choices": {
+            "items": {
+              "$ref": "#/components/schemas/Choice"
+            },
+            "title": "Choices",
+            "type": "array"
+          },
+          "created": {
+            "title": "Created",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "object": {
+            "const": "chat.completion",
+            "title": "Object",
+            "type": "string"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/Usage"
+          }
+        },
+        "required": [
+          "id",
+          "object",
+          "created",
+          "model",
+          "choices",
+          "usage"
+        ],
+        "title": "ChatCompletion",
+        "type": "object"
+      },
+      "ChatCompletionChunk": {
+        "additionalProperties": false,
+        "properties": {
+          "choices": {
+            "items": {
+              "$ref": "#/components/schemas/ChunkChoice"
+            },
+            "title": "Choices",
+            "type": "array"
+          },
+          "created": {
+            "title": "Created",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "object": {
+            "const": "chat.completion.chunk",
+            "title": "Object",
+            "type": "string"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Usage"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "id",
+          "object",
+          "created",
+          "model",
+          "choices"
+        ],
+        "title": "ChatCompletionChunk",
+        "type": "object"
+      },
+      "ChatCompletionRequest": {
+        "description": "Unknown fields are ignored, as OpenAI does (the versioning rule in\nreverse: a client may send what a newer OpenAI defines).",
+        "properties": {
+          "max_completion_tokens": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Max Completion Tokens"
+          },
+          "max_tokens": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Max Tokens"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/ChatMessage"
+            },
+            "minItems": 1,
+            "title": "Messages",
+            "type": "array"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Metadata"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Model"
+          },
+          "n": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "N"
+          },
+          "response_format": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResponseFormat"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "stop": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Stop"
+          },
+          "stream": {
+            "default": false,
+            "title": "Stream",
+            "type": "boolean"
+          },
+          "stream_options": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StreamOptions"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "temperature": {
+            "anyOf": [
+              {
+                "maximum": 2.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Temperature"
+          },
+          "tool_choice": {
+            "anyOf": [
+              {
+                "enum": [
+                  "none",
+                  "auto",
+                  "required"
+                ],
+                "type": "string"
+              },
+              {
+                "$ref": "#/components/schemas/NamedToolChoice"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tool Choice"
+          },
+          "tools": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ToolSpec"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tools"
+          },
+          "top_p": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Top P"
+          },
+          "user": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "User"
+          }
+        },
+        "required": [
+          "messages"
+        ],
+        "title": "ChatCompletionRequest",
+        "type": "object"
+      },
+      "ChatMessage": {
+        "properties": {
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ContentPart"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Content"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Name"
+          },
+          "role": {
+            "enum": [
+              "system",
+              "user",
+              "assistant",
+              "tool"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "tool_call_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tool Call Id"
+          },
+          "tool_calls": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/RequestToolCall"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tool Calls"
+          }
+        },
+        "required": [
+          "role"
+        ],
+        "title": "ChatMessage",
+        "type": "object"
+      },
+      "Choice": {
+        "additionalProperties": false,
+        "properties": {
+          "finish_reason": {
+            "title": "Finish Reason",
+            "type": "string"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "message": {
+            "$ref": "#/components/schemas/AssistantMessage"
+          }
+        },
+        "required": [
+          "index",
+          "message",
+          "finish_reason"
+        ],
+        "title": "Choice",
+        "type": "object"
+      },
+      "ChunkChoice": {
+        "additionalProperties": false,
+        "properties": {
+          "delta": {
+            "$ref": "#/components/schemas/ChunkDelta"
+          },
+          "finish_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finish Reason"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "index",
+          "delta",
+          "finish_reason"
+        ],
+        "title": "ChunkChoice",
+        "type": "object"
+      },
+      "ChunkDelta": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Content"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "const": "assistant",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Role"
+          },
+          "tool_calls": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ToolCallFragment"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tool Calls"
+          }
+        },
+        "title": "ChunkDelta",
+        "type": "object"
+      },
+      "CompactionEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "covers_from": {
+            "title": "Covers From",
+            "type": "string"
+          },
+          "covers_to": {
+            "title": "Covers To",
+            "type": "string"
+          },
+          "message": {
+            "$ref": "#/components/schemas/ConversationMessage"
+          },
+          "tokens_after": {
+            "title": "Tokens After",
+            "type": "integer"
+          },
+          "tokens_before": {
+            "title": "Tokens Before",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "message",
+          "covers_from",
+          "covers_to",
+          "tokens_before",
+          "tokens_after"
+        ],
+        "title": "CompactionEvent",
+        "type": "object"
+      },
+      "ContentPart": {
+        "description": "One element of the array-of-parts content form. `text` and\n`image_url` are accepted; an image goes to the gateway only when the\nmodel takes images (`message_content`), and the rest are refused by\nname.",
+        "properties": {
+          "image_url": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImageUrl"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Text"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "ContentPart",
+        "type": "object"
+      },
+      "ContextEvent": {
+        "additionalProperties": false,
+        "description": "Each count is null when the server does not know it: the window when\nthe model states none, the counts when the upstream reported no usage.",
+        "properties": {
+          "completion_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completion Tokens"
+          },
+          "context_window": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Window"
+          },
+          "prompt_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Tokens"
+          }
+        },
+        "required": [
+          "prompt_tokens",
+          "completion_tokens",
+          "context_window"
+        ],
+        "title": "ContextEvent",
+        "type": "object"
+      },
+      "ConversationMessage": {
+        "additionalProperties": false,
+        "description": "A message as the conversation routes return it (`store.Message.to_dict`):\n`parts` is the typed list the renderer maps, `content` the same text flat.",
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "content_version": {
+            "title": "Content Version",
+            "type": "integer"
+          },
+          "conversation_id": {
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "finish_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finish Reason"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "parts": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Parts",
+            "type": "array"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "conversation_id",
+          "role",
+          "parts",
+          "content",
+          "content_version",
+          "created_at",
+          "parent_id",
+          "model",
+          "truncated",
+          "finish_reason"
+        ],
+        "title": "ConversationMessage",
+        "type": "object"
+      },
+      "DeltaEvent": {
+        "additionalProperties": false,
+        "description": "Text for the open part at `index`: `content` for a text part,\n`reasoning` for a reasoning part; one of the two.",
+        "properties": {
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Content"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "reasoning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Reasoning"
+          }
+        },
+        "required": [
+          "index"
+        ],
+        "title": "DeltaEvent",
+        "type": "object"
+      },
+      "EmbeddingList": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/EmbeddingObject"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "object": {
+            "const": "list",
+            "title": "Object",
+            "type": "string"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/EmbeddingUsage"
+          }
+        },
+        "required": [
+          "object",
+          "data",
+          "model",
+          "usage"
+        ],
+        "title": "EmbeddingList",
+        "type": "object"
+      },
+      "EmbeddingObject": {
+        "additionalProperties": false,
+        "properties": {
+          "embedding": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Embedding"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "object": {
+            "const": "embedding",
+            "title": "Object",
+            "type": "string"
+          }
+        },
+        "required": [
+          "object",
+          "index",
+          "embedding"
+        ],
+        "title": "EmbeddingObject",
+        "type": "object"
+      },
+      "EmbeddingUsage": {
+        "additionalProperties": false,
+        "properties": {
+          "prompt_tokens": {
+            "title": "Prompt Tokens",
+            "type": "integer"
+          },
+          "total_tokens": {
+            "title": "Total Tokens",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "prompt_tokens",
+          "total_tokens"
+        ],
+        "title": "EmbeddingUsage",
+        "type": "object"
+      },
+      "EmbeddingsRequest": {
+        "description": "OpenAI's `POST /v1/embeddings` body. `model` is accepted for client\ncompatibility (every SDK sends one) but the deployment's configured\nembedding model is what goes upstream: there is exactly one, and a\ncaller naming another gets a 404 saying so rather than a gateway error.",
+        "properties": {
+          "dimensions": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Dimensions"
+          },
+          "encoding_format": {
+            "anyOf": [
+              {
+                "enum": [
+                  "float",
+                  "base64"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Encoding Format"
+          },
+          "input": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "items": {
+                  "items": {
+                    "type": "integer"
+                  },
+                  "type": "array"
+                },
+                "type": "array"
+              }
+            ],
+            "minLength": 1,
+            "title": "Input"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Model"
+          },
+          "user": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "User"
+          }
+        },
+        "required": [
+          "input"
+        ],
+        "title": "EmbeddingsRequest",
+        "type": "object"
+      },
+      "ErrorBody": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "param": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Param"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "type",
+          "param",
+          "code"
+        ],
+        "title": "ErrorBody",
+        "type": "object"
+      },
+      "ErrorEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorBody"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "title": "ErrorEnvelope",
+        "type": "object"
+      },
+      "ErrorEvent": {
+        "additionalProperties": false,
+        "description": "The turn failed after the 200. `code` is `budget` when the\norganisation cannot buy the turn; absent for an upstream failure or a\nresume that found nothing to resume.",
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Code"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "ErrorEvent",
+        "type": "object"
+      },
+      "FunctionCall": {
+        "additionalProperties": false,
+        "properties": {
+          "arguments": {
+            "title": "Arguments",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "arguments"
+        ],
+        "title": "FunctionCall",
+        "type": "object"
+      },
+      "FunctionCallFragment": {
+        "additionalProperties": false,
+        "properties": {
+          "arguments": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Arguments"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Name"
+          }
+        },
+        "title": "FunctionCallFragment",
+        "type": "object"
+      },
+      "ImageUrl": {
+        "description": "OpenAI's `image_url` object: a `data:` URI or an `https://` URL, and\nthe optional `detail` hint, relayed to the gateway as given.",
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "enum": [
+                  "auto",
+                  "low",
+                  "high"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Detail"
+          },
+          "url": {
+            "minLength": 1,
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "ImageUrl",
+        "type": "object"
+      },
+      "JsonSchemaSpec": {
+        "description": "OpenAI's `response_format.json_schema`. The schema itself is relayed\nuntouched -- whether it is a schema the gateway can enforce is the\ngateway's verdict, surfaced as a 400 with its reason -- but it has to be\nan object, and it has to have the name OpenAI requires.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Description"
+          },
+          "name": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "schema": {
+            "additionalProperties": true,
+            "title": "Schema",
+            "type": "object"
+          },
+          "strict": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Strict"
+          }
+        },
+        "required": [
+          "name",
+          "schema"
+        ],
+        "title": "JsonSchemaSpec",
+        "type": "object"
+      },
+      "Metadata": {
+        "description": "MatterWave's extras ride under `metadata`, which OpenAI reserves for\ncaller-defined key/values, so the request stays valid for any client.\n`conversation_id` opts a call into persistence (stateless\nby default).",
+        "properties": {
+          "conversation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Conversation Id"
+          }
+        },
+        "title": "Metadata",
+        "type": "object"
+      },
+      "Model": {
+        "additionalProperties": false,
+        "properties": {
+          "created": {
+            "title": "Created",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "object": {
+            "const": "model",
+            "title": "Object",
+            "type": "string"
+          },
+          "owned_by": {
+            "const": "matterwave",
+            "title": "Owned By",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "object",
+          "created",
+          "owned_by"
+        ],
+        "title": "Model",
+        "type": "object"
+      },
+      "ModelList": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/Model"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "object": {
+            "const": "list",
+            "title": "Object",
+            "type": "string"
+          }
+        },
+        "required": [
+          "object",
+          "data"
+        ],
+        "title": "ModelList",
+        "type": "object"
+      },
+      "ModerationBlockEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": "moderation",
+            "title": "Code",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "detail",
+          "code",
+          "request_id"
+        ],
+        "title": "ModerationBlockEvent",
+        "type": "object"
+      },
+      "NamedToolChoice": {
+        "properties": {
+          "function": {
+            "$ref": "#/components/schemas/ToolChoiceFunction"
+          },
+          "type": {
+            "const": "function",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "function"
+        ],
+        "title": "NamedToolChoice",
+        "type": "object"
+      },
+      "NoticeEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": "compaction",
+            "title": "Code",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          }
+        },
+        "required": [
+          "detail",
+          "code"
+        ],
+        "title": "NoticeEvent",
+        "type": "object"
+      },
+      "PartEndEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "index"
+        ],
+        "title": "PartEndEvent",
+        "type": "object"
+      },
+      "PartStartEvent": {
+        "additionalProperties": false,
+        "description": "A part of the assistant message opens at `index`. A `tool_call` part\ncarries `id`, `name` and `arguments`; a `tool_result` its call's `id`,\n`output` and `is_error`; `text` and `reasoning` only the index.",
+        "properties": {
+          "arguments": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Arguments"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Id"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "is_error": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Is Error"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Name"
+          },
+          "output": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Output"
+          },
+          "type": {
+            "enum": [
+              "text",
+              "reasoning",
+              "tool_call",
+              "tool_result"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "index",
+          "type"
+        ],
+        "title": "PartStartEvent",
+        "type": "object"
+      },
+      "RequestFunctionCall": {
+        "properties": {
+          "arguments": {
+            "default": "",
+            "title": "Arguments",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "RequestFunctionCall",
+        "type": "object"
+      },
+      "RequestToolCall": {
+        "description": "A tool call the assistant made earlier in the conversation, echoed\nback by the caller with its `tool` result -- the second half of the\nround trip. Relayed to the gateway in the same shape.",
+        "properties": {
+          "function": {
+            "$ref": "#/components/schemas/RequestFunctionCall"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "function",
+            "default": "function",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "function"
+        ],
+        "title": "RequestToolCall",
+        "type": "object"
+      },
+      "ResponseFormat": {
+        "properties": {
+          "json_schema": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JsonSchemaSpec"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "type": {
+            "enum": [
+              "text",
+              "json_object",
+              "json_schema"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "ResponseFormat",
+        "type": "object"
+      },
+      "Stability": {
+        "additionalProperties": false,
+        "properties": {
+          "preview_prefix": {
+            "title": "Preview Prefix",
+            "type": "string"
+          },
+          "promise": {
+            "title": "Promise",
+            "type": "string"
+          },
+          "stable": {
+            "title": "Stable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "stable",
+          "promise",
+          "preview_prefix"
+        ],
+        "title": "Stability",
+        "type": "object"
+      },
+      "StreamOptions": {
+        "properties": {
+          "include_usage": {
+            "default": false,
+            "title": "Include Usage",
+            "type": "boolean"
+          }
+        },
+        "title": "StreamOptions",
+        "type": "object"
+      },
+      "TitleEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "TitleEvent",
+        "type": "object"
+      },
+      "ToolCall": {
+        "additionalProperties": false,
+        "properties": {
+          "function": {
+            "$ref": "#/components/schemas/FunctionCall"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "function",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "function"
+        ],
+        "title": "ToolCall",
+        "type": "object"
+      },
+      "ToolCallFragment": {
+        "additionalProperties": false,
+        "description": "One streamed piece of a tool call: the first for an `index` carries\n`id`, `type` and the name, the rest carry `arguments` to concatenate.",
+        "properties": {
+          "function": {
+            "$ref": "#/components/schemas/FunctionCallFragment"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Id"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "const": "function",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Type"
+          }
+        },
+        "required": [
+          "index",
+          "function"
+        ],
+        "title": "ToolCallFragment",
+        "type": "object"
+      },
+      "ToolChoiceFunction": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ToolChoiceFunction",
+        "type": "object"
+      },
+      "ToolFunction": {
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Description"
+          },
+          "name": {
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "title": "Name",
+            "type": "string"
+          },
+          "parameters": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Parameters"
+          },
+          "strict": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Strict"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ToolFunction",
+        "type": "object"
+      },
+      "ToolSpec": {
+        "description": "One `tools[]` entry. Function tools only, which is all OpenAI's chat\ncompletions define; the shape is relayed to the gateway as given.",
+        "properties": {
+          "function": {
+            "$ref": "#/components/schemas/ToolFunction"
+          },
+          "type": {
+            "const": "function",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "function"
+        ],
+        "title": "ToolSpec",
+        "type": "object"
+      },
+      "Usage": {
+        "additionalProperties": false,
+        "properties": {
+          "completion_tokens": {
+            "title": "Completion Tokens",
+            "type": "integer"
+          },
+          "prompt_tokens": {
+            "title": "Prompt Tokens",
+            "type": "integer"
+          },
+          "total_tokens": {
+            "title": "Total Tokens",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "prompt_tokens",
+          "completion_tokens",
+          "total_tokens"
+        ],
+        "title": "Usage",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "apiKey": {
+        "description": "A MatterWave API key (`mw_...`), created under Settings > API keys. A key carries scopes; the one each operation needs is listed on it. Known scopes: `chat:read`, `chat:write`.",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "The OpenAI-compatible front door. Change `base_url` to this host's `/v1`, present a MatterWave API key as a bearer token, and every OpenAI client works unmodified. Every refusal is OpenAI's error envelope; every response carries `X-Request-Id`, the id to quote when reporting a problem.",
+    "title": "MatterWave API",
+    "version": "0.1.0",
+    "x-api-version": "v1",
+    "x-extensions": {
+      "metadata.conversation_id": "persist the turn into a conversation"
+    },
+    "x-stability": {
+      "preview_prefix": "/v1/preview/",
+      "promise": "Additive changes only within v1: no field is removed or retyped, deprecations carry Deprecation and Sunset headers with 12 months notice, and clients must tolerate unknown fields.",
+      "stable": true
+    }
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/v1": {
+      "get": {
+        "description": "What this API is and what it promises: the release, the endpoints,\nwhat this deployment can do (`capabilities`) and the stability rule for\n`/v1`. Needs no key, so a client can decide whether it can talk to this\ndeployment before it holds one.",
+        "operationId": "openai_index",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiIndex"
+                }
+              }
+            },
+            "description": "What `/v1` is and what it promises.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/X-Request-Id"
+              }
+            }
+          }
+        },
+        "security": [],
+        "summary": "Describe the API",
+        "tags": [
+          "openai"
+        ]
+      }
+    },
+    "/v1/chat/completions": {
+      "post": {
+        "description": "Send a conversation and get the model's reply, as one `chat.completion`\nobject or, with `stream: true`, a stream of `chat.completion.chunk`\nevents. OpenAI's request and response shapes; `model` may be omitted for\nthe deployment's default.\n\nThe request's `messages` are the whole prompt. With\n`metadata.conversation_id` the turn is also recorded into that\nconversation, but stored history is never added to the prompt: the\ncaller owns the context, as every OpenAI client assumes.\n\n`tools`, `tool_choice` and `response_format` go to the model as sent and\nwhat comes back is relayed: tool calls arrive in `message.tool_calls` (or\nstreamed `delta.tool_calls`) for the caller to run, never run here. A\n`tool_choice` that demanded a call the model did not make is a 400\n`tool_calls_unsupported`, not prose parsed as an answer.",
+        "operationId": "openai_chat_completions",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatCompletionRequest"
+              }
+            }
+          },
+          "description": "OpenAI's chat-completion request. Unknown fields are ignored; `functions`, `function_call` and `n` other than 1 are refused with 400 `unsupported_parameter` rather than ignored. `tools`, `tool_choice` and `response_format` go to the model as sent and what comes back is relayed: tool calls are returned for the caller to run, never run here. `metadata.conversation_id` records the turn into that conversation; the request's `messages` are still the whole prompt.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatCompletion"
+                }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatCompletionChunk"
+                }
+              }
+            },
+            "description": "The completion. With `stream: false` one `chat.completion` object; with `stream: true` a `text/event-stream` of `data:` lines, each a `chat.completion.chunk`, ending in `data: [DONE]`. A failure after the stream has started is sent as an error envelope on its own `data:` line. With `stream_options.include_usage` the last chunk before `[DONE]` carries `usage` and an empty `choices`.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/X-Request-Id"
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "A malformed body (`invalid_value`), an unsupported parameter (`unsupported_parameter`), an image part (`unsupported_content_part`), a `tool_choice` that demanded a call the model did not make (`tool_calls_unsupported`), or a request the model gateway itself rejected, with its reason (`upstream_rejected`).",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/X-Request-Id"
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No key, or an invalid, expired or revoked one (`authentication_error` / `invalid_api_key`).",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/X-Request-Id"
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The key lacks the `chat:write` scope (`permission_error` / `insufficient_scope`), or the account is suspended (`account_suspended`).",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/X-Request-Id"
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "A model the gateway does not serve (`model_not_found`), or a `metadata.conversation_id` that is not the key owner's (`conversation_not_found`).",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/X-Request-Id"
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "More than 60 requests a minute on one key (`rate_limit_error` / `rate_limit_exceeded`, with `Retry-After`), or the organisation's monthly budget is used up (`insufficient_quota`).",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before the next request.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-Id": {
+                "$ref": "#/components/headers/X-Request-Id"
+              }
+            }
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The model gateway failed (`server_error` / `upstream_error`).",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/X-Request-Id"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "chat:write"
+            ]
+          }
+        ],
+        "summary": "Create a chat completion",
+        "tags": [
+          "openai"
+        ]
+      }
+    },
+    "/v1/embeddings": {
+      "post": {
+        "description": "Turn one or more inputs into embedding vectors, in OpenAI's request\nand response shapes. A deployment has one embedding model, so `model`\nmay be omitted; a deployment without one answers 404\n`embeddings_not_configured`, and `GET /v1` says so in advance under\n`capabilities.embeddings`. Usage counts against the allowance by the\nprompt tokens alone.",
+        "operationId": "openai_embeddings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmbeddingsRequest"
+              }
+            }
+          },
+          "description": "OpenAI's embeddings request. One embedding model per deployment: `model` may be omitted, and naming a different one is a 404. `GET /v1` says whether embeddings are enabled and which model (`capabilities.embeddings`).",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmbeddingList"
+                }
+              }
+            },
+            "description": "One embedding per input, in input order.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/X-Request-Id"
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "A malformed body (`invalid_value`), or a request the model gateway itself rejected, with its reason (`upstream_rejected`).",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/X-Request-Id"
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No key, or an invalid, expired or revoked one (`authentication_error` / `invalid_api_key`).",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/X-Request-Id"
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The key lacks the `chat:write` scope (`permission_error` / `insufficient_scope`), or the account is suspended (`account_suspended`).",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/X-Request-Id"
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No embedding model is configured on this deployment (`embeddings_not_configured`), or `model` names a different one (`model_not_found`).",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/X-Request-Id"
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "More than 60 requests a minute on one key (`rate_limit_error` / `rate_limit_exceeded`, with `Retry-After`), or the organisation's monthly budget is used up (`insufficient_quota`).",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before the next request.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-Id": {
+                "$ref": "#/components/headers/X-Request-Id"
+              }
+            }
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The model gateway failed (`server_error` / `upstream_error`).",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/X-Request-Id"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "chat:write"
+            ]
+          }
+        ],
+        "summary": "Create embeddings",
+        "tags": [
+          "openai"
+        ]
+      }
+    },
+    "/v1/models": {
+      "get": {
+        "description": "The models this deployment serves, in OpenAI's list shape. Every\nkey sees the same list; which of them a plan may use is decided when a\ncompletion is requested.",
+        "operationId": "openai_list_models",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelList"
+                }
+              }
+            },
+            "description": "Every model the gateway serves.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/X-Request-Id"
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No key, or an invalid, expired or revoked one (`authentication_error` / `invalid_api_key`).",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/X-Request-Id"
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The key lacks the `chat:read` scope (`permission_error` / `insufficient_scope`), or the account is suspended (`account_suspended`).",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/X-Request-Id"
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "More than 60 requests a minute on one key (`rate_limit_error` / `rate_limit_exceeded`, with `Retry-After`), or the organisation's monthly budget is used up (`insufficient_quota`).",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before the next request.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-Id": {
+                "$ref": "#/components/headers/X-Request-Id"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "chat:read"
+            ]
+          }
+        ],
+        "summary": "List models",
+        "tags": [
+          "openai"
+        ]
+      }
+    },
+    "/v1/models/{model_id}": {
+      "get": {
+        "description": "One model by id, in OpenAI's model shape. A former id (`grt-spark`)\nis accepted and answers with the model it now names; an id this\ndeployment does not serve is a 404 `model_not_found`.",
+        "operationId": "openai_retrieve_model",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Model"
+                }
+              }
+            },
+            "description": "One model.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/X-Request-Id"
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No key, or an invalid, expired or revoked one (`authentication_error` / `invalid_api_key`).",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/X-Request-Id"
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The key lacks the `chat:read` scope (`permission_error` / `insufficient_scope`), or the account is suspended (`account_suspended`).",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/X-Request-Id"
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "A model the gateway does not serve (`model_not_found`).",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/X-Request-Id"
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "More than 60 requests a minute on one key (`rate_limit_error` / `rate_limit_exceeded`, with `Retry-After`), or the organisation's monthly budget is used up (`insufficient_quota`).",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before the next request.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Request-Id": {
+                "$ref": "#/components/headers/X-Request-Id"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "chat:read"
+            ]
+          }
+        ],
+        "summary": "Retrieve a model",
+        "tags": [
+          "openai"
+        ]
+      }
+    }
+  },
+  "tags": [
+    {
+      "description": "The OpenAI-compatible `/v1` surface.",
+      "name": "openai"
+    }
+  ],
+  "x-sse-events": {
+    "/api/conversations/{conversation_id}/messages": {
+      "also": [
+        "/api/conversations/{conversation_id}/messages/{message_id}/edit",
+        "/api/conversations/{conversation_id}/messages/{message_id}/regenerate"
+      ],
+      "description": "Named events (`event:` plus one `data:` line of JSON), ending after `done`, `error` or `moderation_block`. `: mw-heartbeat` comments arrive between frames. The frames of the generation itself carry `id: <generation>:<seq>`; a client whose body drops re-sends the request with `Last-Event-ID` set to the last one seen and the server replays the rest of the same generation rather than starting another.",
+      "events": {
+        "compaction": {
+          "data": {
+            "$ref": "#/components/schemas/CompactionEvent"
+          },
+          "description": "Earlier turns were folded into `message`, a `system` message with one `summary` part, before this turn was sent. Sent ahead of `message` when the next prompt would not fit the model's window.",
+          "terminal": false
+        },
+        "context": {
+          "data": {
+            "$ref": "#/components/schemas/ContextEvent"
+          },
+          "description": "The turn's real token counts, for a context meter; just before `done`, whenever the window or the counts are known. Carries `id:`.",
+          "terminal": false
+        },
+        "delta": {
+          "data": {
+            "$ref": "#/components/schemas/DeltaEvent"
+          },
+          "description": "Text for the open part. Carries `id:`.",
+          "terminal": false
+        },
+        "done": {
+          "data": {
+            "$ref": "#/components/schemas/ConversationMessage"
+          },
+          "description": "The turn ended; the saved assistant message, `truncated: true` and `finish_reason: length` when the model's token limit cut it.",
+          "terminal": true
+        },
+        "error": {
+          "data": {
+            "$ref": "#/components/schemas/ErrorEvent"
+          },
+          "description": "The turn failed after the 200: the upstream died (what arrived is saved as a truncated message), the budget is spent, or a `Last-Event-ID` resolved to nothing.",
+          "terminal": true
+        },
+        "message": {
+          "data": {
+            "$ref": "#/components/schemas/ConversationMessage"
+          },
+          "description": "The user message this turn appended (or the edited one), as saved.",
+          "terminal": false
+        },
+        "moderation_block": {
+          "data": {
+            "$ref": "#/components/schemas/ModerationBlockEvent"
+          },
+          "description": "MatterWave would not send this message to a model -- a different fact from the model declining to answer, so a different frame. Nothing was appended. `request_id` is the one to quote.",
+          "terminal": true
+        },
+        "notice": {
+          "data": {
+            "$ref": "#/components/schemas/NoticeEvent"
+          },
+          "description": "Something the person should be told that is not part of the answer: a fold that could not run (`code: compaction`), after which the turn runs uncompacted, or a branch over the limit that an edit or regenerate cannot fold.",
+          "terminal": false
+        },
+        "part_end": {
+          "data": {
+            "$ref": "#/components/schemas/PartEndEvent"
+          },
+          "description": "The open part closes. Carries `id:`.",
+          "terminal": false
+        },
+        "part_start": {
+          "data": {
+            "$ref": "#/components/schemas/PartStartEvent"
+          },
+          "description": "A part of the assistant message opens. Carries `id:`.",
+          "terminal": false
+        },
+        "title": {
+          "data": {
+            "$ref": "#/components/schemas/TitleEvent"
+          },
+          "description": "The conversation was named from this turn's first line.",
+          "terminal": false
+        }
+      },
+      "order": "(compaction | notice)? message title? (part_start delta* part_end)* context? (done | error)"
+    },
+    "/v1/chat/completions": {
+      "description": "Unnamed events (`data:` only), each a `chat.completion.chunk`. A failure after the headers is an error envelope on its own `data:` line, after which the stream ends; `data: [DONE]` ends a stream that finished.",
+      "events": {
+        "message": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ChatCompletionChunk"
+              },
+              {
+                "$ref": "#/components/schemas/ErrorEnvelope"
+              }
+            ]
+          },
+          "description": "One chunk, or the error envelope that ends the stream.",
+          "terminal": false
+        }
+      }
+    }
+  }
+}
