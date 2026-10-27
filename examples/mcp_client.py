@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["mcp>=2.3,<3", "httpx2"]
+# dependencies = ["mcp>=2.3,<3", "httpx"]
 # ///
 """Connect to a MatterWave deployment as an MCP client and search your conversations.
 
@@ -18,7 +18,7 @@ import asyncio
 import os
 import sys
 
-import httpx2
+import httpx
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 
@@ -29,7 +29,7 @@ async def main(query: str) -> int:
     if not api_key:
         print("Set MATTERWAVE_API_KEY to a MatterWave API key.", file=sys.stderr)
         return 2
-    http = httpx2.AsyncClient(headers={"Authorization": f"Bearer {api_key}"}, timeout=60)
+    http = httpx.AsyncClient(headers={"Authorization": f"Bearer {api_key}"}, timeout=60)
     try:
         async with Client(streamable_http_client(f"{base_url}/mcp", http_client=http)) as client:
             info = client.server_info
