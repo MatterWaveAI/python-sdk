@@ -33,12 +33,14 @@ from . import _base
 from ._base import EmbeddingInput, Message, Request, Tool, ToolChoice
 from ._resources import (
     AsyncAttachments,
+    AsyncBudgetClient,
     AsyncKeys,
     AsyncLibraryClient,
     AsyncShares,
     AsyncUsageClient,
     AsyncWebhooks,
     Attachments,
+    BudgetClient,
     Keys,
     LibraryClient,
     Shares,
@@ -55,20 +57,28 @@ from .errors import (
 )
 from .frames import TERMINAL_FRAMES, ConversationFrame, DeltaFrame, DoneFrame, frame_from_event
 from .models import (
+    FEEDBACK_REASONS,
     ApiIndex,
+    AppModelList,
     ChatCompletion,
     ChatCompletionChunk,
     Conversation,
     ConversationContext,
+    ConversationInstructions,
     ConversationList,
     ConversationMessage,
+    DeletedConversation,
     DeviceCode,
     DeviceToken,
     EmbeddingList,
     Me,
+    MessageFeedback,
     Model,
     ModelList,
+    OrgInstructions,
+    RemovedFeedback,
     SearchResults,
+    UserInstructions,
 )
 
 USER_AGENT = f"matterwave-python/{__version__}"
@@ -633,6 +643,48 @@ class Conversations:
         body, rid = self._object(_base.compact_conversation_request(conversation_id))
         return ConversationMessage.from_dict(body, request_id=rid)
 
+    def delete(self, conversation_id: str) -> DeletedConversation:
+        """`DELETE /api/conversations/{id}`: gone from every list, its
+        attachments marked for the sweeper. The row itself is purged after
+        the platform's 30-day delay."""
+        body, rid = self._object(_base.delete_conversation_request(conversation_id))
+        return DeletedConversation.from_dict(body, request_id=rid)
+
+    def pin(self, conversation_id: str) -> Conversation:
+        """`PUT /api/conversations/{id}/pin`: to the top of the sidebar,
+        first in the `pinned` filter. `ConflictError` for a temporary
+        conversation, which cannot be kept."""
+        body, rid = self._object(_base.set_pinned_request(conversation_id, True))
+        return Conversation.from_dict(body, request_id=rid)
+
+    def unpin(self, conversation_id: str) -> Conversation:
+        """`DELETE /api/conversations/{id}/pin`."""
+        body, rid = self._object(_base.set_pinned_request(conversation_id, False))
+        return Conversation.from_dict(body, request_id=rid)
+
+    def archive(self, conversation_id: str) -> Conversation:
+        """`PUT /api/conversations/{id}/archive`: out of the default list,
+        still readable and searchable, under `filter="archived"`."""
+        body, rid = self._object(_base.set_archived_request(conversation_id, True))
+        return Conversation.from_dict(body, request_id=rid)
+
+    def unarchive(self, conversation_id: str) -> Conversation:
+        """`DELETE /api/conversations/{id}/archive`: back to the default list."""
+        body, rid = self._object(_base.set_archived_request(conversation_id, False))
+        return Conversation.from_dict(body, request_id=rid)
+
+    def update_instructions(
+        self, conversation_id: str, text: str | None
+    ) -> ConversationInstructions:
+        """`PUT /api/conversations/{id}/instructions`: this thread's own
+        prompt, which replaces the user's instructions for it (the org's
+        still apply). None, or an empty string, clears it. The answer
+        carries the levels in force, as `get` reports them."""
+        body, rid = self._object(
+            _base.conversation_instructions_request(conversation_id, text)
+        )
+        return ConversationInstructions.from_dict(body, request_id=rid)
+
     def _stream(self, request: Request, conversation_id: str) -> ConversationStream:
         return ConversationStream(
             self._client, request, conversation_id, self._client._send(request)
@@ -689,6 +741,91 @@ class Conversations:
             conversation_id, message_id, model=model, temperature=temperature
         )
         return self._stream(request, conversation_id)
+
+
+class Messages:
+    """The caller's own ratings of replies. One rating per person per
+    message: a second `set_feedback` replaces the first rather than piling
+    up, which is why setting is a PUT."""
+
+    def __init__(self, client: MatterWave) -> None:
+        self._client = client
+
+    def _object(self, request: Request) -> tuple[dict[str, Any], str | None]:
+        response = self._client._send(request)
+        return _base.parse_json_object(response), _base.request_id_of(response)
+
+    def set_feedback(
+        self,
+        message_id: str,
+        rating: int,
+        *,
+        reasons: Sequence[str] = (),
+        comment: str | None = None,
+    ) -> MessageFeedback:
+        """`PUT /api/messages/{id}/feedback`: rate a reply, up (`1`) or down
+        (`-1`), with `reasons` from `FEEDBACK_REASONS` and a free-text
+        `comment`. Only an assistant message of the caller's own may be
+        rated; anything else is a 404 or a 422."""
+        if rating not in (-1, 1):
+            raise ValueError(f"rating must be 1 or -1, got {rating!r}")
+        unknown = [r for r in reasons if r not in FEEDBACK_REASONS]
+        if unknown:
+            raise ValueError(
+                f"reasons must be from {', '.join(FEEDBACK_REASONS)}, got {', '.join(unknown)}"
+            )
+        body, rid = self._object(
+            _base.set_feedback_request(message_id, rating, reasons, comment)
+        )
+        return MessageFeedback.from_dict(body, request_id=rid)
+
+    def delete_feedback(self, message_id: str) -> RemovedFeedback:
+        """`DELETE /api/messages/{id}/feedback`: withdraw a rating.
+        Idempotent -- `none` when there was already nothing to remove."""
+        body, rid = self._object(_base.delete_feedback_request(message_id))
+        return RemovedFeedback.from_dict(body, request_id=rid)
+
+
+class Instructions:
+    """Custom instructions, the three levels the platform keeps. The org
+    level is additive policy every member is subject to; the conversation
+    level replaces the user's for that thread (`conversations.update_
+    instructions` is the same idea, one thread at a time). Reads of the org
+    level are admin-only, as are writes."""
+
+    def __init__(self, client: MatterWave) -> None:
+        self._client = client
+
+    def _object(self, request: Request) -> tuple[dict[str, Any], str | None]:
+        response = self._client._send(request)
+        return _base.parse_json_object(response), _base.request_id_of(response)
+
+    def user(self) -> UserInstructions:
+        """`GET /api/me/instructions`: what the caller saved about
+        themselves. Reading is not gated, so a downgraded plan can still
+        see and clear what it saved."""
+        body, rid = self._object(_base.user_instructions_get_request())
+        return UserInstructions.from_dict(body, request_id=rid)
+
+    def update_user(self, *, about: str = "", style: str = "") -> UserInstructions:
+        """`PUT /api/me/instructions`: save both fields. The route replaces
+        the pair, so a field left out is sent as empty -- there is no
+        "leave it alone".
+        """
+        body, rid = self._object(_base.user_instructions_request(about, style))
+        return UserInstructions.from_dict(body, request_id=rid)
+
+    def org(self) -> OrgInstructions:
+        """`GET /api/org/instructions`: the org's policy text.
+        `PermissionDeniedError` for anyone but an owner or admin."""
+        body, rid = self._object(_base.org_instructions_get_request())
+        return OrgInstructions.from_dict(body, request_id=rid)
+
+    def update_org(self, text: str) -> OrgInstructions:
+        """`PUT /api/org/instructions`: set (or with "", clear) the policy
+        every member's turns are prefixed with. Owner or admin only."""
+        body, rid = self._object(_base.org_instructions_request(text))
+        return OrgInstructions.from_dict(body, request_id=rid)
 
 
 def _login_limit(code: DeviceCode, timeout: float | None) -> tuple[float, bool]:
@@ -792,6 +929,8 @@ class MatterWave:
         self.models = Models(self)
         self.embeddings = Embeddings(self)
         self.conversations = Conversations(self)
+        self.messages = Messages(self)
+        self.instructions = Instructions(self)
         self.auth = Auth(self)
         self.keys = Keys(self)
         self.usage = UsageClient(self)
@@ -799,6 +938,7 @@ class MatterWave:
         self.attachments = Attachments(self)
         self.library = LibraryClient(self)
         self.shares = Shares(self)
+        self.budget = BudgetClient(self)
 
     @property
     def base_url(self) -> str:
@@ -815,6 +955,17 @@ class MatterWave:
         """`GET /api/me`: who the key (or device-login token) acts as."""
         response = self._send(_base.me_request())
         return Me.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    def app_models(self) -> AppModelList:
+        """`GET /api/models`: the model picker's rows -- each model priced,
+        with `included` saying whether the caller's plan covers it and
+        `upgrade_to` the plan that does, so a client can show the upgrade
+        path instead of hiding the model. `models.list()` is `/v1/models`,
+        which carries none of that."""
+        response = self._send(_base.app_models_request())
+        return AppModelList.from_dict(
             _base.parse_json_object(response), request_id=_base.request_id_of(response)
         )
 
@@ -1083,6 +1234,34 @@ class AsyncConversations:
         body, rid = await self._object(_base.compact_conversation_request(conversation_id))
         return ConversationMessage.from_dict(body, request_id=rid)
 
+    async def delete(self, conversation_id: str) -> DeletedConversation:
+        body, rid = await self._object(_base.delete_conversation_request(conversation_id))
+        return DeletedConversation.from_dict(body, request_id=rid)
+
+    async def pin(self, conversation_id: str) -> Conversation:
+        body, rid = await self._object(_base.set_pinned_request(conversation_id, True))
+        return Conversation.from_dict(body, request_id=rid)
+
+    async def unpin(self, conversation_id: str) -> Conversation:
+        body, rid = await self._object(_base.set_pinned_request(conversation_id, False))
+        return Conversation.from_dict(body, request_id=rid)
+
+    async def archive(self, conversation_id: str) -> Conversation:
+        body, rid = await self._object(_base.set_archived_request(conversation_id, True))
+        return Conversation.from_dict(body, request_id=rid)
+
+    async def unarchive(self, conversation_id: str) -> Conversation:
+        body, rid = await self._object(_base.set_archived_request(conversation_id, False))
+        return Conversation.from_dict(body, request_id=rid)
+
+    async def update_instructions(
+        self, conversation_id: str, text: str | None
+    ) -> ConversationInstructions:
+        body, rid = await self._object(
+            _base.conversation_instructions_request(conversation_id, text)
+        )
+        return ConversationInstructions.from_dict(body, request_id=rid)
+
     async def _stream(self, request: Request, conversation_id: str) -> AsyncConversationStream:
         response = await self._client._send(request)
         return AsyncConversationStream(self._client, request, conversation_id, response)
@@ -1133,6 +1312,64 @@ class AsyncConversations:
             conversation_id, message_id, model=model, temperature=temperature
         )
         return await self._stream(request, conversation_id)
+
+
+class AsyncMessages:
+    def __init__(self, client: AsyncMatterWave) -> None:
+        self._client = client
+
+    async def _object(self, request: Request) -> tuple[dict[str, Any], str | None]:
+        response = await self._client._send(request)
+        return _base.parse_json_object(response), _base.request_id_of(response)
+
+    async def set_feedback(
+        self,
+        message_id: str,
+        rating: int,
+        *,
+        reasons: Sequence[str] = (),
+        comment: str | None = None,
+    ) -> MessageFeedback:
+        if rating not in (-1, 1):
+            raise ValueError(f"rating must be 1 or -1, got {rating!r}")
+        unknown = [r for r in reasons if r not in FEEDBACK_REASONS]
+        if unknown:
+            raise ValueError(
+                f"reasons must be from {', '.join(FEEDBACK_REASONS)}, got {', '.join(unknown)}"
+            )
+        body, rid = await self._object(
+            _base.set_feedback_request(message_id, rating, reasons, comment)
+        )
+        return MessageFeedback.from_dict(body, request_id=rid)
+
+    async def delete_feedback(self, message_id: str) -> RemovedFeedback:
+        body, rid = await self._object(_base.delete_feedback_request(message_id))
+        return RemovedFeedback.from_dict(body, request_id=rid)
+
+
+class AsyncInstructions:
+    def __init__(self, client: AsyncMatterWave) -> None:
+        self._client = client
+
+    async def _object(self, request: Request) -> tuple[dict[str, Any], str | None]:
+        response = await self._client._send(request)
+        return _base.parse_json_object(response), _base.request_id_of(response)
+
+    async def user(self) -> UserInstructions:
+        body, rid = await self._object(_base.user_instructions_get_request())
+        return UserInstructions.from_dict(body, request_id=rid)
+
+    async def update_user(self, *, about: str = "", style: str = "") -> UserInstructions:
+        body, rid = await self._object(_base.user_instructions_request(about, style))
+        return UserInstructions.from_dict(body, request_id=rid)
+
+    async def org(self) -> OrgInstructions:
+        body, rid = await self._object(_base.org_instructions_get_request())
+        return OrgInstructions.from_dict(body, request_id=rid)
+
+    async def update_org(self, text: str) -> OrgInstructions:
+        body, rid = await self._object(_base.org_instructions_request(text))
+        return OrgInstructions.from_dict(body, request_id=rid)
 
 
 class AsyncDeviceAuth:
@@ -1211,6 +1448,8 @@ class AsyncMatterWave:
         self.models = AsyncModels(self)
         self.embeddings = AsyncEmbeddings(self)
         self.conversations = AsyncConversations(self)
+        self.messages = AsyncMessages(self)
+        self.instructions = AsyncInstructions(self)
         self.auth = AsyncAuth(self)
         self.keys = AsyncKeys(self)
         self.usage = AsyncUsageClient(self)
@@ -1218,6 +1457,7 @@ class AsyncMatterWave:
         self.attachments = AsyncAttachments(self)
         self.library = AsyncLibraryClient(self)
         self.shares = AsyncShares(self)
+        self.budget = AsyncBudgetClient(self)
 
     @property
     def base_url(self) -> str:
@@ -1232,6 +1472,12 @@ class AsyncMatterWave:
     async def me(self) -> Me:
         response = await self._send(_base.me_request())
         return Me.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    async def app_models(self) -> AppModelList:
+        response = await self._send(_base.app_models_request())
+        return AppModelList.from_dict(
             _base.parse_json_object(response), request_id=_base.request_id_of(response)
         )
 

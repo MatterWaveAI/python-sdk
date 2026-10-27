@@ -367,6 +367,50 @@ def set_tags_request(conversation_id: str, tag_ids: Sequence[str]) -> Request:
     )
 
 
+# --- budget --------------------------------------------------------------------
+
+
+def _cap_micros(name: str, value: int | None) -> int | None:
+    """A spend cap in micro-dollars at list price. None is "unlimited" (or
+    "back to the default", per route) and has to be sent, so it passes
+    through; a negative number is refused here rather than by a 422."""
+    if value is not None and value < 0:
+        raise ValueError(f"{name} must be 0 or more, got {value}")
+    return value
+
+
+def get_budget_request() -> Request:
+    return Request("GET", "/api/budget", None, keyed=True, stream=False)
+
+
+def set_overage_cap_request(overage_cap_micros: int) -> Request:
+    _cap_micros("overage_cap_micros", overage_cap_micros)
+    return Request(
+        "PUT", "/api/budget", {"overage_cap_micros": overage_cap_micros}, keyed=True, stream=False
+    )
+
+
+def member_budgets_request() -> Request:
+    return Request("GET", "/api/budget/members", None, keyed=True, stream=False)
+
+
+def set_member_default_cap_request(member_default_cap_micros: int | None) -> Request:
+    _cap_micros("member_default_cap_micros", member_default_cap_micros)
+    return Request(
+        "PUT",
+        "/api/budget/members",
+        {"member_default_cap_micros": member_default_cap_micros},
+        keyed=True,
+        stream=False,
+    )
+
+
+def set_member_cap_request(subject: str, cap_micros: int | None) -> Request:
+    _cap_micros("cap_micros", cap_micros)
+    path = f"/api/budget/members/{_segment('subject', subject)}"
+    return Request("PUT", path, {"cap_micros": cap_micros}, keyed=True, stream=False)
+
+
 # --- shares --------------------------------------------------------------------
 
 

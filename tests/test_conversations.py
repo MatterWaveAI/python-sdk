@@ -662,6 +662,143 @@ def test_me(api, client: MatterWave) -> None:
     assert me.subject == "u-1" and me.org_name == "Acme" and me.kind == "key"
 
 
+# --- lifecycle: delete, pin and archive -----------------------------------------
+
+
+def test_delete_sends_delete_and_reads_the_status(api, client: MatterWave) -> None:
+    route = api.delete(f"/api/conversations/{CONV}").mock(
+        return_value=httpx.Response(
+            200,
+            json={"status": "deleted", "attachments_deleted": 2},
+            headers={"X-Request-Id": REQUEST_ID},
+        )
+    )
+    deleted = client.conversations.delete(CONV)
+    assert route.calls.last.request.method == "DELETE"
+    assert deleted.status == "deleted" and deleted.attachments_deleted == 2
+    assert deleted.request_id == REQUEST_ID
+    # A conversation without attachments keeps the plain shape: no count at all.
+    api.delete(f"/api/conversations/{CONV}").mock(
+        return_value=httpx.Response(200, json={"status": "deleted"})
+    )
+    assert client.conversations.delete(CONV).attachments_deleted is None
+
+
+@pytest.mark.asyncio
+async def test_the_async_delete_reads_the_same_body(
+    api, async_client: AsyncMatterWave
+) -> None:
+    api.delete(f"/api/conversations/{CONV}").mock(
+        return_value=httpx.Response(200, json={"status": "deleted"})
+    )
+    deleted = await async_client.conversations.delete(CONV)
+    assert deleted.status == "deleted"
+
+
+def test_pin_unpin_archive_and_unarchive_toggle_by_method(api, client: MatterWave) -> None:
+    route = api.put(f"/api/conversations/{CONV}/pin").mock(
+        return_value=httpx.Response(
+            200,
+            json=conversation(pinned_at="2026-10-18T10:00:00+00:00"),
+            headers={"X-Request-Id": REQUEST_ID},
+        )
+    )
+    down = api.delete(f"/api/conversations/{CONV}/pin").mock(
+        return_value=httpx.Response(200, json=conversation())
+    )
+    archive = api.put(f"/api/conversations/{CONV}/archive").mock(
+        return_value=httpx.Response(
+            200, json=conversation(archived_at="2026-10-18T10:00:00+00:00")
+        )
+    )
+    up = api.delete(f"/api/conversations/{CONV}/archive").mock(
+        return_value=httpx.Response(200, json=conversation())
+    )
+
+    pinned = client.conversations.pin(CONV)
+    assert pinned.pinned_at is not None and pinned.request_id == REQUEST_ID
+    assert route.calls.last.request.method == "PUT"
+    assert client.conversations.unpin(CONV).pinned_at is None
+    assert down.calls.last.request.method == "DELETE"
+    assert client.conversations.archive(CONV).archived_at is not None
+    assert archive.calls.last.request.method == "PUT"
+    assert client.conversations.unarchive(CONV).archived_at is None
+    assert up.calls.last.request.method == "DELETE"
+    # A toggle carries no body: the method is the whole instruction.
+    assert route.calls.last.request.content == b""
+
+
+@pytest.mark.asyncio
+async def test_the_async_pin_sends_the_same_verb(
+    api, async_client: AsyncMatterWave
+) -> None:
+    route = api.put(f"/api/conversations/{CONV}/pin").mock(
+        return_value=httpx.Response(200, json=conversation(pinned_at="2026-10-18T10:00:00+00:00"))
+    )
+    pinned = await async_client.conversations.pin(CONV)
+    assert pinned.pinned_at is not None
+    assert route.calls.last.request.method == "PUT"
+
+
+def test_a_pin_that_409s_for_a_temporary_conversation(api, client: MatterWave) -> None:
+    api.put(f"/api/conversations/{CONV}/pin").mock(
+        return_value=httpx.Response(
+            409,
+            json={"detail": "A temporary conversation cannot be pinned.", "request_id": REQUEST_ID},
+        )
+    )
+    with pytest.raises(ConflictError) as caught:
+        client.conversations.pin(CONV)
+    assert caught.value.status_code == 409
+    assert caught.value.message == "A temporary conversation cannot be pinned."
+
+
+# --- instructions -----------------------------------------------------------------
+
+
+def test_conversation_instructions_are_set_and_cleared(api, client: MatterWave) -> None:
+    route = api.put(f"/api/conversations/{CONV}/instructions").mock(
+        side_effect=lambda request: httpx.Response(
+            200,
+            json={
+                "conversation_id": CONV,
+                "instructions": {
+                    "org": "Be brief.",
+                    "user": {"about": "", "style": ""},
+                    "conversation": json.loads(request.content)["text"] or "",
+                    "user_overridden": True,
+                    "effective": "Be brief.",
+                },
+            },
+            headers={"X-Request-Id": REQUEST_ID},
+        )
+    )
+    set_ = client.conversations.update_instructions(CONV, "Answer in French.")
+    assert set_.conversation_id == CONV
+    assert set_.instructions["user_overridden"] is True
+    assert set_.request_id == REQUEST_ID
+    assert json.loads(route.calls.last.request.content) == {"text": "Answer in French."}
+    # None is sent as null: the field always goes, and the server reads it
+    # as "clear the thread's prompt".
+    client.conversations.update_instructions(CONV, None)
+    assert json.loads(route.calls.last.request.content) == {"text": None}
+
+
+@pytest.mark.asyncio
+async def test_the_async_instructions_clear_the_same_way(
+    api, async_client: AsyncMatterWave
+) -> None:
+    route = api.put(f"/api/conversations/{CONV}/instructions").mock(
+        return_value=httpx.Response(
+            200,
+            json={"conversation_id": CONV, "instructions": {"conversation": ""}},
+        )
+    )
+    cleared = await async_client.conversations.update_instructions(CONV, None)
+    assert cleared.instructions == {"conversation": ""}
+    assert json.loads(route.calls.last.request.content) == {"text": None}
+
+
 def test_ids_that_would_change_the_path_are_refused(client: MatterWave) -> None:
     with pytest.raises(ValueError):
         client.conversations.get("../me")

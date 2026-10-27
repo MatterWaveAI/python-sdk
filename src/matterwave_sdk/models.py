@@ -1392,3 +1392,308 @@ class SharedConversation:
             org_name=_opt_str(data.get("org_name")),
             request_id=request_id,
         )
+
+
+# --- the app routes this client grew in 0.2 -----------------------------------
+#
+# Lifecycle toggles, custom instructions, reply feedback, the model picker
+# and the budget pane. As above, the fields are the ones the routes send
+# today and anything new is dropped rather than refused.
+
+
+@dataclass(frozen=True)
+class DeletedConversation:
+    """The answer to `conversations.delete`. The row goes after a 30-day
+    delay; `attachments_deleted` counts the uploads it took with it, absent
+    when there were none."""
+
+    status: str
+    attachments_deleted: int | None = None
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(
+        cls, data: dict[str, Any], *, request_id: str | None = None
+    ) -> DeletedConversation:
+        return cls(
+            status=_str(data.get("status")),
+            attachments_deleted=_opt_int(data.get("attachments_deleted")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class UserInstructions:
+    """`GET` and `PUT /api/me/instructions`: what the assistant should know
+    about the person, and how they want answers shaped. The route replaces
+    the pair, so a field left out of `update_user` is sent as empty."""
+
+    about: str = ""
+    style: str = ""
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(
+        cls, data: dict[str, Any], *, request_id: str | None = None
+    ) -> UserInstructions:
+        return cls(
+            about=_str(data.get("about")),
+            style=_str(data.get("style")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class OrgInstructions:
+    """`GET` and `PUT /api/org/instructions`: the policy text an org admin
+    sets for every member. Reading it is admin-only, as is writing it."""
+
+    text: str = ""
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(
+        cls, data: dict[str, Any], *, request_id: str | None = None
+    ) -> OrgInstructions:
+        return cls(text=_str(data.get("text")), request_id=request_id)
+
+
+@dataclass(frozen=True)
+class ConversationInstructions:
+    """The answer to `conversations.update_instructions`: the conversation's
+    id and the levels now in force for it (`org`, `user`, `conversation`,
+    `user_overridden`, `effective`), exactly as `conversations.get` reports
+    them. The server owns the shape, so the dict is kept as sent."""
+
+    conversation_id: str
+    instructions: dict[str, Any]
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(
+        cls, data: dict[str, Any], *, request_id: str | None = None
+    ) -> ConversationInstructions:
+        instructions = data.get("instructions")
+        return cls(
+            conversation_id=_str(data.get("conversation_id")),
+            instructions=dict(instructions) if isinstance(instructions, dict) else {},
+            request_id=request_id,
+        )
+
+
+FEEDBACK_REASONS = ("wrong", "unhelpful", "incomplete", "too_long", "off_topic", "unsafe")
+"""The fixed vocabulary a rating's `reasons` may draw on; the free text is
+`comment`. The server refuses the rest."""
+
+
+@dataclass(frozen=True)
+class MessageFeedback:
+    """The answer to `messages.set_feedback`: the caller's current opinion of
+    one reply. A second rating replaces the first rather than piling up."""
+
+    message_id: str
+    rating: int
+    reasons: list[str]
+    comment: str | None
+    created_at: str
+    updated_at: str
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(
+        cls, data: dict[str, Any], *, request_id: str | None = None
+    ) -> MessageFeedback:
+        return cls(
+            message_id=_str(data.get("message_id")),
+            rating=_int(data.get("rating")),
+            reasons=_strs(data.get("reasons")),
+            comment=_opt_str(data.get("comment")),
+            created_at=_str(data.get("created_at")),
+            updated_at=_str(data.get("updated_at")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class RemovedFeedback:
+    """The answer to `messages.delete_feedback`: `removed` when there was a
+    rating to take off, `none` when there was already nothing there."""
+
+    status: str
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(
+        cls, data: dict[str, Any], *, request_id: str | None = None
+    ) -> RemovedFeedback:
+        return cls(status=_str(data.get("status")), request_id=request_id)
+
+
+@dataclass(frozen=True)
+class AppModel:
+    """One row of the model picker (`GET /api/models`): the model, what it
+    costs, and the caller's plan's relationship to it. `included` is False
+    for a model the plan does not cover -- it stays listed so the picker can
+    show the upgrade, and a turn on it is refused server-side -- and
+    `upgrade_to` names the plan that has it. `context_window` is None when
+    the gateway did not say, rather than a guess."""
+
+    id: str
+    label: str
+    included: bool
+    upgrade_to: str | None = None
+    partner: bool = False
+    research_preview: bool = False
+    supports_vision: bool | None = None
+    context_window: int | None = None
+    multiplier: int = 0
+    input_usd_per_m: float = 0.0
+    output_usd_per_m: float = 0.0
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> AppModel:
+        vision = data.get("supports_vision")
+        return cls(
+            id=_str(data.get("id")),
+            label=_str(data.get("label")),
+            included=data.get("included") is True,
+            upgrade_to=_opt_str(data.get("upgrade_to")),
+            partner=data.get("partner") is True,
+            research_preview=data.get("research_preview") is True,
+            supports_vision=vision if isinstance(vision, bool) else None,
+            context_window=_opt_int(data.get("context_window")),
+            multiplier=_int(data.get("multiplier")),
+            input_usd_per_m=_float(data.get("input_usd_per_m")),
+            output_usd_per_m=_float(data.get("output_usd_per_m")),
+        )
+
+
+@dataclass(frozen=True)
+class AppModelList:
+    """`GET /api/models`: the picker's rows, narrowed to what the caller's
+    org switched on, with `default_model` to preselect."""
+
+    data: list[AppModel]
+    default_model: str | None = None
+    object: str = "list"
+    request_id: str | None = field(default=None, compare=False)
+
+    def __iter__(self) -> Any:
+        return iter(self.data)
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> AppModelList:
+        return cls(
+            data=[AppModel.from_dict(m) for m in _dicts(data.get("data"))],
+            default_model=_opt_str(data.get("default_model")),
+            object=_str(data.get("object"), "list"),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class Budget:
+    """`GET /api/budget`: the org's period as of now. `included_tokens` and
+    `tokens_used` are weighted tokens; the money fields are micro-dollars at
+    list price, `overage_cap_micros` the org's own cap or the plan's default.
+    The `member_*` fields are the caller's own cap and spend against it."""
+
+    period_start: str
+    included_tokens: int
+    tokens_used: int
+    remaining_tokens: int
+    overage_enabled: bool
+    overage_cap_micros: int
+    overage_micros: int
+    member_default_cap_micros: int | None = None
+    member_cap: int | None = None
+    member_spent: int | None = None
+    member_exhausted: bool | None = None
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> Budget:
+        return cls(
+            period_start=_str(data.get("period_start")),
+            included_tokens=_int(data.get("included_tokens")),
+            tokens_used=_int(data.get("tokens_used")),
+            remaining_tokens=_int(data.get("remaining_tokens")),
+            overage_enabled=data.get("overage_enabled") is True,
+            overage_cap_micros=_int(data.get("overage_cap_micros")),
+            overage_micros=_int(data.get("overage_micros")),
+            member_default_cap_micros=_opt_int(data.get("member_default_cap_micros")),
+            member_cap=_opt_int(data.get("member_cap")),
+            member_spent=_opt_int(data.get("member_spent")),
+            member_exhausted=(
+                data.get("member_exhausted") if isinstance(data.get("member_exhausted"), bool) else None
+            ),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class MemberBudget:
+    """One member's month: the cap in force (`own` says it is the member's
+    row rather than the org's default; None is unlimited) and the spend the
+    usage report shows beside them. `email`, `name`, `role` and `state` are
+    filled in only where the route answers rows for the whole org."""
+
+    subject: str
+    period_start: str
+    cap_micros: int | None
+    own: bool
+    spent_micros: int
+    exhausted: bool = False
+    email: str | None = None
+    name: str | None = None
+    role: str | None = None
+    state: str | None = None
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> MemberBudget:
+        return cls(
+            subject=_str(data.get("subject")),
+            period_start=_str(data.get("period_start")),
+            cap_micros=_opt_int(data.get("cap_micros")),
+            own=data.get("own") is True,
+            spent_micros=_int(data.get("spent_micros")),
+            exhausted=data.get("exhausted") is True,
+            email=_opt_str(data.get("email")),
+            name=_opt_str(data.get("name")),
+            role=_opt_str(data.get("role")),
+            state=_opt_str(data.get("state")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class MemberBudgetList:
+    """`GET /api/budget/members`, and the answer to
+    `budget.set_member_default_cap`: every member with the cap in force and
+    the month's spend beside them, in the members pane's order."""
+
+    period_start: str
+    member_default_cap_micros: int | None
+    data: list[MemberBudget]
+    request_id: str | None = field(default=None, compare=False)
+
+    def __iter__(self) -> Any:
+        return iter(self.data)
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    @classmethod
+    def from_dict(
+        cls, data: dict[str, Any], *, request_id: str | None = None
+    ) -> MemberBudgetList:
+        return cls(
+            period_start=_str(data.get("period_start")),
+            member_default_cap_micros=_opt_int(data.get("member_default_cap_micros")),
+            data=[MemberBudget.from_dict(r) for r in _dicts(data.get("data"))],
+            request_id=request_id,
+        )

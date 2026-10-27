@@ -25,7 +25,7 @@ from matterwave_sdk import (
 )
 
 ROUTES = Path(__file__).resolve().parents[3] / "api" / "matterwave"
-NATIVE = ("keys", "usage", "webhooks", "attachments", "library", "shares")
+NATIVE = ("keys", "usage", "webhooks", "attachments", "library", "shares", "budget")
 
 KEY_ID = "key-0001"
 ENDPOINT_ID = "whe-0001"
@@ -702,6 +702,133 @@ def test_shares_view_is_public_and_sends_no_key(api) -> None:
     assert shared.org_name is None
 
 
+# --- budget --------------------------------------------------------------------
+
+
+def budget_body(**extra) -> dict:
+    return {
+        "period_start": "2026-10-01",
+        "included_tokens": 2_000_000,
+        "tokens_used": 1_250_000,
+        "remaining_tokens": 750_000,
+        "overage_enabled": True,
+        "overage_cap_micros": 5_000_000,
+        "overage_micros": 0,
+        "member_default_cap_micros": None,
+        "member_cap": None,
+        "member_spent": 0,
+        "member_exhausted": False,
+        **extra,
+    }
+
+
+def member_budget_body(**extra) -> dict:
+    return {
+        "subject": "u-1",
+        "period_start": "2026-10-01",
+        "cap_micros": None,
+        "own": False,
+        "spent_micros": 42_000,
+        "exhausted": False,
+        **extra,
+    }
+
+
+def test_budget_get_reads_the_balance_and_the_callers_own_cap(
+    api, client: MatterWave
+) -> None:
+    route = api.get("/api/budget").mock(
+        return_value=httpx.Response(200, json=budget_body(), headers=H)
+    )
+    budget = client.budget.get()
+    assert budget.request_id == REQUEST_ID
+    assert budget.remaining_tokens == 750_000 and budget.included_tokens == 2_000_000
+    assert budget.overage_enabled and budget.overage_cap_micros == 5_000_000
+    assert budget.member_cap is None and budget.member_exhausted is False
+    assert sent(route).method == "GET"
+
+
+def test_set_overage_cap_puts_the_number(api, client: MatterWave) -> None:
+    route = api.put("/api/budget").mock(
+        return_value=httpx.Response(
+            200,
+            json=budget_body(
+                overage_cap_micros=10_000_000, member_default_cap_micros=None
+            ),
+            headers=H,
+        )
+    )
+    budget = client.budget.set_overage_cap(10_000_000)
+    assert budget.overage_cap_micros == 10_000_000
+    assert body_of(route) == {"overage_cap_micros": 10_000_000}
+    assert route.call_count == 1
+    # A negative cap is refused here rather than spent on a 422.
+    with pytest.raises(ValueError):
+        client.budget.set_overage_cap(-1)
+    assert route.call_count == 1
+
+
+def test_budget_members_reads_rows_and_sets_the_default_cap(
+    api, client: MatterWave
+) -> None:
+    listing = {
+        "period_start": "2026-10-01",
+        "member_default_cap_micros": None,
+        "data": [
+            member_budget_body(email="a@example.test", name="Ada", role="owner", state="active"),
+            member_budget_body(
+                subject="u-2",
+                cap_micros=1_000_000,
+                own=True,
+                exhausted=True,
+                email="b@example.test",
+                name="Bob",
+                role="member",
+                state="active",
+            ),
+        ],
+    }
+    listed = api.get("/api/budget/members").mock(
+        return_value=httpx.Response(200, json=listing, headers=H)
+    )
+    put = api.put("/api/budget/members").mock(
+        return_value=httpx.Response(
+            200, json={**listing, "member_default_cap_micros": 2_000_000}, headers=H
+        )
+    )
+    members = client.budget.members()
+    assert [m.subject for m in members] == ["u-1", "u-2"]
+    assert members.data[1].own and members.data[1].exhausted
+    assert members.data[1].cap_micros == 1_000_000
+    assert listed.calls.last.request.method == "GET"
+    updated = client.budget.set_member_default_cap(2_000_000)
+    assert updated.member_default_cap_micros == 2_000_000
+    assert body_of(put) == {"member_default_cap_micros": 2_000_000}
+    # None lifts the default, and is sent rather than dropped.
+    client.budget.set_member_default_cap(None)
+    assert body_of(put) == {"member_default_cap_micros": None}
+
+
+def test_set_member_cap_addresses_the_subject_and_accepts_null(
+    api, client: MatterWave
+) -> None:
+    route = api.put("/api/budget/members/u-2").mock(
+        return_value=httpx.Response(
+            200,
+            json=member_budget_body(cap_micros=1_000_000, own=True),
+            headers=H,
+        )
+    )
+    capped = client.budget.set_member_cap("u-2", 1_000_000)
+    assert capped.own and capped.cap_micros == 1_000_000
+    assert sent(route).url.path == "/api/budget/members/u-2"
+    assert body_of(route) == {"cap_micros": 1_000_000}
+    client.budget.set_member_cap("u-2", None)
+    assert body_of(route) == {"cap_micros": None}
+    with pytest.raises(ValueError):
+        client.budget.set_member_cap("../keys", 1)
+
+
 # --- async ----------------------------------------------------------------------
 
 
@@ -715,6 +842,7 @@ async def test_async_clients_make_the_same_requests(api, async_client: AsyncMatt
     api.get(f"/api/attachments/{ATTACHMENT_ID}/content").respond(200, content=b"hello")
     api.get("/api/library").respond(200, json={"folders": [], "tags": [], "assignments": {}})
     api.get("/api/me/shares").respond(200, json={"data": [SHARE]}, headers=H)
+    api.get("/api/budget").respond(200, json=budget_body(), headers=H)
     async with async_client as client:
         assert (await client.keys.rotate(KEY_ID)).key == "s"
         assert await client.keys.revoke(KEY_ID) is None
@@ -724,3 +852,4 @@ async def test_async_clients_make_the_same_requests(api, async_client: AsyncMatt
         assert await client.attachments.download(attachment) == b"hello"
         assert (await client.library.get()).folders == []
         assert len(await client.shares.list_mine()) == 1
+        assert (await client.budget.get()).remaining_tokens == 750_000

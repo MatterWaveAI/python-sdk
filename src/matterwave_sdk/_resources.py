@@ -1,14 +1,15 @@
 """The native API clients: `keys`, `usage`, `webhooks`, `attachments`,
-`library` and `shares`, sync and async. Each method is one route; the
-request is built in `_native` and the answer parsed into `models`, so the
+`library`, `shares` and `budget`, sync and async. Each method is one route;
+the request is built in `_native` and the answer parsed into `models`, so the
 two halves here differ only in `await`.
 
 These are the routes the web app's settings panes use, open to an API key
 as its owner. Managing keys needs a key with `keys:manage` (or a session),
-webhooks a key with `webhooks:manage`, and the org usage report
-(`usage.org`, `usage.export_csv`) a key with `usage:read`. The scope never
-widens the owner's role: webhooks still need the owner to be an org owner or
-admin, and a member's `usage:read` key sees only their own row.
+webhooks a key with `webhooks:manage`, the org usage report
+(`usage.org`, `usage.export_csv`) a key with `usage:read`, and moving a
+budget cap an owner or admin. The scope never widens the owner's role:
+webhooks still need the owner to be an org owner or admin, and a member's
+`usage:read` key sees only their own row.
 """
 
 from __future__ import annotations
@@ -25,11 +26,14 @@ from .models import (
     ApiKeyList,
     Attachment,
     AttachmentLimits,
+    Budget,
     Conversation,
     ConversationTags,
     CreatedShare,
     Folder,
     Library,
+    MemberBudget,
+    MemberBudgetList,
     OrgUsage,
     SearchResults,
     SharedConversation,
@@ -518,6 +522,69 @@ class AsyncLibraryClient(_Async):
     async def set_tags(self, conversation_id: str, tag_ids: Sequence[str]) -> ConversationTags:
         body, rid = await self._object(req.set_tags_request(conversation_id, tag_ids))
         return ConversationTags.from_dict(body, request_id=rid)
+
+
+# --- budget --------------------------------------------------------------------
+
+
+class BudgetClient(_Sync):
+    """`/api/budget`: the org's allowance, what it has spent past it, and
+    the caps that stop it. Every member may read the balance (their own cap
+    and spend included); moving a cap is an owner or admin, and audited."""
+
+    def get(self) -> Budget:
+        """`GET /api/budget`: the period, the overage and the caps, with the
+        caller's own `member_cap` and `member_spent` beside the org's."""
+        body, rid = self._object(req.get_budget_request())
+        return Budget.from_dict(body, request_id=rid)
+
+    def set_overage_cap(self, overage_cap_micros: int) -> Budget:
+        """`PUT /api/budget`: the most overage a period may run up, in
+        micro-dollars at list price. 0 restores the plan's default (its
+        monthly price). Owner or admin only."""
+        body, rid = self._object(req.set_overage_cap_request(overage_cap_micros))
+        return Budget.from_dict(body, request_id=rid)
+
+    def members(self) -> MemberBudgetList:
+        """`GET /api/budget/members`: every member's cap in force and spend
+        this month. Owner or admin only."""
+        body, rid = self._object(req.member_budgets_request())
+        return MemberBudgetList.from_dict(body, request_id=rid)
+
+    def set_member_default_cap(self, member_default_cap_micros: int | None) -> MemberBudgetList:
+        """`PUT /api/budget/members`: the cap every member without one of
+        their own is held to; None lifts it. Owner or admin only."""
+        body, rid = self._object(req.set_member_default_cap_request(member_default_cap_micros))
+        return MemberBudgetList.from_dict(body, request_id=rid)
+
+    def set_member_cap(self, subject: str, cap_micros: int | None) -> MemberBudget:
+        """`PUT /api/budget/members/{subject}`: one member's own cap, which
+        beats the org's default up or down; None removes it so the default
+        applies. Owner or admin only, and only for a current member."""
+        body, rid = self._object(req.set_member_cap_request(subject, cap_micros))
+        return MemberBudget.from_dict(body, request_id=rid)
+
+
+class AsyncBudgetClient(_Async):
+    async def get(self) -> Budget:
+        body, rid = await self._object(req.get_budget_request())
+        return Budget.from_dict(body, request_id=rid)
+
+    async def set_overage_cap(self, overage_cap_micros: int) -> Budget:
+        body, rid = await self._object(req.set_overage_cap_request(overage_cap_micros))
+        return Budget.from_dict(body, request_id=rid)
+
+    async def members(self) -> MemberBudgetList:
+        body, rid = await self._object(req.member_budgets_request())
+        return MemberBudgetList.from_dict(body, request_id=rid)
+
+    async def set_member_default_cap(self, member_default_cap_micros: int | None) -> MemberBudgetList:
+        body, rid = await self._object(req.set_member_default_cap_request(member_default_cap_micros))
+        return MemberBudgetList.from_dict(body, request_id=rid)
+
+    async def set_member_cap(self, subject: str, cap_micros: int | None) -> MemberBudget:
+        body, rid = await self._object(req.set_member_cap_request(subject, cap_micros))
+        return MemberBudget.from_dict(body, request_id=rid)
 
 
 # --- shares --------------------------------------------------------------------

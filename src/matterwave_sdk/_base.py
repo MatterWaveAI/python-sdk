@@ -99,6 +99,22 @@ APP_OPERATIONS: dict[str, tuple[str, str]] = {
     "conversations.fork": ("POST", "/api/conversations/{conversation_id}/fork"),
     "conversations.context": ("GET", "/api/conversations/{conversation_id}/context"),
     "conversations.compact": ("POST", "/api/conversations/{conversation_id}/compact"),
+    "conversations.delete": ("DELETE", "/api/conversations/{conversation_id}"),
+    "conversations.pin": ("PUT", "/api/conversations/{conversation_id}/pin"),
+    "conversations.unpin": ("DELETE", "/api/conversations/{conversation_id}/pin"),
+    "conversations.archive": ("PUT", "/api/conversations/{conversation_id}/archive"),
+    "conversations.unarchive": ("DELETE", "/api/conversations/{conversation_id}/archive"),
+    "conversations.update_instructions": (
+        "PUT",
+        "/api/conversations/{conversation_id}/instructions",
+    ),
+    "instructions.user": ("GET", "/api/me/instructions"),
+    "instructions.update_user": ("PUT", "/api/me/instructions"),
+    "instructions.org": ("GET", "/api/org/instructions"),
+    "instructions.update_org": ("PUT", "/api/org/instructions"),
+    "messages.set_feedback": ("PUT", "/api/messages/{message_id}/feedback"),
+    "messages.delete_feedback": ("DELETE", "/api/messages/{message_id}/feedback"),
+    "app_models": ("GET", "/api/models"),
     "auth.device.start": ("POST", "/api/auth/device"),
     "auth.device.poll": ("POST", "/api/auth/device/token"),
     "keys.list": ("GET", "/api/keys"),
@@ -140,6 +156,11 @@ APP_OPERATIONS: dict[str, tuple[str, str]] = {
     "shares.list_mine": ("GET", "/api/me/shares"),
     "shares.revoke": ("DELETE", "/api/shares/{share_id}"),
     "shares.view": ("GET", "/api/share/{token}"),
+    "budget.get": ("GET", "/api/budget"),
+    "budget.set_overage_cap": ("PUT", "/api/budget"),
+    "budget.members": ("GET", "/api/budget/members"),
+    "budget.set_member_default_cap": ("PUT", "/api/budget/members"),
+    "budget.set_member_cap": ("PUT", "/api/budget/members/{subject}"),
 }
 
 
@@ -447,6 +468,75 @@ def conversation_context_request(conversation_id: str) -> Request:
 
 def compact_conversation_request(conversation_id: str) -> Request:
     return Request("POST", _conversation_path(conversation_id, "/compact"), {}, True, False)
+
+
+def delete_conversation_request(conversation_id: str) -> Request:
+    return Request("DELETE", _conversation_path(conversation_id), None, True, False)
+
+
+def set_pinned_request(conversation_id: str, pinned: bool) -> Request:
+    # PUT sets and DELETE clears rather than a PATCH carrying a boolean: the
+    # toggle is then idempotent by method, so a retried request cannot land
+    # in the opposite state from the one the caller asked for.
+    return Request(
+        "PUT" if pinned else "DELETE", _conversation_path(conversation_id, "/pin"), None, True, False
+    )
+
+
+def set_archived_request(conversation_id: str, archived: bool) -> Request:
+    return Request(
+        "PUT" if archived else "DELETE",
+        _conversation_path(conversation_id, "/archive"),
+        None,
+        True,
+        False,
+    )
+
+
+def conversation_instructions_request(conversation_id: str, text: str | None) -> Request:
+    """PUT, not PATCH: the route takes `{"text": ...}` whole, and a null (or
+    empty) text clears the thread's prompt so the user's instructions apply
+    again."""
+    return Request(
+        "PUT", _conversation_path(conversation_id, "/instructions"), {"text": text}, True, False
+    )
+
+
+def user_instructions_get_request() -> Request:
+    return Request("GET", "/api/me/instructions", None, keyed=True, stream=False)
+
+
+def user_instructions_request(about: str, style: str) -> Request:
+    # The route replaces the pair, so both fields always go: a field left
+    # out would clear it on the server rather than leave it alone.
+    return Request("PUT", "/api/me/instructions", {"about": about, "style": style}, True, False)
+
+
+def org_instructions_get_request() -> Request:
+    return Request("GET", "/api/org/instructions", None, keyed=True, stream=False)
+
+
+def org_instructions_request(text: str) -> Request:
+    return Request("PUT", "/api/org/instructions", {"text": text}, True, False)
+
+
+def _message_path(message_id: str, suffix: str = "") -> str:
+    return f"/api/messages/{_segment('message_id', message_id)}{suffix}"
+
+
+def set_feedback_request(
+    message_id: str, rating: int, reasons: Sequence[str], comment: str | None
+) -> Request:
+    body: dict[str, Any] = {"rating": rating, "reasons": list(reasons), "comment": comment}
+    return Request("PUT", _message_path(message_id, "/feedback"), body, True, False)
+
+
+def delete_feedback_request(message_id: str) -> Request:
+    return Request("DELETE", _message_path(message_id, "/feedback"), None, True, False)
+
+
+def app_models_request() -> Request:
+    return Request("GET", "/api/models", None, keyed=True, stream=False)
 
 
 def _turn_body(
