@@ -5,13 +5,21 @@ description = "Python client for the MatterWave API (the OpenAI-compatible /v1 s
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
+authors = [{ name = "MatterWave AI Contributors" }]
+keywords = ["matterwave", "openai", "api", "client", "llm", "chat", "streaming"]
 dependencies = [
     "httpx>=0.27",
 ]
 classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
     "Typing :: Typed",
 ]
+
+[project.urls]
+Homepage = "https://github.com/MatterWaveAI/python-sdk"
+Repository = "https://github.com/MatterWaveAI/python-sdk"
 
 [project.optional-dependencies]
 dev = [
@@ -31,6 +39,15 @@ path = "src/matterwave_sdk/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/matterwave_sdk"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/tests",
+    "/examples",
+    "/README.md",
+    "/LICENSE",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
