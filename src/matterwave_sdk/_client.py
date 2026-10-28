@@ -31,6 +31,7 @@ import httpx
 
 from . import _base
 from ._base import EmbeddingInput, Message, Request, Tool, ToolChoice
+from ._mcp import AsyncMcp, Mcp
 from ._resources import (
     AsyncAttachments,
     AsyncBudgetClient,
@@ -73,6 +74,7 @@ from .models import (
     EmbeddingList,
     Me,
     MessageFeedback,
+    MessageFeedbackList,
     Model,
     ModelList,
     OrgInstructions,
@@ -110,7 +112,7 @@ class _Config:
             files=dict(request.files) if request.files else None,
             params=dict(request.params) or None,
             headers=headers,
-            timeout=self.timeout,
+            timeout=request.timeout if request.timeout is not None else self.timeout,
         )
 
 
@@ -581,9 +583,21 @@ class Conversations:
         body, rid = self._object(_base.search_conversations_request(q, limit))
         return SearchResults.from_dict(body, request_id=rid)
 
-    def create(self, *, title: str | None = None, model: str | None = None) -> Conversation:
-        """`POST /api/conversations`. An untitled one is named from its first message."""
-        body, rid = self._object(_base.create_conversation_request(title, model))
+    def create(
+        self,
+        *,
+        title: str | None = None,
+        model: str | None = None,
+        temporary: bool | None = None,
+    ) -> Conversation:
+        """`POST /api/conversations`. An untitled one is named from its
+        first message. `temporary=True` asks the server not to keep the
+        conversation: it appears in no list (under any filter) or either
+        search, cannot be pinned, shared, forked, filed or tagged -- each
+        a 409 saying a temporary conversation is not kept -- and it is
+        hard-deleted 24 hours after its last message. The choice is fixed
+        at creation; nothing later turns it on or off."""
+        body, rid = self._object(_base.create_conversation_request(title, model, temporary))
         return Conversation.from_dict(body, request_id=rid)
 
     def get(self, conversation_id: str, *, full: bool = False) -> Conversation:
@@ -625,7 +639,9 @@ class Conversations:
     def fork(
         self, conversation_id: str, message_id: str, *, title: str | None = None
     ) -> Conversation:
-        """Copy the path down to `message_id` into a new conversation."""
+        """Copy the path down to `message_id` into a new conversation.
+        `ConflictError` for a temporary conversation: a temporary one is
+        not kept, so it cannot be forked."""
         body, rid = self._object(
             _base.fork_conversation_request(conversation_id, message_id, title)
         )
@@ -653,7 +669,8 @@ class Conversations:
     def pin(self, conversation_id: str) -> Conversation:
         """`PUT /api/conversations/{id}/pin`: to the top of the sidebar,
         first in the `pinned` filter. `ConflictError` for a temporary
-        conversation, which cannot be kept."""
+        conversation: a temporary one is not kept, so it cannot be
+        pinned."""
         body, rid = self._object(_base.set_pinned_request(conversation_id, True))
         return Conversation.from_dict(body, request_id=rid)
 
@@ -784,6 +801,13 @@ class Messages:
         Idempotent -- `none` when there was already nothing to remove."""
         body, rid = self._object(_base.delete_feedback_request(message_id))
         return RemovedFeedback.from_dict(body, request_id=rid)
+
+    def list_feedback(self, conversation_id: str) -> MessageFeedbackList:
+        """`GET /api/conversations/{id}/feedback`: the caller's own ratings
+        in this conversation, in creation order, so the thumbs can be
+        redrawn on reload. Nobody else's rows, and no aggregates."""
+        body, rid = self._object(_base.list_feedback_request(conversation_id))
+        return MessageFeedbackList.from_dict(body, request_id=rid)
 
 
 class Instructions:
@@ -939,6 +963,7 @@ class MatterWave:
         self.library = LibraryClient(self)
         self.shares = Shares(self)
         self.budget = BudgetClient(self)
+        self.mcp = Mcp(self)
 
     @property
     def base_url(self) -> str:
@@ -1188,8 +1213,14 @@ class AsyncConversations:
         body, rid = await self._object(_base.search_conversations_request(q, limit))
         return SearchResults.from_dict(body, request_id=rid)
 
-    async def create(self, *, title: str | None = None, model: str | None = None) -> Conversation:
-        body, rid = await self._object(_base.create_conversation_request(title, model))
+    async def create(
+        self,
+        *,
+        title: str | None = None,
+        model: str | None = None,
+        temporary: bool | None = None,
+    ) -> Conversation:
+        body, rid = await self._object(_base.create_conversation_request(title, model, temporary))
         return Conversation.from_dict(body, request_id=rid)
 
     async def get(self, conversation_id: str, *, full: bool = False) -> Conversation:
@@ -1346,6 +1377,10 @@ class AsyncMessages:
         body, rid = await self._object(_base.delete_feedback_request(message_id))
         return RemovedFeedback.from_dict(body, request_id=rid)
 
+    async def list_feedback(self, conversation_id: str) -> MessageFeedbackList:
+        body, rid = await self._object(_base.list_feedback_request(conversation_id))
+        return MessageFeedbackList.from_dict(body, request_id=rid)
+
 
 class AsyncInstructions:
     def __init__(self, client: AsyncMatterWave) -> None:
@@ -1458,6 +1493,7 @@ class AsyncMatterWave:
         self.library = AsyncLibraryClient(self)
         self.shares = AsyncShares(self)
         self.budget = AsyncBudgetClient(self)
+        self.mcp = AsyncMcp(self)
 
     @property
     def base_url(self) -> str:

@@ -133,6 +133,64 @@ class DeviceAuthError(APIError):
     second); `expired_token` and `access_denied` mean start over."""
 
 
+class McpError(MatterWaveError):
+    """A JSON-RPC error the `/mcp` endpoint answered with.
+
+    `code` is the JSON-RPC code: -32601 for a method the server does not
+    have, -32022 for a protocol version it does not serve (the ones it does
+    ride in `data["supported"]`), -32020 for a mirrored header that disagrees
+    with the body. A refusal that happens before any method runs -- no key,
+    a revoked one, the key's rate limit -- is not here: it travels with its
+    HTTP status and is raised as the ordinary `APIError` family
+    (`RateLimitError` and friends).
+    """
+
+    def __init__(self, message: str, *, code: int | None = None, data: Any = None) -> None:
+        super().__init__(message)
+        self.message = message
+        self.code = code
+        self.data = data
+
+    def __str__(self) -> str:
+        parts = [self.message]
+        if self.code is not None:
+            parts.append(f"[{self.code}]")
+        return " ".join(parts)
+
+
+class McpToolError(McpError):
+    """A tool that ran and refused, in the protocol's own shape: the result
+    carried `isError: true` and a `structuredContent.error`, so the call
+    succeeded and the answer is "no" -- the model's plan, not the transport,
+    is what failed.
+
+    `error_code` is the machine-readable reason (`budget`, `not_found`,
+    `upgrade_required`, `moderation`, ...), `detail` the prose, `status` the
+    HTTP status of the underlying refusal where there was one, `request_id`
+    the server's id for finding the call in its logs, and `error` the whole
+    structured error as sent.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        tool: str,
+        error_code: str,
+        detail: str,
+        request_id: str | None = None,
+        status: int | None = None,
+        error: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.tool = tool
+        self.error_code = error_code
+        self.detail = detail
+        self.request_id = request_id
+        self.status = status
+        self.error = error if error is not None else {}
+
+
 def error_class_for(status_code: int) -> type[APIError]:
     if status_code == 400:
         return BadRequestError

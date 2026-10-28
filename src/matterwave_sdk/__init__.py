@@ -11,7 +11,8 @@ Both arguments default to `MATTERWAVE_API_KEY` and `MATTERWAVE_BASE_URL`.
 frames (`matterwave_sdk.frames`); `client.auth.device` signs a person in by
 device code and returns the key to use. `client.keys`, `client.usage`,
 `client.webhooks`, `client.attachments`, `client.library` and
-`client.shares` are the app's native routes for the same.
+`client.shares` are the app's native routes for the same, and `client.mcp`
+speaks the `/mcp` JSON-RPC endpoint (list tools, call one, send a message).
 """
 
 from . import frames
@@ -33,6 +34,7 @@ from ._client import (
     MatterWave,
     Stream,
 )
+from ._mcp import AsyncMcp, Mcp, McpTool, McpToolResult, SendMessageResult
 from ._resources import (
     AsyncAttachments,
     AsyncBudgetClient,
@@ -59,6 +61,8 @@ from .errors import (
     ConflictError,
     DeviceAuthError,
     MatterWaveError,
+    McpError,
+    McpToolError,
     MissingAPIKeyError,
     NotFoundError,
     PermissionDeniedError,
@@ -120,6 +124,7 @@ from .models import (
     MemberBudgetList,
     MemberUsage,
     MessageFeedback,
+    MessageFeedbackList,
     Model,
     ModelList,
     ModelUsage,
@@ -139,10 +144,12 @@ from .models import (
     UsageBalance,
     UsageTotals,
     UserInstructions,
+    VisionVerdict,
     WebhookDelivery,
     WebhookDeliveryList,
     WebhookEndpoint,
     WebhookEndpointList,
+    vision_of,
 )
 
 __all__ = [
@@ -163,6 +170,7 @@ __all__ = [
     "AsyncKeys",
     "AsyncLibraryClient",
     "AsyncMatterWave",
+    "AsyncMcp",
     "AsyncShares",
     "AsyncStream",
     "AsyncUsageClient",
@@ -211,12 +219,18 @@ __all__ = [
     "LibraryClient",
     "MatterWave",
     "MatterWaveError",
+    "Mcp",
+    "McpError",
+    "McpTool",
+    "McpToolError",
+    "McpToolResult",
     "Me",
     "MemberBudget",
     "MemberBudgetList",
     "MemberUsage",
     "Message",
     "MessageFeedback",
+    "MessageFeedbackList",
     "MessageFrame",
     "MissingAPIKeyError",
     "Model",
@@ -236,6 +250,7 @@ __all__ = [
     "Role",
     "SearchHit",
     "SearchResults",
+    "SendMessageResult",
     "ServerError",
     "Share",
     "ShareList",
@@ -256,6 +271,8 @@ __all__ = [
     "UsageClient",
     "UsageTotals",
     "UserInstructions",
+    "VisionVerdict",
+    "vision_of",
     "WebhookDelivery",
     "WebhookDeliveryList",
     "WebhookEndpoint",

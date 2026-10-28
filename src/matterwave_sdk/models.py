@@ -13,8 +13,9 @@ successful call needs to be found in the server's logs.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 
 def _int(value: Any, default: int = 0) -> int:
@@ -505,6 +506,10 @@ class Conversation:
     pinned_at: str | None = None
     archived_at: str | None = None
     folder_id: str | None = None
+    # A temporary conversation is in no list or search, cannot be pinned,
+    # shared, forked, filed or tagged, and is hard-deleted a day after its
+    # last message. Fixed at creation.
+    temporary: bool = False
     messages: list[ConversationMessage] = field(default_factory=list)
     tree: list[ConversationMessage] | None = None
     # The instruction levels in force, as `get` reports them; the server owns the shape.
@@ -529,6 +534,7 @@ class Conversation:
             pinned_at=_opt_str(data.get("pinned_at")),
             archived_at=_opt_str(data.get("archived_at")),
             folder_id=_opt_str(data.get("folder_id")),
+            temporary=data.get("temporary") is True,
             messages=[ConversationMessage.from_dict(m) for m in _dicts(data.get("messages"))],
             tree=(
                 [ConversationMessage.from_dict(m) for m in _dicts(tree)]
@@ -1530,6 +1536,31 @@ class RemovedFeedback:
 
 
 @dataclass(frozen=True)
+class MessageFeedbackList:
+    """`GET /api/conversations/{id}/feedback`: the caller's own ratings in
+    one conversation, in creation order, so a client can redraw its thumbs
+    on reload. Nobody else's rows."""
+
+    data: list[MessageFeedback]
+    request_id: str | None = field(default=None, compare=False)
+
+    def __iter__(self) -> Any:
+        return iter(self.data)
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    @classmethod
+    def from_dict(
+        cls, data: dict[str, Any], *, request_id: str | None = None
+    ) -> MessageFeedbackList:
+        return cls(
+            data=[MessageFeedback.from_dict(r) for r in _dicts(data.get("data"))],
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
 class AppModel:
     """One row of the model picker (`GET /api/models`): the model, what it
     costs, and the caller's plan's relationship to it. `included` is False
@@ -1697,3 +1728,57 @@ class MemberBudgetList:
             data=[MemberBudget.from_dict(r) for r in _dicts(data.get("data"))],
             request_id=request_id,
         )
+
+
+# --- vision -------------------------------------------------------------------
+#
+# Which models accept images, mirrored from the web app's vision.ts, which
+# reads the same `GET /api/models` rows. The tri-state is the API's
+# `supports_vision: true | false | null`, where null means the gateway did
+# not say.
+
+VisionVerdict = Literal["yes", "no", "unknown"]
+
+
+def vision_of(models: Sequence[Any] | None, model_id: str | None) -> VisionVerdict:
+    """What the model list says about `model_id`'s image input, as one of
+    `"yes"`, `"no"` or `"unknown"`.
+
+    Gate BEFORE the upload: the point of the check is that the person learns
+    their screenshot will not be sent while they are still choosing the
+    file, not after they have waited out a 5 MB upload and a spinner. The
+    server's own 422 ("The model ... does not accept image input") is the
+    authority and is not replaced by this -- it simply arrives too late to
+    be good UX.
+
+    `"no"` is the only refusing verdict. `model_id=None` (the picker's
+    "Default") is `"unknown"`, because which model that resolves to is the
+    server's business; a model absent from the list is `"unknown"`, not
+    `"no"`, because the picker and the gateway can disagree transiently and
+    that must not become a refusal; and `supports_vision=None` is
+    `"unknown"`, because a bare llama.cpp or vLLM build serves a model list
+    with nothing but `id` and treating silence as "no" would make
+    attachments dead there. The cost of a wrong "yes" is the upstream error
+    the caller would have got anyway; the cost of a wrong "no" is a capable
+    model nobody can use.
+
+    `models` is `app_models().data`, or the raw `/api/models` `data` rows as
+    dicts; anything with `id` and `supports_vision` attributes works.
+    """
+    if model_id is None or models is None:
+        return "unknown"
+    for entry in models:
+        if isinstance(entry, dict):
+            found = entry.get("id") == model_id
+            supports = entry.get("supports_vision")
+        else:
+            found = getattr(entry, "id", None) == model_id
+            supports = getattr(entry, "supports_vision", None)
+        if not found:
+            continue
+        if supports is True:
+            return "yes"
+        if supports is False:
+            return "no"
+        return "unknown"
+    return "unknown"

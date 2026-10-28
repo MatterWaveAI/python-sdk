@@ -114,6 +114,7 @@ APP_OPERATIONS: dict[str, tuple[str, str]] = {
     "instructions.update_org": ("PUT", "/api/org/instructions"),
     "messages.set_feedback": ("PUT", "/api/messages/{message_id}/feedback"),
     "messages.delete_feedback": ("DELETE", "/api/messages/{message_id}/feedback"),
+    "messages.list_feedback": ("GET", "/api/conversations/{conversation_id}/feedback"),
     "app_models": ("GET", "/api/models"),
     "auth.device.start": ("POST", "/api/auth/device"),
     "auth.device.poll": ("POST", "/api/auth/device/token"),
@@ -239,6 +240,9 @@ class Request:
     # A multipart upload: field name -> (filename, bytes, content type). The
     # bytes are held whole so a retried upload sends the same file again.
     files: Mapping[str, tuple[str, bytes, str]] | None = None
+    # This request's timeout, where the client's default is wrong for it:
+    # an MCP tool that runs a whole model turn takes minutes, not seconds.
+    timeout: float | None = None
 
 
 def index_request() -> Request:
@@ -394,12 +398,16 @@ def search_conversations_request(q: str, limit: int | None) -> Request:
     )
 
 
-def create_conversation_request(title: str | None, model: str | None) -> Request:
+def create_conversation_request(
+    title: str | None, model: str | None, temporary: bool | None = None
+) -> Request:
     body: dict[str, Any] = {}
     if title is not None:
         body["title"] = title
     if model is not None:
         body["model"] = model
+    if temporary is not None:
+        body["temporary"] = temporary
     return Request("POST", "/api/conversations", body, keyed=True, stream=False)
 
 
@@ -533,6 +541,13 @@ def set_feedback_request(
 
 def delete_feedback_request(message_id: str) -> Request:
     return Request("DELETE", _message_path(message_id, "/feedback"), None, True, False)
+
+
+def list_feedback_request(conversation_id: str) -> Request:
+    """The caller's own ratings in one conversation, read back as a list."""
+    return Request(
+        "GET", _conversation_path(conversation_id, "/feedback"), None, True, stream=False
+    )
 
 
 def app_models_request() -> Request:

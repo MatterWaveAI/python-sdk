@@ -229,6 +229,51 @@ def test_feedback_refuses_an_id_that_would_change_the_path(client: MatterWave) -
         client.messages.set_feedback("../keys", 1)
 
 
+CONV = "c0ffee00-0000-4000-8000-000000000001"
+
+
+def feedback_row(mid: str, rating: int) -> dict:
+    return {
+        "message_id": mid,
+        "rating": rating,
+        "reasons": ["wrong"] if rating < 0 else [],
+        "comment": None,
+        "created_at": "2026-10-18T09:00:00+00:00",
+        "updated_at": "2026-10-18T09:00:00+00:00",
+    }
+
+
+def test_list_feedback_reads_the_caller_s_own_rows_in_order(
+    api, client: MatterWave
+) -> None:
+    route = api.get(f"/api/conversations/{CONV}/feedback").mock(
+        return_value=httpx.Response(
+            200,
+            json={"data": [feedback_row("m-1", 1), feedback_row("m-2", -1)]},
+            headers=H,
+        )
+    )
+    rows = client.messages.list_feedback(CONV)
+    assert rows.request_id == REQUEST_ID
+    assert [r.message_id for r in rows] == ["m-1", "m-2"]
+    assert rows.data[0].rating == 1 and rows.data[1].rating == -1
+    assert len(rows) == 2
+    assert route.calls.last.request.method == "GET"
+    assert route.calls.last.request.url.path == f"/api/conversations/{CONV}/feedback"
+
+
+@pytest.mark.asyncio
+async def test_the_async_list_feedback_reads_the_same_body(
+    api, async_client  # noqa: ANN001
+) -> None:
+    route = api.get(f"/api/conversations/{CONV}/feedback").mock(
+        return_value=httpx.Response(200, json={"data": [feedback_row("m-1", 1)]}, headers=H)
+    )
+    rows = await async_client.messages.list_feedback(CONV)
+    assert [r.message_id for r in rows] == ["m-1"]
+    assert route.calls.last.request.method == "GET"
+
+
 @pytest.mark.asyncio
 async def test_the_async_feedback_sends_the_same_body(
     api, async_client  # noqa: ANN001

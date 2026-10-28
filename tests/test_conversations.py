@@ -446,6 +446,36 @@ def test_list_search_create_and_get(api, client: MatterWave) -> None:
     assert got.calls.last.request.url.params["full"] == "1"
 
 
+def test_create_can_ask_for_a_temporary_conversation(api, client: MatterWave) -> None:
+    created = api.post("/api/conversations").mock(
+        return_value=httpx.Response(201, json=conversation(temporary=True))
+    )
+    temp = client.conversations.create(title="Scratch", temporary=True)
+    assert temp.temporary is True
+    assert json.loads(created.calls.last.request.content) == {
+        "title": "Scratch",
+        "temporary": True,
+    }
+    # False is sent as false, so the caller's explicit choice survives any
+    # server default drift; leaving it out sends nothing.
+    client.conversations.create(title="Keep", temporary=False)
+    assert json.loads(created.calls.last.request.content) == {"title": "Keep", "temporary": False}
+    client.conversations.create(title="Quiet")
+    assert json.loads(created.calls.last.request.content) == {"title": "Quiet"}
+
+
+@pytest.mark.asyncio
+async def test_the_async_create_can_ask_for_a_temporary_conversation(
+    api, async_client: AsyncMatterWave
+) -> None:
+    created = api.post("/api/conversations").mock(
+        return_value=httpx.Response(201, json=conversation(temporary=True))
+    )
+    temp = await async_client.conversations.create(temporary=True)
+    assert temp.temporary is True
+    assert json.loads(created.calls.last.request.content) == {"temporary": True}
+
+
 SECOND = "c0ffee00-0000-4000-8000-000000000002"
 THIRD = "c0ffee00-0000-4000-8000-000000000003"
 
@@ -741,16 +771,38 @@ async def test_the_async_pin_sends_the_same_verb(
 
 
 def test_a_pin_that_409s_for_a_temporary_conversation(api, client: MatterWave) -> None:
+    # The route's own words (store.py's TEMPORARY_CONVERSATION_DETAIL):
+    # keeping is exactly what a temporary conversation does not do.
     api.put(f"/api/conversations/{CONV}/pin").mock(
         return_value=httpx.Response(
             409,
-            json={"detail": "A temporary conversation cannot be pinned.", "request_id": REQUEST_ID},
+            json={
+                "detail": "A temporary conversation is not kept, so it cannot be pinned.",
+                "request_id": REQUEST_ID,
+            },
         )
     )
     with pytest.raises(ConflictError) as caught:
         client.conversations.pin(CONV)
     assert caught.value.status_code == 409
-    assert caught.value.message == "A temporary conversation cannot be pinned."
+    assert caught.value.message == "A temporary conversation is not kept, so it cannot be pinned."
+
+
+def test_a_fork_of_a_temporary_conversation_is_the_same_conflict(
+    api, client: MatterWave
+) -> None:
+    api.post(f"/api/conversations/{CONV}/fork").mock(
+        return_value=httpx.Response(
+            409,
+            json={
+                "detail": "A temporary conversation is not kept, so it cannot be forked.",
+                "request_id": REQUEST_ID,
+            },
+        )
+    )
+    with pytest.raises(ConflictError) as caught:
+        client.conversations.fork(CONV, "m-user")
+    assert caught.value.message == "A temporary conversation is not kept, so it cannot be forked."
 
 
 # --- instructions -----------------------------------------------------------------
