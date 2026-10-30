@@ -33,17 +33,23 @@ from . import _base
 from ._base import EmbeddingInput, Message, Request, Tool, ToolChoice
 from ._mcp import AsyncMcp, Mcp
 from ._resources import (
+    Announcements,
+    AsyncAnnouncements,
     AsyncAttachments,
     AsyncBudgetClient,
+    AsyncEntitlementsClient,
     AsyncKeys,
     AsyncLibraryClient,
+    AsyncNotifications,
     AsyncShares,
     AsyncUsageClient,
     AsyncWebhooks,
     Attachments,
     BudgetClient,
+    EntitlementsClient,
     Keys,
     LibraryClient,
+    Notifications,
     Shares,
     UsageClient,
     Webhooks,
@@ -963,6 +969,9 @@ class MatterWave:
         self.library = LibraryClient(self)
         self.shares = Shares(self)
         self.budget = BudgetClient(self)
+        self.notifications = Notifications(self)
+        self.announcements = Announcements(self)
+        self.entitlements = EntitlementsClient(self)
         self.mcp = Mcp(self)
 
     @property
@@ -1493,6 +1502,9 @@ class AsyncMatterWave:
         self.library = AsyncLibraryClient(self)
         self.shares = AsyncShares(self)
         self.budget = AsyncBudgetClient(self)
+        self.notifications = AsyncNotifications(self)
+        self.announcements = AsyncAnnouncements(self)
+        self.entitlements = AsyncEntitlementsClient(self)
         self.mcp = AsyncMcp(self)
 
     @property

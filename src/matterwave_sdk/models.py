@@ -1730,6 +1730,235 @@ class MemberBudgetList:
         )
 
 
+# --- the bell (0.3) -----------------------------------------------------------
+#
+# Notifications, announcements and entitlements: the shell's bell and banner
+# and the plan facts behind them. As above, the fields are the ones the
+# routes send today and anything new is dropped rather than refused.
+
+
+@dataclass(frozen=True)
+class Notification:
+    """One row of the bell (`GET /api/me/notifications`): a title, an
+    optional body, and `link`, the in-app path or URL the click opens.
+    `read_at` is when the person saw it, None while it is unread.
+    `unread_count` is set only on the answer to `notifications.read`,
+    beside the row it marked."""
+
+    id: str
+    kind: str
+    title: str
+    body: str = ""
+    link: str | None = None
+    created_at: str = ""
+    read_at: str | None = None
+    unread_count: int | None = None
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> Notification:
+        return cls(
+            id=_str(data.get("id")),
+            kind=_str(data.get("kind")),
+            title=_str(data.get("title")),
+            body=_str(data.get("body")),
+            link=_opt_str(data.get("link")),
+            created_at=_str(data.get("created_at")),
+            read_at=_opt_str(data.get("read_at")),
+            unread_count=_opt_int(data.get("unread_count")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class NotificationList:
+    """`GET /api/me/notifications`: the caller's rows, newest first, with
+    the unread count the bell shows. `unread=True` lists only the unread
+    ones; the count is the same either way."""
+
+    data: list[Notification]
+    unread_count: int
+    request_id: str | None = field(default=None, compare=False)
+
+    def __iter__(self) -> Any:
+        return iter(self.data)
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> NotificationList:
+        return cls(
+            data=[Notification.from_dict(n) for n in _dicts(data.get("data"))],
+            unread_count=_int(data.get("unread_count")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class NotificationsReadAll:
+    """The answer to `notifications.read_all`: how many unread rows were
+    marked read, and the bell's count now -- zero, whatever it was."""
+
+    read: int
+    unread_count: int
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(
+        cls, data: dict[str, Any], *, request_id: str | None = None
+    ) -> NotificationsReadAll:
+        return cls(
+            read=_int(data.get("read")),
+            unread_count=_int(data.get("unread_count")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class Announcement:
+    """One row of the banner (`GET /api/announcements`): an operator's
+    message with a severity (`critical`, `warning` or `info`) and its
+    window. Only the active ones -- inside their window now -- are listed,
+    most severe first. Critical ones are never dismissible."""
+
+    id: str
+    message: str
+    severity: str
+    link: str | None
+    starts_at: str
+    ends_at: str | None
+    dismissible: bool
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> Announcement:
+        return cls(
+            id=_str(data.get("id")),
+            message=_str(data.get("message")),
+            severity=_str(data.get("severity")),
+            link=_opt_str(data.get("link")),
+            starts_at=_str(data.get("starts_at")),
+            ends_at=_opt_str(data.get("ends_at")),
+            dismissible=data.get("dismissible") is True,
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class AnnouncementList:
+    """`GET /api/announcements`: the active announcements, most severe first."""
+
+    data: list[Announcement]
+    request_id: str | None = field(default=None, compare=False)
+
+    def __iter__(self) -> Any:
+        return iter(self.data)
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> AnnouncementList:
+        return cls(
+            data=[Announcement.from_dict(a) for a in _dicts(data.get("data"))],
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class EntitlementLimits:
+    """The `limits` of `GET /api/entitlements`, with the fields the plan
+    resolver computes. Every `None` limit is unlimited, not zero; the
+    convention is the caller's to apply, exactly as the route leaves it.
+    `features` is the plan's feature flags, kept as sent."""
+
+    included_tokens: int
+    included_tokens_per_seat: int | None
+    overage_enabled: bool
+    budget_duration: str
+    tpm_limit: int | None
+    rpm_limit: int | None
+    max_parallel_requests: int | None
+    max_conversations: int | None
+    max_seats: int | None
+    allowed_models: list[str] | None
+    features: dict[str, Any]
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> EntitlementLimits:
+        return cls(
+            included_tokens=_int(data.get("included_tokens")),
+            included_tokens_per_seat=_opt_int(data.get("included_tokens_per_seat")),
+            overage_enabled=data.get("overage_enabled") is True,
+            budget_duration=_str(data.get("budget_duration")),
+            tpm_limit=_opt_int(data.get("tpm_limit")),
+            rpm_limit=_opt_int(data.get("rpm_limit")),
+            max_parallel_requests=_opt_int(data.get("max_parallel_requests")),
+            max_conversations=_opt_int(data.get("max_conversations")),
+            max_seats=_opt_int(data.get("max_seats")),
+            allowed_models=_opt_strs(data.get("allowed_models")),
+            features=_dict(data.get("features")),
+        )
+
+
+@dataclass(frozen=True)
+class Entitlements:
+    """`GET /api/entitlements`: what the caller's org is allowed to do --
+    the plan, its prices and allowance, the seat counts, and, for an org a
+    downgrade left over its conversation cap, `writes_blocked` with
+    `read_only_reason` saying so (reads never stop; new conversations do).
+    Any member may read it, like `/api/budget`."""
+
+    org_id: str
+    plan: str
+    plan_name: str
+    status: str
+    seats: int
+    per_seat: bool
+    billed_seats: int
+    price_cents_monthly: int
+    price_cents_annual: int
+    implicit: bool
+    billing_interval: str
+    current_period_end: str | None
+    cancel_at_period_end: bool
+    trial_end: str | None
+    default_overage_cap_micros: int
+    limits: EntitlementLimits
+    over_capacity: int
+    writes_blocked: bool
+    read_only_reason: str | None
+    dunning_stage: str
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> Entitlements:
+        return cls(
+            org_id=_str(data.get("org_id")),
+            plan=_str(data.get("plan")),
+            plan_name=_str(data.get("plan_name")),
+            status=_str(data.get("status"), "active"),
+            seats=_int(data.get("seats"), 1),
+            per_seat=data.get("per_seat") is True,
+            billed_seats=_int(data.get("billed_seats"), 1),
+            price_cents_monthly=_int(data.get("price_cents_monthly")),
+            price_cents_annual=_int(data.get("price_cents_annual")),
+            implicit=data.get("implicit") is True,
+            billing_interval=_str(data.get("billing_interval"), "monthly"),
+            current_period_end=_opt_str(data.get("current_period_end")),
+            cancel_at_period_end=data.get("cancel_at_period_end") is True,
+            trial_end=_opt_str(data.get("trial_end")),
+            default_overage_cap_micros=_int(data.get("default_overage_cap_micros")),
+            limits=EntitlementLimits.from_dict(_dict(data.get("limits"))),
+            over_capacity=_int(data.get("over_capacity")),
+            writes_blocked=data.get("writes_blocked") is True,
+            read_only_reason=_opt_str(data.get("read_only_reason")),
+            dunning_stage=_str(data.get("dunning_stage"), "clear"),
+            request_id=request_id,
+        )
+
+
 # --- vision -------------------------------------------------------------------
 #
 # Which models accept images, mirrored from the web app's vision.ts, which

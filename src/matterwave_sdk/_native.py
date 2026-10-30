@@ -445,3 +445,54 @@ def revoke_share_request(share_id: str) -> Request:
 def view_share_request(token: str) -> Request:
     """The public read: no key, the link's token is the whole credential."""
     return Request("GET", f"/api/share/{_segment('token', token)}", None, keyed=False, stream=False)
+
+
+# --- notifications ---------------------------------------------------------------
+
+
+def _notification_path(notification_id: str, suffix: str = "") -> str:
+    return f"/api/me/notifications/{_segment('notification_id', notification_id)}{suffix}"
+
+
+NOTIFICATIONS_LIMIT_MAX = 100
+
+
+def list_notifications_request(unread: bool | None, limit: int | None) -> Request:
+    """The bell's rows, newest first. `unread` filters to the unread ones
+    when passed (the query flag is 0/1); `limit` is the route's 1 to 100."""
+    params: dict[str, str] = {}
+    if unread is not None:
+        params["unread"] = "1" if unread else "0"
+    if limit is not None:
+        if not 1 <= limit <= NOTIFICATIONS_LIMIT_MAX:
+            raise ValueError(f"limit must be 1 to {NOTIFICATIONS_LIMIT_MAX}, got {limit}")
+        params["limit"] = str(limit)
+    return Request("GET", "/api/me/notifications", None, keyed=True, stream=False, params=params)
+
+
+def read_all_notifications_request() -> Request:
+    return Request("POST", "/api/me/notifications/read-all", None, keyed=True, stream=False)
+
+
+def read_notification_request(notification_id: str) -> Request:
+    return Request(
+        "POST", _notification_path(notification_id, "/read"), None, keyed=True, stream=False
+    )
+
+
+# --- announcements ---------------------------------------------------------------
+
+
+def active_announcements_request() -> Request:
+    """The banner's rows: only the ones inside their window now, most
+    severe first. Writing announcements is the admin surface's."""
+    return Request("GET", "/api/announcements", None, keyed=True, stream=False)
+
+
+# --- entitlements ----------------------------------------------------------------
+
+
+def entitlements_request() -> Request:
+    """What the caller's org may do. Member-readable, like `/api/budget`:
+    a person must be able to see the limit that will stop their request."""
+    return Request("GET", "/api/entitlements", None, keyed=True, stream=False)

@@ -1,7 +1,8 @@
 """The native API clients: `keys`, `usage`, `webhooks`, `attachments`,
-`library`, `shares` and `budget`, sync and async. Each method is one route;
-the request is built in `_native` and the answer parsed into `models`, so the
-two halves here differ only in `await`.
+`library`, `shares`, `budget`, `notifications`, `announcements` and
+`entitlements`, sync and async. Each method is one route; the request is
+built in `_native` and the answer parsed into `models`, so the two halves
+here differ only in `await`.
 
 These are the routes the web app's settings panes use, open to an API key
 as its owner. Managing keys needs a key with `keys:manage` (or a session),
@@ -9,7 +10,9 @@ webhooks a key with `webhooks:manage`, the org usage report
 (`usage.org`, `usage.export_csv`) a key with `usage:read`, and moving a
 budget cap an owner or admin. The scope never widens the owner's role:
 webhooks still need the owner to be an org owner or admin, and a member's
-`usage:read` key sees only their own row.
+`usage:read` key sees only their own row. Notifications are the caller's
+own rows, announcements are the operator's banner anyone signed in reads,
+and entitlements are the plan facts any member of the org may read.
 """
 
 from __future__ import annotations
@@ -22,6 +25,7 @@ from . import _base
 from . import _native as req
 from ._base import UNSET, Request
 from .models import (
+    AnnouncementList,
     ApiKey,
     ApiKeyList,
     Attachment,
@@ -30,10 +34,14 @@ from .models import (
     Conversation,
     ConversationTags,
     CreatedShare,
+    Entitlements,
     Folder,
     Library,
     MemberBudget,
     MemberBudgetList,
+    Notification,
+    NotificationList,
+    NotificationsReadAll,
     OrgUsage,
     SearchResults,
     SharedConversation,
@@ -640,3 +648,89 @@ class AsyncShares(_Async):
     async def view(self, token: str) -> SharedConversation:
         body, rid = await self._object(req.view_share_request(token))
         return SharedConversation.from_dict(body, request_id=rid)
+
+
+# --- notifications --------------------------------------------------------------
+
+
+class Notifications(_Sync):
+    """The caller's in-app notifications: the bell in the web app's header.
+    Reads are the caller's own rows only; another person's id is
+    indistinguishable from one that does not exist -- both a 404."""
+
+    def list(self, *, unread: bool | None = None, limit: int | None = None) -> NotificationList:
+        """`GET /api/me/notifications`: the rows, newest first, with the
+        unread count the bell shows. `unread=True` lists only the unread
+        ones (False only the read ones); `limit` is 1 to 100 (30 when
+        omitted)."""
+        body, rid = self._object(req.list_notifications_request(unread, limit))
+        return NotificationList.from_dict(body, request_id=rid)
+
+    def read(self, notification_id: str) -> Notification:
+        """`POST /api/me/notifications/{id}/read`: mark one read -- an
+        already-read row keeps its first `read_at` -- and get it back with
+        the bell's count now. `NotFoundError` for an id that is not the
+        caller's own unread-or-read row."""
+        body, rid = self._object(req.read_notification_request(notification_id))
+        return Notification.from_dict(body, request_id=rid)
+
+    def read_all(self) -> NotificationsReadAll:
+        """`POST /api/me/notifications/read-all`: mark every unread row
+        read. The answer says how many that was."""
+        body, rid = self._object(req.read_all_notifications_request())
+        return NotificationsReadAll.from_dict(body, request_id=rid)
+
+
+class AsyncNotifications(_Async):
+    async def list(
+        self, *, unread: bool | None = None, limit: int | None = None
+    ) -> NotificationList:
+        body, rid = await self._object(req.list_notifications_request(unread, limit))
+        return NotificationList.from_dict(body, request_id=rid)
+
+    async def read(self, notification_id: str) -> Notification:
+        body, rid = await self._object(req.read_notification_request(notification_id))
+        return Notification.from_dict(body, request_id=rid)
+
+    async def read_all(self) -> NotificationsReadAll:
+        body, rid = await self._object(req.read_all_notifications_request())
+        return NotificationsReadAll.from_dict(body, request_id=rid)
+
+
+# --- announcements --------------------------------------------------------------
+
+
+class Announcements(_Sync):
+    """`GET /api/announcements`: the operator's banner, as everyone signed
+    in sees it -- the active ones only, most severe first. Writing
+    announcements is the admin surface's, not this client's."""
+
+    def list(self) -> AnnouncementList:
+        body, rid = self._object(req.active_announcements_request())
+        return AnnouncementList.from_dict(body, request_id=rid)
+
+
+class AsyncAnnouncements(_Async):
+    async def list(self) -> AnnouncementList:
+        body, rid = await self._object(req.active_announcements_request())
+        return AnnouncementList.from_dict(body, request_id=rid)
+
+
+# --- entitlements ---------------------------------------------------------------
+
+
+class EntitlementsClient(_Sync):
+    """`GET /api/entitlements`: what the caller's org may do -- the plan,
+    its allowance and caps, and, for an org a downgrade left over its
+    conversation cap, `writes_blocked` with the reason beside it. Any
+    member may read it; complements `app_models()`'s per-model `included`."""
+
+    def get(self) -> Entitlements:
+        body, rid = self._object(req.entitlements_request())
+        return Entitlements.from_dict(body, request_id=rid)
+
+
+class AsyncEntitlementsClient(_Async):
+    async def get(self) -> Entitlements:
+        body, rid = await self._object(req.entitlements_request())
+        return Entitlements.from_dict(body, request_id=rid)
