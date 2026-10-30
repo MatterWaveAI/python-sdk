@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Documentation
+
+- "Connect your editor to MatterWave": a README section and a `docs/mcp.md`
+  walk-through -- getting a key (Settings > API keys or device login),
+  copy-paste MCP config for Claude Desktop, VS Code / Copilot and Cursor,
+  the six tools and their scopes, the errors the two refusal shapes arrive
+  as, the no-OAuth limitation and the security notes. `examples/mcp_via_sdk.py`
+  drives `client.mcp` end to end (list tools, create, send, search). The old
+  `examples/mcp_client.py`, built on the official `mcp` protocol library, is
+  removed: one example per SDK.
+
 ## [0.4.0] - 2026-10-30
 
 ### Added

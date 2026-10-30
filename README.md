@@ -12,7 +12,8 @@ The distribution is `matterwave-sdk` and the import package is `matterwave_sdk`.
 The bare names belong to others: `matterwave` on PyPI is an unrelated physics
 library that ships its own top-level `matterwave` module, and `matterwave` is
 also the import name of this repo's API server (`api/`). See
-[docs/package-names.md](../../docs/package-names.md).
+[docs/package-names.md](../../docs/package-names.md). Both PyPI packages
+publish under the [MatterWaveAI](https://pypi.org/org/MatterWaveAI/) org.
 
 Python 3.10 or newer; the only dependency is `httpx`.
 
@@ -256,6 +257,44 @@ signed_in = MatterWave(api_key=token.access_token)
 `APITimeoutError`. `start()` and `poll(device_code)` are the two steps on their
 own. The SDK never writes the token anywhere: store it in the OS keyring or the
 editor's secret storage, not a dotfile.
+
+## Connect your editor to MatterWave
+
+`/mcp` on the deployment's origin is an MCP server: the conversation API in a
+second wire format, over Streamable HTTP, with the same tenancy, scopes, plan
+gates and budget as everything else the key reaches. Claude Desktop, VS Code /
+GitHub Copilot and Cursor take the same three facts -- the URL
+`https://your-matterwave.example/mcp`, transport `http`, and an API key in an
+`Authorization: Bearer` header:
+
+```json
+{
+  "mcpServers": {
+    "matterwave": {
+      "type": "http",
+      "url": "https://your-matterwave.example/mcp",
+      "headers": { "Authorization": "Bearer mw_..." }
+    }
+  }
+}
+```
+
+(VS Code reads `servers` from `.vscode/mcp.json`; Cursor reads `mcpServers`
+with just `url` and `headers`.) The six tools -- `list_conversations`,
+`get_conversation`, `search_conversations`, `list_models`,
+`create_conversation`, `send_message` -- are filtered by the key's scopes, so
+a `chat:read`-only key is never offered a write. There is no OAuth: an API key
+as bearer is the only scheme, a known gap until the identity provider can bind
+a token to this resource. Get a key from Settings > API keys or by device login
+(above), store it like a secret, and revoke it there when the editor moves on.
+The full walk-through -- every client's config, the tool table, errors, the
+audit trail -- is in [docs/mcp.md](docs/mcp.md), and `examples/mcp_via_sdk.py`
+drives the same endpoint through the wrapper:
+
+```python
+answer = client.mcp.send_message("<conversation-id>", "Draft a three-line agenda.")
+print(answer.text)
+```
 
 ## Development
 
