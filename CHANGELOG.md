@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-10-30
+
+### Added
+
+- `client.admin.announcements` — the operator's announcement CRUD
+  (`/api/admin/announcements`), the routes the admin console's Announcements
+  tab speaks: `list()` (every row, newest first, each with its `state`),
+  `create(message, *, severity="info", link=None, starts_at=None,
+  ends_at=None, dismissible=True)`, `update(id, ...)` (only what is passed
+  changes; `link=None` clears the link, `ends_at=None` makes the window
+  open-ended, `end_now=True` ends it at the server's clock) and
+  `delete(id)`. These are operator routes: they need the platform `admin`
+  role, and an API key with user scopes cannot call them. The signed-in
+  read side stays `client.announcements.list()`.
+- `AdminAnnouncement` and `AdminAnnouncementList` models for the operator's
+  view: every column, who wrote and last changed it, and where the window
+  stands (`state`: `active`, `scheduled` or `ended`).
+
 ## [0.3.0] - 2026-10-30
 
 ### Added
