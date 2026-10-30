@@ -94,6 +94,7 @@ from .frames import (
 )
 from .models import (
     FEEDBACK_REASONS,
+    REPORT_KINDS,
     Announcement,
     AnnouncementList,
     ApiIndex,
@@ -126,6 +127,7 @@ from .models import (
     EmbeddingUsage,
     EntitlementLimits,
     Entitlements,
+    FiledReport,
     Folder,
     FunctionCall,
     FunctionCallFragment,
@@ -234,6 +236,7 @@ __all__ = [
     "EntitlementsClient",
     "ErrorFrame",
     "FEEDBACK_REASONS",
+    "FiledReport",
     "Folder",
     "FunctionCall",
     "FunctionCallFragment",
@@ -274,6 +277,7 @@ __all__ = [
     "RateLimit",
     "RateLimitError",
     "RemovedFeedback",
+    "REPORT_KINDS",
     "Role",
     "SearchHit",
     "SearchResults",

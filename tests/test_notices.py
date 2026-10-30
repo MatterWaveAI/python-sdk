@@ -1,10 +1,12 @@
 """The small families 0.3 added: notifications (the bell), announcements
-(the banner) and entitlements (the plan facts). Each test answers with the
-body the route in api/matterwave sends and checks the request the client
-made and what it parsed.
+(the banner), entitlements (the plan facts) and conversation reports. Each
+test answers with the body the route in api/matterwave sends and checks
+the request the client made and what it parsed.
 """
 
 from __future__ import annotations
+
+import json
 
 import httpx
 import pytest
@@ -315,3 +317,79 @@ async def test_the_async_entitlements_read_the_same_body(
     ent = await async_client.entitlements.get()
     assert ent.plan == "team" and ent.limits.overage_enabled
     assert sent(route).method == "GET"
+
+
+# --- conversation reports ------------------------------------------------------
+
+CONV = "c0ffee00-0000-4000-8000-000000000001"
+
+
+def test_report_files_a_report_and_reads_the_acknowledgement(
+    api, client: MatterWave
+) -> None:
+    route = api.post(f"/api/conversations/{CONV}/report").mock(
+        return_value=httpx.Response(201, json={"id": "rep-0001", "kind": "unsafe"}, headers=H)
+    )
+    filed = client.conversations.report(
+        CONV, "unsafe", message_id="m-asst", note="The reply asked for personal data."
+    )
+    assert filed.id == "rep-0001" and filed.kind == "unsafe"
+    assert filed.request_id == REQUEST_ID
+    assert sent(route).url.path == f"/api/conversations/{CONV}/report"
+    assert sent(route).method == "POST"
+    assert json.loads(sent(route).content) == {
+        "kind": "unsafe",
+        "message_id": "m-asst",
+        "note": "The reply asked for personal data.",
+    }
+
+
+def test_report_sends_only_the_kind_when_that_is_all_there_is(
+    api, client: MatterWave
+) -> None:
+    route = api.post(f"/api/conversations/{CONV}/report").mock(
+        return_value=httpx.Response(201, json={"id": "rep-0002", "kind": "unhelpful"}, headers=H)
+    )
+    filed = client.conversations.report(CONV, "unhelpful")
+    assert filed.kind == "unhelpful"
+    assert json.loads(sent(route).content) == {"kind": "unhelpful"}
+
+
+def test_report_refuses_an_unknown_kind_and_an_overlong_note(
+    api, client: MatterWave
+) -> None:
+    route = api.post(f"/api/conversations/{CONV}/report").mock(
+        return_value=httpx.Response(201, json={"id": "rep-0003", "kind": "unsafe"}, headers=H)
+    )
+    with pytest.raises(ValueError, match="kind must be one of"):
+        client.conversations.report(CONV, "vibes")
+    with pytest.raises(ValueError, match="2000 characters"):
+        client.conversations.report(CONV, "unsafe", note="x" * 2001)
+    assert not route.called
+
+
+def test_report_404s_for_a_conversation_that_is_not_the_caller_s(
+    api, client: MatterWave
+) -> None:
+    api.post("/api/conversations/c0ffee00-0000-4000-8000-000000000009/report").mock(
+        return_value=httpx.Response(404, json={"detail": "No such conversation"}, headers=H)
+    )
+    with pytest.raises(NotFoundError):
+        client.conversations.report(
+            "c0ffee00-0000-4000-8000-000000000009", "unsafe"
+        )
+
+
+@pytest.mark.asyncio
+async def test_the_async_report_sends_the_same_body(
+    api, async_client: AsyncMatterWave  # noqa: ANN001
+) -> None:
+    route = api.post(f"/api/conversations/{CONV}/report").mock(
+        return_value=httpx.Response(201, json={"id": "rep-0004", "kind": "unhelpful"}, headers=H)
+    )
+    filed = await async_client.conversations.report(CONV, "unhelpful", note="Refused for no reason.")
+    assert filed.id == "rep-0004"
+    assert json.loads(sent(route).content) == {
+        "kind": "unhelpful",
+        "note": "Refused for no reason.",
+    }

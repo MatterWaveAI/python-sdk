@@ -108,6 +108,7 @@ APP_OPERATIONS: dict[str, tuple[str, str]] = {
         "PUT",
         "/api/conversations/{conversation_id}/instructions",
     ),
+    "conversations.report": ("POST", "/api/conversations/{conversation_id}/report"),
     "instructions.user": ("GET", "/api/me/instructions"),
     "instructions.update_user": ("PUT", "/api/me/instructions"),
     "instructions.org": ("GET", "/api/org/instructions"),
@@ -513,6 +514,21 @@ def conversation_instructions_request(conversation_id: str, text: str | None) ->
     return Request(
         "PUT", _conversation_path(conversation_id, "/instructions"), {"text": text}, True, False
     )
+
+
+def report_conversation_request(
+    conversation_id: str, kind: str, message_id: str | None, note: str | None
+) -> Request:
+    """The report a person files: durable or not at all (the route 503s
+    rather than accept what it cannot store), so a 201 is the whole
+    acknowledgement. `note` is the reporter's own words; the server bounds
+    and stores it and never logs it."""
+    body: dict[str, Any] = {"kind": kind}
+    if message_id is not None:
+        body["message_id"] = message_id
+    if note is not None:
+        body["note"] = note
+    return Request("POST", _conversation_path(conversation_id, "/report"), body, True, False)
 
 
 def user_instructions_get_request() -> Request:

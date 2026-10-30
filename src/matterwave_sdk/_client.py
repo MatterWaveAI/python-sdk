@@ -65,6 +65,7 @@ from .errors import (
 from .frames import TERMINAL_FRAMES, ConversationFrame, DeltaFrame, DoneFrame, frame_from_event
 from .models import (
     FEEDBACK_REASONS,
+    REPORT_KINDS,
     ApiIndex,
     AppModelList,
     ChatCompletion,
@@ -78,6 +79,7 @@ from .models import (
     DeviceCode,
     DeviceToken,
     EmbeddingList,
+    FiledReport,
     Me,
     MessageFeedback,
     MessageFeedbackList,
@@ -671,6 +673,30 @@ class Conversations:
         the platform's 30-day delay."""
         body, rid = self._object(_base.delete_conversation_request(conversation_id))
         return DeletedConversation.from_dict(body, request_id=rid)
+
+    def report(
+        self,
+        conversation_id: str,
+        kind: str,
+        *,
+        message_id: str | None = None,
+        note: str | None = None,
+    ) -> FiledReport:
+        """`POST /api/conversations/{id}/report`: report the conversation,
+        or one message of it (`message_id`), to the reviewers. `kind` is
+        `unsafe` (routes to human review) or `unhelpful` (the product
+        backlog); `note` is the reporter's own words, up to 2000
+        characters, stored and never logged. The report is a legal record,
+        not a UX affordance: a 201 means it is stored, and the answer's
+        `id` is what support asks for; a 503 means it was not filed."""
+        if kind not in REPORT_KINDS:
+            raise ValueError(f"kind must be one of {', '.join(REPORT_KINDS)}, got {kind!r}")
+        if note is not None and len(note) > 2000:
+            raise ValueError("note must be 2000 characters or fewer")
+        body, rid = self._object(
+            _base.report_conversation_request(conversation_id, kind, message_id, note)
+        )
+        return FiledReport.from_dict(body, request_id=rid)
 
     def pin(self, conversation_id: str) -> Conversation:
         """`PUT /api/conversations/{id}/pin`: to the top of the sidebar,
@@ -1277,6 +1303,23 @@ class AsyncConversations:
     async def delete(self, conversation_id: str) -> DeletedConversation:
         body, rid = await self._object(_base.delete_conversation_request(conversation_id))
         return DeletedConversation.from_dict(body, request_id=rid)
+
+    async def report(
+        self,
+        conversation_id: str,
+        kind: str,
+        *,
+        message_id: str | None = None,
+        note: str | None = None,
+    ) -> FiledReport:
+        if kind not in REPORT_KINDS:
+            raise ValueError(f"kind must be one of {', '.join(REPORT_KINDS)}, got {kind!r}")
+        if note is not None and len(note) > 2000:
+            raise ValueError("note must be 2000 characters or fewer")
+        body, rid = await self._object(
+            _base.report_conversation_request(conversation_id, kind, message_id, note)
+        )
+        return FiledReport.from_dict(body, request_id=rid)
 
     async def pin(self, conversation_id: str) -> Conversation:
         body, rid = await self._object(_base.set_pinned_request(conversation_id, True))

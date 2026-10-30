@@ -1737,6 +1737,31 @@ class MemberBudgetList:
 # routes send today and anything new is dropped rather than refused.
 
 
+REPORT_KINDS = ("unsafe", "unhelpful")
+"""The two kinds a report may name: `unsafe` routes to human review,
+`unhelpful` to the product backlog (which is where most reports, refusal
+complaints included, belong). The server refuses the rest."""
+
+
+@dataclass(frozen=True)
+class FiledReport:
+    """The answer to `conversations.report`: the report's `id`, to quote to
+    support, and the `kind` it was filed as. A 201 means it is stored; a
+    503 means the platform could not store it, and it was not filed."""
+
+    id: str
+    kind: str
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> FiledReport:
+        return cls(
+            id=_str(data.get("id")),
+            kind=_str(data.get("kind")),
+            request_id=request_id,
+        )
+
+
 @dataclass(frozen=True)
 class Notification:
     """One row of the bell (`GET /api/me/notifications`): a title, an
