@@ -485,8 +485,158 @@ def read_notification_request(notification_id: str) -> Request:
 
 def active_announcements_request() -> Request:
     """The banner's rows: only the ones inside their window now, most
-    severe first. Writing announcements is the admin surface's."""
+    severe first. The write side is the admin surface's, one namespace up:
+    `client.admin.announcements`."""
     return Request("GET", "/api/announcements", None, keyed=True, stream=False)
+
+
+# --- admin: announcements ----------------------------------------------------------
+
+
+ADMIN_SEVERITIES = ("info", "warning", "critical")
+ADMIN_MAX_MESSAGE_LENGTH = 500
+ADMIN_MAX_LINK_LENGTH = 2000
+
+
+def _admin_announcement_path(announcement_id: str, suffix: str = "") -> str:
+    return f"/api/admin/announcements/{_segment('announcement_id', announcement_id)}{suffix}"
+
+
+def _admin_severity(severity: str) -> str:
+    if severity not in ADMIN_SEVERITIES:
+        raise ValueError(f"severity must be one of {', '.join(ADMIN_SEVERITIES)}, got {severity!r}")
+    return severity
+
+
+def _admin_message(message: str) -> str:
+    """What the route's `NewAnnouncement` refuses: nothing at all, or more
+    than 500 characters. The server strips surrounding whitespace itself."""
+    if not message.strip():
+        raise ValueError("The message is empty.")
+    if len(message) > ADMIN_MAX_MESSAGE_LENGTH:
+        raise ValueError(f"message must be {ADMIN_MAX_MESSAGE_LENGTH} characters or fewer")
+    return message
+
+
+def _valid_announcement_link(link: str) -> bool:
+    """The route's own check (`valid_link` in api/matterwave/announcements.py):
+    an absolute http(s) URL or a path on this site; never `//host`, which a
+    browser resolves to another origin; no other scheme; no whitespace or
+    control character anywhere."""
+    if any(ch.isspace() or ord(ch) < 0x20 or ord(ch) == 0x7F for ch in link):
+        return False
+    if link.startswith("/"):
+        return not link.startswith("//") and "\\" not in link
+    try:
+        parts = urlsplit(link)
+    except ValueError:
+        return False
+    return parts.scheme in ("http", "https") and bool(parts.netloc)
+
+
+def _admin_link(link: str) -> str:
+    if len(link) > ADMIN_MAX_LINK_LENGTH:
+        raise ValueError(f"link must be {ADMIN_MAX_LINK_LENGTH} characters or fewer")
+    if not _valid_announcement_link(link):
+        raise ValueError("A link is an http(s) URL or a path on this site.")
+    return link
+
+
+def _admin_link_or_none(link: str | None) -> str | None:
+    """The route's `_clean_link`: trimmed, empty is no link, and what is
+    left has to be a link."""
+    if link is None:
+        return None
+    link = link.strip()
+    return _admin_link(link) if link else None
+
+
+def _admin_moment(value: datetime | str) -> str:
+    """A window edge. The server reads one without a zone as UTC -- what
+    the admin page sends and what a hand-written curl most likely meant --
+    so a naive datetime goes as it is."""
+    return value.isoformat() if isinstance(value, datetime) else value
+
+
+def list_admin_announcements_request() -> Request:
+    """The admin tab's table: every announcement, not only the active ones."""
+    return Request("GET", "/api/admin/announcements", None, keyed=True, stream=False)
+
+
+def create_admin_announcement_request(
+    message: str,
+    *,
+    severity: str,
+    link: str | None,
+    starts_at: datetime | str | None,
+    ends_at: datetime | str | None,
+    dismissible: bool,
+) -> Request:
+    """The admin console's write. Severity and dismissibility have the
+    server's defaults but are always sent, so the body reads whole; the
+    window edges go only when set (None starts_at is the server's clock,
+    None ends_at is open-ended)."""
+    body: dict[str, Any] = {
+        "message": _admin_message(message),
+        "severity": _admin_severity(severity),
+        "dismissible": dismissible,
+    }
+    cleaned = _admin_link_or_none(link)
+    if cleaned is not None:
+        body["link"] = cleaned
+    if starts_at is not None:
+        body["starts_at"] = _admin_moment(starts_at)
+    if ends_at is not None:
+        body["ends_at"] = _admin_moment(ends_at)
+    return Request("POST", "/api/admin/announcements", body, keyed=True, stream=False)
+
+
+def update_admin_announcement_request(
+    announcement_id: str,
+    *,
+    message: str | None,
+    severity: str | None,
+    link: str | None,
+    starts_at: datetime | str | None,
+    ends_at: datetime | str | None,
+    dismissible: bool | None,
+    end_now: bool,
+) -> Request:
+    """The route reads only the fields sent. `link` and `ends_at` are the
+    nullable pair: None is sent as null to clear (no link, open-ended).
+    None on the others means "not passed" and is left out -- the server
+    reads an explicit null there as "leave it" all the same. `end_now`
+    ends it at the server's clock rather than the caller's, which is what
+    the console's "End now" button does."""
+    body: dict[str, Any] = {}
+    if message is not None:
+        body["message"] = _admin_message(message)
+    if severity is not None:
+        body["severity"] = _admin_severity(severity)
+    if link is not UNSET:
+        body["link"] = _admin_link_or_none(link)
+    if starts_at is not None:
+        body["starts_at"] = _admin_moment(starts_at)
+    if ends_at is not UNSET:
+        body["ends_at"] = None if ends_at is None else _admin_moment(ends_at)
+    if dismissible is not None:
+        body["dismissible"] = dismissible
+    if end_now:
+        body["end_now"] = True
+    if not body:
+        raise ValueError(
+            "update needs one of message, severity, link, starts_at, ends_at, dismissible, "
+            "end_now"
+        )
+    return Request(
+        "PATCH", _admin_announcement_path(announcement_id), body, keyed=True, stream=False
+    )
+
+
+def delete_admin_announcement_request(announcement_id: str) -> Request:
+    return Request(
+        "DELETE", _admin_announcement_path(announcement_id), None, keyed=True, stream=False
+    )
 
 
 # --- entitlements ----------------------------------------------------------------

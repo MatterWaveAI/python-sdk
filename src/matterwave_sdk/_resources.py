@@ -1,8 +1,8 @@
 """The native API clients: `keys`, `usage`, `webhooks`, `attachments`,
-`library`, `shares`, `budget`, `notifications`, `announcements` and
-`entitlements`, sync and async. Each method is one route; the request is
-built in `_native` and the answer parsed into `models`, so the two halves
-here differ only in `await`.
+`library`, `shares`, `budget`, `notifications`, `announcements`,
+`entitlements` and the `admin` namespace, sync and async. Each method is
+one route; the request is built in `_native` and the answer parsed into
+`models`, so the two halves here differ only in `await`.
 
 These are the routes the web app's settings panes use, open to an API key
 as its owner. Managing keys needs a key with `keys:manage` (or a session),
@@ -12,7 +12,9 @@ budget cap an owner or admin. The scope never widens the owner's role:
 webhooks still need the owner to be an org owner or admin, and a member's
 `usage:read` key sees only their own row. Notifications are the caller's
 own rows, announcements are the operator's banner anyone signed in reads,
-and entitlements are the plan facts any member of the org may read.
+and entitlements are the plan facts any member of the org may read. The
+`admin` namespace is the exception to all of it: the operator's own
+routes, the platform `admin` role, not an API key's.
 """
 
 from __future__ import annotations
@@ -25,6 +27,8 @@ from . import _base
 from . import _native as req
 from ._base import UNSET, Request
 from .models import (
+    AdminAnnouncement,
+    AdminAnnouncementList,
     AnnouncementList,
     ApiKey,
     ApiKeyList,
@@ -703,7 +707,7 @@ class AsyncNotifications(_Async):
 class Announcements(_Sync):
     """`GET /api/announcements`: the operator's banner, as everyone signed
     in sees it -- the active ones only, most severe first. Writing
-    announcements is the admin surface's, not this client's."""
+    announcements is one namespace up: `client.admin.announcements`."""
 
     def list(self) -> AnnouncementList:
         body, rid = self._object(req.active_announcements_request())
@@ -714,6 +718,161 @@ class AsyncAnnouncements(_Async):
     async def list(self) -> AnnouncementList:
         body, rid = await self._object(req.active_announcements_request())
         return AnnouncementList.from_dict(body, request_id=rid)
+
+
+# --- admin: announcements ---------------------------------------------------------
+
+
+class Admin:
+    """`/api/admin/*`: the operator surface, the routes the admin console
+    speaks. Everything under it needs a principal holding the platform
+    `admin` role -- the admin console's session -- and an API key with
+    user scopes cannot call any of it; the routes answer 403 before the
+    store is ever reached."""
+
+    def __init__(self, client: MatterWave) -> None:
+        self.announcements = AdminAnnouncements(client)
+
+
+class AsyncAdmin:
+    def __init__(self, client: AsyncMatterWave) -> None:
+        self.announcements = AsyncAdminAnnouncements(client)
+
+
+class AdminAnnouncements(_Sync):
+    """`/api/admin/announcements`: the operator's announcement CRUD, the
+    rows the admin console's Announcements tab manages -- every column and
+    every window, not just the ones active now, each write one
+    `audit_events` row on the platform's side. These are operator routes:
+    they mirror the admin console's announcement management and need the
+    platform `admin` role, so an API key with user scopes cannot call
+    them. The signed-in read side stays `client.announcements.list()`."""
+
+    def list(self) -> AdminAnnouncementList:
+        """Every announcement, newest first, each with its `state`:
+        `active`, `scheduled` or `ended`."""
+        body, rid = self._object(req.list_admin_announcements_request())
+        return AdminAnnouncementList.from_dict(body, request_id=rid)
+
+    def create(
+        self,
+        message: str,
+        *,
+        severity: str = "info",
+        link: str | None = None,
+        starts_at: datetime | str | None = None,
+        ends_at: datetime | str | None = None,
+        dismissible: bool = True,
+    ) -> AdminAnnouncement:
+        """Post an announcement. `severity` is `info`, `warning` or
+        `critical` -- a critical one is never dismissible, whatever was
+        asked, the store refuses the row otherwise. `starts_at` opens the
+        window (the server's clock when omitted; a naive datetime is read
+        as UTC) and `ends_at` closes it (None is open-ended); an edge the
+        wrong way round is a 422. `link` is an absolute http(s) URL or a
+        path on this site."""
+        body, rid = self._object(
+            req.create_admin_announcement_request(
+                message,
+                severity=severity,
+                link=link,
+                starts_at=starts_at,
+                ends_at=ends_at,
+                dismissible=dismissible,
+            )
+        )
+        return AdminAnnouncement.from_dict(body, request_id=rid)
+
+    def update(
+        self,
+        announcement_id: str,
+        *,
+        message: str | None = None,
+        severity: str | None = None,
+        link: str | None = UNSET,
+        starts_at: datetime | str | None = None,
+        ends_at: datetime | str | None = UNSET,
+        dismissible: bool | None = None,
+        end_now: bool = False,
+    ) -> AdminAnnouncement:
+        """Change what was passed; the rest stays. `link=None` clears the
+        link and `ends_at=None` makes the window open-ended for good;
+        `end_now=True` ends it at the server's clock instead of a caller's
+        guess. `NotFoundError` for an id that is not one."""
+        body, rid = self._object(
+            req.update_admin_announcement_request(
+                announcement_id,
+                message=message,
+                severity=severity,
+                link=link,
+                starts_at=starts_at,
+                ends_at=ends_at,
+                dismissible=dismissible,
+                end_now=end_now,
+            )
+        )
+        return AdminAnnouncement.from_dict(body, request_id=rid)
+
+    def delete(self, announcement_id: str) -> None:
+        """Remove it for good. `NotFoundError` when there is no such id."""
+        self._none(req.delete_admin_announcement_request(announcement_id))
+
+
+class AsyncAdminAnnouncements(_Async):
+    async def list(self) -> AdminAnnouncementList:
+        body, rid = await self._object(req.list_admin_announcements_request())
+        return AdminAnnouncementList.from_dict(body, request_id=rid)
+
+    async def create(
+        self,
+        message: str,
+        *,
+        severity: str = "info",
+        link: str | None = None,
+        starts_at: datetime | str | None = None,
+        ends_at: datetime | str | None = None,
+        dismissible: bool = True,
+    ) -> AdminAnnouncement:
+        body, rid = await self._object(
+            req.create_admin_announcement_request(
+                message,
+                severity=severity,
+                link=link,
+                starts_at=starts_at,
+                ends_at=ends_at,
+                dismissible=dismissible,
+            )
+        )
+        return AdminAnnouncement.from_dict(body, request_id=rid)
+
+    async def update(
+        self,
+        announcement_id: str,
+        *,
+        message: str | None = None,
+        severity: str | None = None,
+        link: str | None = UNSET,
+        starts_at: datetime | str | None = None,
+        ends_at: datetime | str | None = UNSET,
+        dismissible: bool | None = None,
+        end_now: bool = False,
+    ) -> AdminAnnouncement:
+        body, rid = await self._object(
+            req.update_admin_announcement_request(
+                announcement_id,
+                message=message,
+                severity=severity,
+                link=link,
+                starts_at=starts_at,
+                ends_at=ends_at,
+                dismissible=dismissible,
+                end_now=end_now,
+            )
+        )
+        return AdminAnnouncement.from_dict(body, request_id=rid)
+
+    async def delete(self, announcement_id: str) -> None:
+        await self._none(req.delete_admin_announcement_request(announcement_id))
 
 
 # --- entitlements ---------------------------------------------------------------

@@ -33,7 +33,9 @@ from . import _base
 from ._base import EmbeddingInput, Message, Request, Tool, ToolChoice
 from ._mcp import AsyncMcp, Mcp
 from ._resources import (
+    Admin,
     Announcements,
+    AsyncAdmin,
     AsyncAnnouncements,
     AsyncAttachments,
     AsyncBudgetClient,
@@ -998,6 +1000,7 @@ class MatterWave:
         self.notifications = Notifications(self)
         self.announcements = Announcements(self)
         self.entitlements = EntitlementsClient(self)
+        self.admin = Admin(self)
         self.mcp = Mcp(self)
 
     @property
@@ -1548,6 +1551,7 @@ class AsyncMatterWave:
         self.notifications = AsyncNotifications(self)
         self.announcements = AsyncAnnouncements(self)
         self.entitlements = AsyncEntitlementsClient(self)
+        self.admin = AsyncAdmin(self)
         self.mcp = AsyncMcp(self)
 
     @property

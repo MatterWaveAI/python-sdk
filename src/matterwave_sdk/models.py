@@ -1892,6 +1892,72 @@ class AnnouncementList:
 
 
 @dataclass(frozen=True)
+class AdminAnnouncement:
+    """One announcement as the operator's tab sees it (`GET
+    /api/admin/announcements`): every column -- who wrote it and who last
+    changed it, window edges included -- plus `state`, where the window
+    stands now: `active`, `scheduled` or `ended`. The banner everyone
+    signed in reads is `Announcement`, the public fields only."""
+
+    id: str
+    message: str
+    severity: str
+    link: str | None
+    starts_at: str
+    ends_at: str | None
+    dismissible: bool
+    created_by: str
+    created_at: str
+    updated_by: str
+    updated_at: str
+    state: str
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(
+        cls, data: dict[str, Any], *, request_id: str | None = None
+    ) -> AdminAnnouncement:
+        return cls(
+            id=_str(data.get("id")),
+            message=_str(data.get("message")),
+            severity=_str(data.get("severity")),
+            link=_opt_str(data.get("link")),
+            starts_at=_str(data.get("starts_at")),
+            ends_at=_opt_str(data.get("ends_at")),
+            dismissible=data.get("dismissible") is True,
+            created_by=_str(data.get("created_by")),
+            created_at=_str(data.get("created_at")),
+            updated_by=_str(data.get("updated_by")),
+            updated_at=_str(data.get("updated_at")),
+            state=_str(data.get("state")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class AdminAnnouncementList:
+    """`GET /api/admin/announcements`: every announcement, newest first."""
+
+    data: list[AdminAnnouncement]
+    request_id: str | None = field(default=None, compare=False)
+
+    def __iter__(self) -> Any:
+        return iter(self.data)
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    @classmethod
+    def from_dict(
+        cls, data: dict[str, Any], *, request_id: str | None = None
+    ) -> AdminAnnouncementList:
+        return cls(
+            data=[AdminAnnouncement.from_dict(a) for a in _dicts(data.get("data"))],
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
 class EntitlementLimits:
     """The `limits` of `GET /api/entitlements`, with the fields the plan
     resolver computes. Every `None` limit is unlimited, not zero; the

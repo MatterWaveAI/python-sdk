@@ -12,8 +12,10 @@ frames (`matterwave_sdk.frames`); `client.auth.device` signs a person in by
 device code and returns the key to use. `client.keys`, `client.usage`,
 `client.webhooks`, `client.attachments`, `client.library`,
 `client.notifications`, `client.announcements`, `client.entitlements` and
-`client.shares` are the app's native routes for the same, and `client.mcp`
-speaks the `/mcp` JSON-RPC endpoint (list tools, call one, send a message).
+`client.shares` are the app's native routes for the same, `client.admin`
+is the operator surface (the platform `admin` role, not an API key's), and
+`client.mcp` speaks the `/mcp` JSON-RPC endpoint (list tools, call one,
+send a message).
 """
 
 from . import frames
@@ -37,7 +39,11 @@ from ._client import (
 )
 from ._mcp import AsyncMcp, Mcp, McpTool, McpToolResult, SendMessageResult
 from ._resources import (
+    Admin,
+    AdminAnnouncements,
     Announcements,
+    AsyncAdmin,
+    AsyncAdminAnnouncements,
     AsyncAnnouncements,
     AsyncAttachments,
     AsyncBudgetClient,
@@ -95,6 +101,8 @@ from .frames import (
 from .models import (
     FEEDBACK_REASONS,
     REPORT_KINDS,
+    AdminAnnouncement,
+    AdminAnnouncementList,
     Announcement,
     AnnouncementList,
     ApiIndex,
@@ -174,6 +182,10 @@ __all__ = [
     "APIConnectionError",
     "APIError",
     "APITimeoutError",
+    "Admin",
+    "AdminAnnouncement",
+    "AdminAnnouncementList",
+    "AdminAnnouncements",
     "Announcement",
     "AnnouncementList",
     "Announcements",
@@ -183,6 +195,8 @@ __all__ = [
     "AppModel",
     "AppModelList",
     "AssistantMessage",
+    "AsyncAdmin",
+    "AsyncAdminAnnouncements",
     "AsyncAnnouncements",
     "AsyncAttachments",
     "AsyncBudgetClient",

@@ -7,6 +7,7 @@ the request the client made and what it parsed.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 
 import httpx
 import pytest
@@ -204,6 +205,220 @@ async def test_the_async_announcements_read_the_same_body(
     listed = await async_client.announcements.list()
     assert listed.data[0].severity == "warning"
     assert sent(route).method == "GET"
+
+
+# --- the admin side of the announcements -------------------------------------------
+
+ANN_ID = "ann-0001"
+
+
+def admin_announcement_row(aid: str, *, state: str = "active") -> dict:
+    return {
+        "id": aid,
+        "message": "The model gateway is degraded; turns may be slow.",
+        "severity": "warning",
+        "link": "https://status.example/incidents/1",
+        "starts_at": "2026-10-30T08:00:00+00:00",
+        "ends_at": "2026-10-31T08:00:00+00:00",
+        "dismissible": True,
+        "created_by": "op-0001",
+        "created_at": "2026-10-30T07:59:00+00:00",
+        "updated_by": "op-0001",
+        "updated_at": "2026-10-30T07:59:00+00:00",
+        "state": state,
+    }
+
+
+def test_admin_announcements_list_reads_every_column(api, client: MatterWave) -> None:
+    route = api.get("/api/admin/announcements").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": [
+                    admin_announcement_row("ann-0001"),
+                    admin_announcement_row("ann-0002", state="scheduled"),
+                    admin_announcement_row("ann-0003", state="ended"),
+                ]
+            },
+            headers=H,
+        )
+    )
+    listed = client.admin.announcements.list()
+    assert listed.request_id == REQUEST_ID
+    assert [a.state for a in listed] == ["active", "scheduled", "ended"]
+    row = listed.data[0]
+    assert row.created_by == "op-0001" and row.updated_by == "op-0001"
+    assert row.starts_at.endswith("+00:00") and row.ends_at is not None
+    assert row.severity == "warning" and row.dismissible
+    assert sent(route).method == "GET"
+    assert sent(route).url.path == "/api/admin/announcements"
+
+
+def test_admin_announcements_create_sends_the_operator_s_body(
+    api, client: MatterWave
+) -> None:
+    route = api.post("/api/admin/announcements").mock(
+        return_value=httpx.Response(201, json=admin_announcement_row(ANN_ID), headers=H)
+    )
+    row = client.admin.announcements.create(
+        "The model gateway is degraded; turns may be slow.",
+        severity="warning",
+        link="https://status.example/incidents/1",
+        starts_at=datetime(2026, 10, 30, 8, 0, tzinfo=timezone.utc),
+        dismissible=True,
+    )
+    assert row.id == ANN_ID and row.state == "active"
+    assert row.created_by == "op-0001"
+    assert row.request_id == REQUEST_ID
+    assert sent(route).method == "POST"
+    assert sent(route).url.path == "/api/admin/announcements"
+    assert json.loads(sent(route).content) == {
+        "message": "The model gateway is degraded; turns may be slow.",
+        "severity": "warning",
+        "dismissible": True,
+        "link": "https://status.example/incidents/1",
+        "starts_at": "2026-10-30T08:00:00+00:00",
+    }
+
+
+def test_admin_announcements_create_leaves_the_defaults_to_the_server(
+    api, client: MatterWave
+) -> None:
+    route = api.post("/api/admin/announcements").mock(
+        return_value=httpx.Response(201, json=admin_announcement_row(ANN_ID), headers=H)
+    )
+    client.admin.announcements.create("Maintenance on Sunday.")
+    assert json.loads(sent(route).content) == {
+        "message": "Maintenance on Sunday.",
+        "severity": "info",
+        "dismissible": True,
+    }
+
+
+def test_admin_announcements_create_accepts_a_naive_datetime_as_the_server_does(
+    api, client: MatterWave
+) -> None:
+    # The route reads a timestamp without a zone as UTC, which is what the
+    # admin page sends; the client sends it as it is rather than refuse it.
+    route = api.post("/api/admin/announcements").mock(
+        return_value=httpx.Response(201, json=admin_announcement_row(ANN_ID), headers=H)
+    )
+    client.admin.announcements.create(
+        "Back soon.", ends_at=datetime(2026, 10, 31, 8, 0)
+    )
+    assert json.loads(sent(route).content)["ends_at"] == "2026-10-31T08:00:00"
+
+
+def test_admin_announcements_create_refuses_what_the_route_would(
+    api, client: MatterWave
+) -> None:
+    route = api.post("/api/admin/announcements").mock(
+        return_value=httpx.Response(201, json=admin_announcement_row(ANN_ID), headers=H)
+    )
+    with pytest.raises(ValueError, match="severity must be one of"):
+        client.admin.announcements.create("x", severity="loud")
+    with pytest.raises(ValueError, match="empty"):
+        client.admin.announcements.create("   ")
+    with pytest.raises(ValueError, match="500 characters"):
+        client.admin.announcements.create("x" * 501)
+    with pytest.raises(ValueError, match="http\\(s\\) URL or a path"):
+        client.admin.announcements.create("x", link="javascript:alert(1)")
+    with pytest.raises(ValueError, match="http\\(s\\) URL or a path"):
+        client.admin.announcements.create("x", link="//other-origin/x")
+    assert not route.called
+
+
+def test_admin_announcements_update_sends_only_what_changed(
+    api, client: MatterWave
+) -> None:
+    route = api.patch(f"/api/admin/announcements/{ANN_ID}").mock(
+        return_value=httpx.Response(200, json=admin_announcement_row(ANN_ID), headers=H)
+    )
+    row = client.admin.announcements.update(ANN_ID, severity="critical")
+    assert row.id == ANN_ID and row.request_id == REQUEST_ID
+    assert sent(route).method == "PATCH"
+    assert sent(route).url.path == f"/api/admin/announcements/{ANN_ID}"
+    assert json.loads(sent(route).content) == {"severity": "critical"}
+
+
+def test_admin_announcements_update_clears_the_nullable_pair_and_ends_now(
+    api, client: MatterWave
+) -> None:
+    route = api.patch(f"/api/admin/announcements/{ANN_ID}").mock(
+        return_value=httpx.Response(200, json=admin_announcement_row(ANN_ID), headers=H)
+    )
+    client.admin.announcements.update(ANN_ID, link=None, ends_at=None, end_now=True)
+    assert json.loads(sent(route).content) == {"link": None, "ends_at": None, "end_now": True}
+
+
+def test_admin_announcements_update_refuses_an_empty_change(client: MatterWave) -> None:
+    with pytest.raises(ValueError, match="update needs one of"):
+        client.admin.announcements.update(ANN_ID)
+
+
+def test_admin_announcements_update_404s_for_an_id_that_is_not_one(
+    api, client: MatterWave
+) -> None:
+    api.patch("/api/admin/announcements/ann-other").mock(
+        return_value=httpx.Response(404, json={"detail": "No such announcement."}, headers=H)
+    )
+    with pytest.raises(NotFoundError):
+        client.admin.announcements.update("ann-other", message="x")
+
+
+def test_admin_announcements_delete_is_a_204(api, client: MatterWave) -> None:
+    route = api.delete(f"/api/admin/announcements/{ANN_ID}").mock(
+        return_value=httpx.Response(204, headers=H)
+    )
+    assert client.admin.announcements.delete(ANN_ID) is None
+    assert sent(route).method == "DELETE"
+    assert sent(route).url.path == f"/api/admin/announcements/{ANN_ID}"
+
+
+def test_admin_announcements_delete_404s_for_an_id_that_is_not_one(
+    api, client: MatterWave
+) -> None:
+    api.delete("/api/admin/announcements/ann-other").mock(
+        return_value=httpx.Response(404, json={"detail": "No such announcement."}, headers=H)
+    )
+    with pytest.raises(NotFoundError):
+        client.admin.announcements.delete("ann-other")
+
+
+def test_an_id_that_would_change_the_path_is_refused(client: MatterWave) -> None:
+    with pytest.raises(ValueError):
+        client.admin.announcements.update("../announcements", message="x")
+    with pytest.raises(ValueError):
+        client.admin.announcements.delete("")
+
+
+@pytest.mark.asyncio
+async def test_the_async_admin_announcements_match_the_sync_requests(
+    api, async_client: AsyncMatterWave  # noqa: ANN001
+) -> None:
+    list_route = api.get("/api/admin/announcements").mock(
+        return_value=httpx.Response(
+            200, json={"data": [admin_announcement_row(ANN_ID)]}, headers=H
+        )
+    )
+    create_route = api.post("/api/admin/announcements").mock(
+        return_value=httpx.Response(201, json=admin_announcement_row(ANN_ID), headers=H)
+    )
+    patch_route = api.patch(f"/api/admin/announcements/{ANN_ID}").mock(
+        return_value=httpx.Response(200, json=admin_announcement_row(ANN_ID), headers=H)
+    )
+    delete_route = api.delete(f"/api/admin/announcements/{ANN_ID}").mock(
+        return_value=httpx.Response(204, headers=H)
+    )
+    listed = await async_client.admin.announcements.list()
+    assert [a.id for a in listed] == [ANN_ID]
+    assert (await async_client.admin.announcements.create("x")).state == "active"
+    assert json.loads(create_route.calls.last.request.content)["severity"] == "info"
+    await async_client.admin.announcements.update(ANN_ID, end_now=True)
+    assert json.loads(patch_route.calls.last.request.content) == {"end_now": True}
+    await async_client.admin.announcements.delete(ANN_ID)
+    assert delete_route.calls.last.request.method == "DELETE"
+    assert list_route.calls.last.request.url.path == "/api/admin/announcements"
 
 
 # --- entitlements ------------------------------------------------------------------
