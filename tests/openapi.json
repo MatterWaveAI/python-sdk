@@ -212,6 +212,20 @@
       "ChatCompletionRequest": {
         "description": "Unknown fields are ignored, as OpenAI does (the versioning rule in\nreverse: a client may send what a newer OpenAI defines).",
         "properties": {
+          "frequency_penalty": {
+            "anyOf": [
+              {
+                "maximum": 2.0,
+                "minimum": -2.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Frequency Penalty"
+          },
           "max_completion_tokens": {
             "anyOf": [
               {
@@ -281,6 +295,20 @@
             ],
             "default": null,
             "title": "N"
+          },
+          "presence_penalty": {
+            "anyOf": [
+              {
+                "maximum": 2.0,
+                "minimum": -2.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Presence Penalty"
           },
           "response_format": {
             "anyOf": [
@@ -584,6 +612,20 @@
           }
         },
         "title": "ChunkDelta",
+        "type": "object"
+      },
+      "CompactingEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "CompactingEvent",
         "type": "object"
       },
       "CompactionEvent": {
@@ -2304,6 +2346,13 @@
       ],
       "description": "Named events (`event:` plus one `data:` line of JSON), ending after `done`, `error` or `moderation_block`. `: mw-heartbeat` comments arrive between frames. The frames of the generation itself carry `id: <generation>:<seq>`; a client whose body drops re-sends the request with `Last-Event-ID` set to the last one seen and the server replays the rest of the same generation rather than starting another.",
       "events": {
+        "compacting": {
+          "data": {
+            "$ref": "#/components/schemas/CompactingEvent"
+          },
+          "description": "First, on a send that folds earlier turns before it: the summary is decoded before the answer can start, so a client restarts its wait for the first token here. `compaction` or `notice` follows.",
+          "terminal": false
+        },
         "compaction": {
           "data": {
             "$ref": "#/components/schemas/CompactionEvent"

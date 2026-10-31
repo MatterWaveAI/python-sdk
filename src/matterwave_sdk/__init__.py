@@ -90,6 +90,7 @@ from .errors import (
     WebhookVerificationError,
 )
 from .frames import (
+    CompactingFrame,
     CompactionFrame,
     ContextFrame,
     ConversationFrame,
@@ -234,6 +235,7 @@ __all__ = [
     "Choice",
     "ChunkChoice",
     "ChunkDelta",
+    "CompactingFrame",
     "CompactionFrame",
     "ConflictError",
     "ContextFrame",

@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `frequency_penalty` and `presence_penalty` on `chat.completions.create`
+  (sync and async), relayed to the model as OpenAI defines them (-2 to 2);
+  `None` leaves them out of the body.
+- `CompactingFrame` (`frames.CompactingFrame`, exported): the conversation
+  stream's `compacting` event, sent first on a turn that folds earlier
+  messages before it is answered, so a client can restart its wait for the
+  first token. Not terminal; `compaction` or `notice` follows.
+- `scripts/refresh_openapi.py <path-or-url>` refreshes `tests/openapi.json`
+  from the app's export (`--check` exits 1 when it is behind), and the `ci`
+  workflow takes an `openapi_source` URL on a manual run to test against it.
+
+### Changed
+
+- `tests/openapi.json` refreshed from the app's export: the two penalty
+  fields on `ChatCompletionRequest` and the `compacting` stream event.
+- CI runs `mypy` beside `ruff` and `pytest`.
+
+### Fixed
+
+- The README's link to a `docs/package-names.md` that only existed in the
+  old monorepo now points at the MatterWaveAI GitHub org.
+
 ## [0.5.0] - 2026-10-31
 
 ### Added

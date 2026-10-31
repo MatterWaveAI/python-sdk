@@ -78,6 +78,33 @@ def test_omitted_arguments_are_omitted_from_the_body(api, client: MatterWave) ->
     }
 
 
+def test_the_penalties_reach_the_wire(api, client: MatterWave) -> None:
+    route = api.post("/v1/chat/completions").mock(
+        return_value=httpx.Response(200, json=completion_body())
+    )
+    client.chat.completions.create(
+        messages=[{"role": "user", "content": "hi"}],
+        frequency_penalty=0.5,
+        presence_penalty=-0.25,
+    )
+    sent = json.loads(route.calls.last.request.content)
+    assert sent["frequency_penalty"] == 0.5
+    assert sent["presence_penalty"] == -0.25
+
+
+@pytest.mark.asyncio
+async def test_the_async_client_sends_the_penalties_too(api, async_client) -> None:
+    route = api.post("/v1/chat/completions").mock(
+        return_value=httpx.Response(200, json=completion_body())
+    )
+    await async_client.chat.completions.create(
+        messages=[{"role": "user", "content": "hi"}], frequency_penalty=1.0
+    )
+    sent = json.loads(route.calls.last.request.content)
+    assert sent["frequency_penalty"] == 1.0
+    assert "presence_penalty" not in sent
+
+
 def test_extra_body_reaches_the_wire_for_fields_this_client_predates(
     api, client: MatterWave
 ) -> None:

@@ -5,7 +5,7 @@ with named server-sent events, unlike `/v1`'s data-only chunks: each frame
 is `event: <name>` and one `data:` line of JSON, with `id:` on the frames a
 reconnect can resume after. A turn reads, in order:
 
-    (compaction | notice)?  message  title?  (part_start delta* part_end)*  context?  done
+    compacting?  (compaction | notice)?  message  title?  (part_start delta* part_end)*  context?  done
 
 `done` carries the saved assistant message; `error` and `moderation_block`
 end a turn instead. An event this client does not know arrives as
@@ -117,6 +117,17 @@ class ModerationBlockFrame:
 
 
 @dataclass(frozen=True)
+class CompactingFrame:
+    """The server is folding earlier turns into a summary before this one
+    is sent, so the answer starts later than usual: a client restarts its
+    wait for the first token here. `detail` is the sentence to show while
+    it waits. `compaction` or `notice` follows."""
+
+    detail: str
+    id: str | None = None
+
+
+@dataclass(frozen=True)
 class CompactionFrame:
     """Earlier messages were folded into `message`, a `system` message with
     one `summary` part, before this turn was sent. The token counts are
@@ -171,6 +182,7 @@ ConversationFrame = (
     | DoneFrame
     | ErrorFrame
     | ModerationBlockFrame
+    | CompactingFrame
     | CompactionFrame
     | ContextFrame
     | NoticeFrame
@@ -192,6 +204,7 @@ FRAMES_BY_EVENT: dict[str, type[ConversationFrame]] = {
     "done": DoneFrame,
     "error": ErrorFrame,
     "moderation_block": ModerationBlockFrame,
+    "compacting": CompactingFrame,
     "compaction": CompactionFrame,
     "context": ContextFrame,
     "notice": NoticeFrame,
@@ -241,6 +254,8 @@ def frame_from_event(event: str, data: Any, event_id: str | None = None) -> Conv
             request_id=_opt_str(d.get("request_id")),
             id=event_id,
         )
+    if event == "compacting":
+        return CompactingFrame(detail=str(d.get("detail") or ""), id=event_id)
     if event == "compaction":
         return CompactionFrame(
             message=_message(d.get("message")),

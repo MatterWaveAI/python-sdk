@@ -11,9 +11,9 @@ pip install matterwave-sdk
 The distribution is `matterwave-sdk` and the import package is `matterwave_sdk`.
 The bare names belong to others: `matterwave` on PyPI is an unrelated physics
 library that ships its own top-level `matterwave` module, and `matterwave` is
-also the import name of this repo's API server (`api/`). See
-[docs/package-names.md](../../docs/package-names.md). Both PyPI packages
-publish under the [MatterWaveAI](https://pypi.org/org/MatterWaveAI/) org.
+also the import name of the MatterWave API server. Both PyPI packages publish
+under the [MatterWaveAI](https://pypi.org/org/MatterWaveAI/) org, and their
+sources live at [github.com/MatterWaveAI](https://github.com/MatterWaveAI).
 
 Python 3.10 or newer; the only dependency is `httpx`.
 
@@ -170,7 +170,9 @@ now (a `ConflictError` when there is nothing to fold yet). `client.me()` says
 who the key acts as.
 
 The stream is named server-sent events, read into typed frames in
-`matterwave_sdk.frames`: `CompactionFrame`, `ContextFrame`, `MessageFrame` (the
+`matterwave_sdk.frames`: `CompactingFrame` (first, when the server is folding
+earlier turns before this one, so the first token is later than usual),
+`CompactionFrame`, `ContextFrame`, `MessageFrame` (the
 user turn as saved), `TitleFrame`, `PartStartFrame` / `DeltaFrame` /
 `PartEndFrame` per part (text, reasoning, tool call, tool result),
 `NoticeFrame`, and one terminal frame: `DoneFrame` (the assistant message),
@@ -304,8 +306,9 @@ uv run pytest
 uv run ruff check . && uv run mypy
 ```
 
-`tests/test_openapi_contract.py` checks this client against
-`docs/developers/openapi.json` at the repo root, so a new operation on the API
+`tests/test_openapi_contract.py` checks this client against the app's
+exported OpenAPI document, `docs/developers/openapi.json` in the app repo,
+through the snapshot in `tests/openapi.json`, so a new operation on the API
 and a new method here have to land together. That document is the `/v1`
 contract; the conversation, device-login and native routes are listed apart in
 `APP_OPERATIONS` and checked against it only where it names their paths.
@@ -315,3 +318,19 @@ SDK. The
 conversation stream's frames are the exception: the document lists them under
 `x-sse-events`, and `frames.FRAMES_BY_EVENT` is held to that list, event by
 event and field by field.
+
+### Refreshing the OpenAPI snapshot
+
+`scripts/refresh_openapi.py` copies the app's export over `tests/openapi.json`,
+from a path or an http(s) URL, after checking it is the export (an OpenAPI
+document with `paths` and `x-sse-events`). `--check` writes nothing and exits 1
+when the snapshot is behind:
+
+```
+uv run python scripts/refresh_openapi.py ../matterwave-app/docs/developers/openapi.json
+uv run python scripts/refresh_openapi.py --check https://<host>/<path>/openapi.json
+```
+
+In CI, run the `ci` workflow by hand (`workflow_dispatch`) with an
+`openapi_source` URL: it refreshes the snapshot from it before the tests, so the
+run says whether this client still matches that API.

@@ -281,6 +281,8 @@ def chat_completion_body(
     max_completion_tokens: int | None,
     temperature: float | None,
     top_p: float | None,
+    frequency_penalty: float | None,
+    presence_penalty: float | None,
     stop: str | Sequence[str] | None,
     n: int | None,
     user: str | None,
@@ -311,6 +313,10 @@ def chat_completion_body(
         body["temperature"] = temperature
     if top_p is not None:
         body["top_p"] = top_p
+    if frequency_penalty is not None:
+        body["frequency_penalty"] = frequency_penalty
+    if presence_penalty is not None:
+        body["presence_penalty"] = presence_penalty
     if stop is not None:
         body["stop"] = stop if isinstance(stop, str) else list(stop)
     if n is not None:
