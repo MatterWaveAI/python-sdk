@@ -140,6 +140,8 @@ one chunk at a time, for a client that renders the text as it arrives and also
 wants the finish reason and usage:
 
 ```python
+from matterwave_sdk import ChatCompletionAccumulator
+
 acc = ChatCompletionAccumulator()
 for chunk in client.chat.completions.create(messages=messages, tools=tools, stream=True):
     print(chunk.content, end="")
@@ -329,6 +331,86 @@ drives the same endpoint through the wrapper:
 answer = client.mcp.send_message("<conversation-id>", "Draft a three-line agenda.")
 print(answer.text)
 ```
+
+## The agent tool contract
+
+`matterwave_sdk.agent` is what the MatterWave coding clients (the TUI's `code`
+mode, the VS Code agent) share: the local tools a client offers the model on
+`/v1`, the approval modes that gate them, the paths those tools may touch, and
+the agent-mode system prompt. It is versioned (`agent.CONTRACT_VERSION`,
+`1.0.0`; the prompt carries its own `agent.SYSTEM_PROMPT_VERSION`), and its one
+source is `src/matterwave_sdk/agent/contract.json`, from which the TypeScript
+SDK's copy is generated.
+
+| Tool | Kind | Arguments |
+|---|---|---|
+| `read_file` | read | `path`, `start_line`?, `end_line`? |
+| `list_dir` | read | `path`? |
+| `glob` | read | `pattern`, `path`? |
+| `grep` | read | `pattern`, `path`?, `glob`?, `ignore_case`? |
+| `edit` | write | `path`, `old_string`, `new_string` (fails when missing or not unique) |
+| `write_file` | write | `path`, `content` |
+| `run_shell` | shell | `command`, `timeout_s`? |
+
+| Mode | Runs without asking | Asks first |
+|---|---|---|
+| `plan` | the read tools | nothing; writes and the shell are not offered at all |
+| `ask` (default) | the read tools | `edit`, `write_file`, `run_shell` |
+| `auto-edit` | the read tools, `edit`, `write_file` | `run_shell` |
+| `yolo` | everything | nothing; needs a flag each session and is never saved |
+
+```python
+import json
+from matterwave_sdk import agent, tool_message
+
+tools = agent.tools_for_mode("ask")                   # the `tools` to send
+system = agent.system_prompt("ask", root=str(root))   # names the tools, the mode and the root
+
+for call in completion.tool_calls:
+    decision = agent.allowed(call.function.name, "ask")  # "allow", "ask" or "deny"
+    args = json.loads(call.function.arguments)
+    try:
+        target = agent.confine(root, args["path"], write=call.function.name != "read_file")
+    except agent.PathRefused as refused:
+        messages.append(tool_message(call.id, str(refused)))  # the contract's sentence
+        continue
+    # an edit: apply it to the text, show the diff, write only once approved
+    old = target.absolute.read_text(encoding="utf-8")
+    new = agent.apply_edit(old, args["old_string"], args["new_string"], path=target.relative)
+    print(agent.unified_diff(old, new, target.relative))
+```
+
+`confine(root, path)` resolves a tool's path and returns where it really leads,
+or raises `PathRefused` (with a `reason` and the sentence to hand back to the
+model) before anything is read or written: for a `..` segment, an absolute path
+outside the root, a link that leads out of the root (symbolic links, and
+junctions on Windows), a path on the deny list, by its own name or its
+target's, or a write to a protected path. The deny list is `.env*`, `*.pem`,
+`id_*` and `.git/` plus the lines of the workspace's `.matterwaveignore`, and it
+applies to reads too, so those files are never sent to the model;
+`.matterwaveignore` itself can be read but not written. Confinement is not a
+sandbox: `run_shell` reaches whatever the user can, which is why it asks.
+
+`apply_edit` is `edit`'s exact replace on text (`EditError` when the string is
+missing, not unique, empty or unchanged; a model's LF strings still match a
+CRLF file), and `unified_diff` prints the diff an approval shows. The TypeScript
+SDK ports both line for line, and the two suites run the same conformance cases
+(`tests/agent_conformance.json`), so the two clients refuse, edit and print
+alike.
+
+To change the contract, edit `contract.json`, bump `contract_version` (major
+when a tool, field or mode goes or changes meaning, minor when one is added,
+patch when only text changes), and regenerate the TypeScript copy with that
+repo checked out beside this one:
+
+```
+uv run python scripts/gen_agent_contract.py            # writes ../typescript-sdk
+uv run python scripts/gen_agent_contract.py --check    # exit 1 when the copy has drifted
+```
+
+The suite runs the check whenever the TypeScript SDK sits beside this checkout
+(or `MATTERWAVE_TS_SDK` names one), and CI clones it to run the check on every
+push.
 
 ## Development
 
