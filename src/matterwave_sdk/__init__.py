@@ -86,6 +86,7 @@ from .errors import (
     RateLimit,
     RateLimitError,
     ServerError,
+    UnprocessableEntityError,
     WebhookVerificationError,
 )
 from .frames import (

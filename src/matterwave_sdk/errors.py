@@ -109,6 +109,12 @@ class ConflictError(APIError):
     compaction with nothing to fold yet."""
 
 
+class UnprocessableEntityError(APIError):
+    """422: the body failed validation, FastAPI's own refusal shape. The
+    per-field messages arrive as a list of `detail` objects and are joined
+    into one line on the error; `body` keeps the whole response."""
+
+
 class RateLimitError(APIError):
     """429: the per-key window, or the organisation's monthly budget.
 
@@ -226,6 +232,8 @@ def error_class_for(status_code: int) -> type[APIError]:
         return NotFoundError
     if status_code == 409:
         return ConflictError
+    if status_code == 422:
+        return UnprocessableEntityError
     if status_code == 429:
         return RateLimitError
     if status_code >= 500:

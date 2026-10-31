@@ -1143,6 +1143,7 @@ class MatterWave:
         self._last_response: _base.RawResponse | None = None
         self._on_request = on_request
         self._on_response = on_response
+        self._closed = False
         self.chat = Chat(self)
         self.models = Models(self)
         self.embeddings = Embeddings(self)
@@ -1202,6 +1203,12 @@ class MatterWave:
         )
 
     def close(self) -> None:
+        """Close the client's own connections and refuse anything further:
+        a request sent after close raises `MatterWaveError`, and an
+        in-flight conversation stream whose body dies when the transport
+        underneath it goes away is refused at its resume with the same
+        error, rather than retried against a dead client. Idempotent."""
+        self._closed = True
         if self._owns_http:
             self._http.close()
 
@@ -1231,6 +1238,10 @@ class MatterWave:
         attempt_limit = self._config.max_retries if max_retries is None else max_retries
         attempt = 0
         while True:
+            if self._closed:
+                raise MatterWaveError(
+                    f"{request.method} {request.path} was sent to a closed client."
+                )
             if self._on_request is not None:
                 self._on_request(request)
             http_request = self._config.build(request, self._http, timeout=timeout)
@@ -1786,6 +1797,7 @@ class AsyncMatterWave:
         self._last_response: _base.RawResponse | None = None
         self._on_request = on_request
         self._on_response = on_response
+        self._closed = False
         self.chat = AsyncChat(self)
         self.models = AsyncModels(self)
         self.embeddings = AsyncEmbeddings(self)
@@ -1835,6 +1847,9 @@ class AsyncMatterWave:
         )
 
     async def close(self) -> None:
+        """As `MatterWave.close`: refuse anything further and release the
+        client's own connections."""
+        self._closed = True
         if self._owns_http:
             await self._http.aclose()
 
@@ -1861,6 +1876,10 @@ class AsyncMatterWave:
         attempt_limit = self._config.max_retries if max_retries is None else max_retries
         attempt = 0
         while True:
+            if self._closed:
+                raise MatterWaveError(
+                    f"{request.method} {request.path} was sent to a closed client."
+                )
             if self._on_request is not None:
                 self._on_request(request)
             http_request = self._config.build(request, self._http, timeout=timeout)
