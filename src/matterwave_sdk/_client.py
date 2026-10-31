@@ -1032,6 +1032,7 @@ class MatterWave:
         self._config = _Config(api_key, base_url, timeout, max_retries, default_headers)
         self._owns_http = http_client is None
         self._http = http_client or httpx.Client()
+        self._last_response: _base.RawResponse | None = None
         self.chat = Chat(self)
         self.models = Models(self)
         self.embeddings = Embeddings(self)
@@ -1056,6 +1057,14 @@ class MatterWave:
     @property
     def base_url(self) -> str:
         return self._config.base_url
+
+    @property
+    def last_response(self) -> _base.RawResponse | None:
+        """The last HTTP response received, success or refusal: status and
+        headers as they travelled, the request id, `Retry-After` and the
+        `X-RateLimit-*` window the parsed models leave behind. None until
+        something has been sent."""
+        return self._last_response
 
     def index(self) -> ApiIndex:
         """`GET /v1`: the version, the endpoints and the stability promise. No key needed."""
@@ -1122,8 +1131,10 @@ class MatterWave:
                 attempt += 1
                 continue
             if response.is_success:
+                self._last_response = _base.raw_response_of(response)
                 return response
             body = response.read()
+            self._last_response = _base.raw_response_of(response)
             if attempt < attempt_limit and _base.should_retry(response, body):
                 response.close()
                 time.sleep(_base.backoff_s(attempt, _base.retry_after_of(response)))
@@ -1626,6 +1637,7 @@ class AsyncMatterWave:
         self._config = _Config(api_key, base_url, timeout, max_retries, default_headers)
         self._owns_http = http_client is None
         self._http = http_client or httpx.AsyncClient()
+        self._last_response: _base.RawResponse | None = None
         self.chat = AsyncChat(self)
         self.models = AsyncModels(self)
         self.embeddings = AsyncEmbeddings(self)
@@ -1650,6 +1662,11 @@ class AsyncMatterWave:
     @property
     def base_url(self) -> str:
         return self._config.base_url
+
+    @property
+    def last_response(self) -> _base.RawResponse | None:
+        """As `MatterWave.last_response`: the last HTTP response received."""
+        return self._last_response
 
     async def index(self) -> ApiIndex:
         response = await self._send(_base.index_request())
@@ -1706,8 +1723,10 @@ class AsyncMatterWave:
                 attempt += 1
                 continue
             if response.is_success:
+                self._last_response = _base.raw_response_of(response)
                 return response
             body = await response.aread()
+            self._last_response = _base.raw_response_of(response)
             if attempt < attempt_limit and _base.should_retry(response, body):
                 await response.aclose()
                 await asyncio.sleep(_base.backoff_s(attempt, _base.retry_after_of(response)))
