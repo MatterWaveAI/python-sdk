@@ -133,6 +133,17 @@ class DeviceAuthError(APIError):
     second); `expired_token` and `access_denied` mean start over."""
 
 
+class WebhookVerificationError(MatterWaveError):
+    """A webhook delivery the receiver refused: the signature is missing,
+    malformed, stale or wrong, or the signed body is not a JSON object.
+    Local to the verification -- no status and no request id, because an
+    untrusted request is none of the API's doing."""
+
+    def __init__(self, message: str, *, cause: BaseException | None = None) -> None:
+        super().__init__(message)
+        self.__cause__ = cause
+
+
 class McpError(MatterWaveError):
     """A JSON-RPC error the `/mcp` endpoint answered with.
 

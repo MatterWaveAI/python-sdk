@@ -18,7 +18,7 @@ is the operator surface (the platform `admin` role, not an API key's), and
 send a message).
 """
 
-from . import frames
+from . import frames, webhooks
 from ._base import (
     APP_OPERATIONS,
     OPERATIONS,
@@ -84,6 +84,7 @@ from .errors import (
     RateLimit,
     RateLimitError,
     ServerError,
+    WebhookVerificationError,
 )
 from .frames import (
     CompactionFrame,
@@ -329,7 +330,9 @@ __all__ = [
     "WebhookDeliveryList",
     "WebhookEndpoint",
     "WebhookEndpointList",
+    "WebhookVerificationError",
     "Webhooks",
     "frames",
+    "webhooks",
     "__version__",
 ]
