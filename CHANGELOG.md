@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-31
+
+### Added
+
+- `matterwave_sdk.webhooks.unwrap(payload, headers, secret)` — the
+  receiver's half of webhooks: verify a delivered event and decode it. The
+  `MatterWave-Signature` header (`t=<unix>,v1=<hex HMAC-SHA256>` over
+  `<t>.<body>`) is checked with a constant-time compare, any `v1=` element
+  may match so a rotated secret verifies against either value during a
+  changeover, and the timestamp must sit within 300 seconds (the platform's
+  window) of the receiver's clock. `WebhookVerificationError` for a
+  missing, stale or wrong signature, or a body that is not a JSON object;
+  `sign` ships beside it, the platform sender's exact function (T-201).
+- Per-call `timeout=` and `max_retries=` on `chat.completions.create`,
+  `embeddings.create` and the conversation `send` / `edit` / `regenerate`
+  turns, overriding the client's settings for that one call — a single
+  long generation need not be cut by the 60s default, nor hold the whole
+  client at its pace (T-202).
+- `client.last_response` — the last HTTP response received, success or
+  refusal: status, headers, the request id, `Retry-After` and the
+  `X-RateLimit-*` window the parsed models leave behind (T-203).
+- `client.chat.completions.parse(response_model=Model)` — `create` plus
+  validation: the answer's text read as JSON and handed to the caller's
+  pydantic model (`model_validate`, or v1's `parse_obj`), whose instance
+  comes back. A non-JSON answer is a `ParseError`; a schema failure raises
+  the model's own error (T-204).
+- `stream.final_text()` on every stream — the whole answer, accumulated:
+  iterate for the pieces, call this for the whole (T-205).
+- `client.conversations.items()` — every conversation of every page, one
+  at a time, the item-level paginator over `pages()` (T-205).
+- `on_request` / `on_response` client hooks — the request about to go out
+  and the response that came back, once per attempt, for logging (T-205).
+- `close()` now refuses anything further: a request sent after close
+  raises `MatterWaveError`, and an in-flight conversation turn is refused
+  at its resume rather than retried against a dead client (T-206).
+- `UnprocessableEntityError` — the 422 validation refusal as its own
+  class, the per-field messages joined onto the error (T-206).
+- `client.audit.list()` and `client.audit.export_csv()` — the org's audit
+  trail (`GET /api/org/audit`, `GET /api/org/audit.csv`), the reads the org
+  pane's audit tab makes: one page of `audit_events` newest first (`data`,
+  `next_cursor`, `actions`) narrowed by `event` (an action exactly or as a
+  dotted prefix), `actor` (subject or email, case-insensitively),
+  `since`/`until`, `cursor` and `limit` (1 to 200, 50 when omitted), and
+  every matching row as the CSV the server streams. Owner or admin by
+  membership row: the platform refuses an API key on these routes, so they
+  answer a signed-in session.
+- `AuditPage` and `AuditEvent` models for the rows: `id`, `occurred_at`,
+  `actor` (the writer's subject), `actor_email` where one is resolved,
+  `action`, `target` and the writer's `detail`.
+
 ### Documentation
 
 - "Connect your editor to MatterWave": a README section and a `docs/mcp.md`

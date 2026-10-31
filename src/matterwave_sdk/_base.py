@@ -136,6 +136,8 @@ APP_OPERATIONS: dict[str, tuple[str, str]] = {
     "usage.get": ("GET", "/api/me/usage"),
     "usage.org": ("GET", "/api/org/usage"),
     "usage.export_csv": ("GET", "/api/org/usage.csv"),
+    "audit.list": ("GET", "/api/org/audit"),
+    "audit.export_csv": ("GET", "/api/org/audit.csv"),
     "webhooks.list": ("GET", "/api/org/webhooks"),
     "webhooks.create": ("POST", "/api/org/webhooks"),
     "webhooks.get": ("GET", "/api/org/webhooks/{endpoint_id}"),
@@ -737,6 +739,38 @@ def headers_for(
 
 
 # --- responses ---------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class RawResponse:
+    """The last HTTP response the client received, whatever became of it:
+    status and headers as they travelled, with the pieces the parsed models
+    leave behind -- the request id, the retry delay, the rate-limit window.
+    `client.last_response` holds it, so `X-RateLimit-*` and the ids are
+    reachable on a refusal as well as on a success."""
+
+    status_code: int
+    headers: httpx.Headers
+    request_id: str | None
+    retry_after: float | None
+    rate_limit: RateLimit | None
+
+    def header(self, name: str) -> str | None:
+        """One header's value, whichever case the server sent the name in."""
+        value = self.headers.get(name)
+        return str(value) if value is not None else None
+
+
+def raw_response_of(response: httpx.Response) -> RawResponse:
+    """The `RawResponse` for a response the client has in hand. Headers stay
+    readable after the body is closed, so this is safe on the failures too."""
+    return RawResponse(
+        status_code=response.status_code,
+        headers=response.headers,
+        request_id=request_id_of(response),
+        retry_after=retry_after_of(response),
+        rate_limit=rate_limit_of(response),
+    )
 
 
 def request_id_of(response: httpx.Response) -> str | None:

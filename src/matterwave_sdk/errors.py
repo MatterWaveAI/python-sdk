@@ -109,6 +109,12 @@ class ConflictError(APIError):
     compaction with nothing to fold yet."""
 
 
+class UnprocessableEntityError(APIError):
+    """422: the body failed validation, FastAPI's own refusal shape. The
+    per-field messages arrive as a list of `detail` objects and are joined
+    into one line on the error; `body` keeps the whole response."""
+
+
 class RateLimitError(APIError):
     """429: the per-key window, or the organisation's monthly budget.
 
@@ -131,6 +137,30 @@ class DeviceAuthError(APIError):
     """A device login the server has not approved. `code` is RFC 8628's:
     `authorization_pending` and `slow_down` mean poll again (later, for the
     second); `expired_token` and `access_denied` mean start over."""
+
+
+class WebhookVerificationError(MatterWaveError):
+    """A webhook delivery the receiver refused: the signature is missing,
+    malformed, stale or wrong, or the signed body is not a JSON object.
+    Local to the verification -- no status and no request id, because an
+    untrusted request is none of the API's doing."""
+
+    def __init__(self, message: str, *, cause: BaseException | None = None) -> None:
+        super().__init__(message)
+        self.__cause__ = cause
+
+
+class ParseError(MatterWaveError):
+    """A structured-output parse that could not produce the model: the
+    answer was empty or was not JSON. A schema failure is not here -- the
+    validator's own error (a pydantic `ValidationError`, say) is what
+    propagates, because it says which field the model got wrong. `body`
+    carries the text that would not parse."""
+
+    def __init__(self, message: str, *, cause: BaseException | None = None, body: Any = None) -> None:
+        super().__init__(message)
+        self.__cause__ = cause
+        self.body = body
 
 
 class McpError(MatterWaveError):
@@ -202,6 +232,8 @@ def error_class_for(status_code: int) -> type[APIError]:
         return NotFoundError
     if status_code == 409:
         return ConflictError
+    if status_code == 422:
+        return UnprocessableEntityError
     if status_code == 429:
         return RateLimitError
     if status_code >= 500:

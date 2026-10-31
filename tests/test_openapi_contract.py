@@ -92,7 +92,10 @@ def test_create_accepts_every_request_field_the_schema_names(document: dict) -> 
     create = inspect.signature(
         MatterWave(api_key="k", base_url="https://matterwave.test").chat.completions.create
     )
-    accepted = set(create.parameters) - {"extra_body"}
+    # `extra_body` carries fields this client predates; `timeout` and
+    # `max_retries` are the call's own client bounds. None of the three is
+    # a wire field of the request.
+    accepted = set(create.parameters) - {"extra_body", "timeout", "max_retries"}
     assert expected <= accepted, f"missing: {expected - accepted}"
     assert accepted - expected == set(), f"not in the schema: {accepted - expected}"
 
@@ -103,7 +106,7 @@ def test_embeddings_create_accepts_every_request_field_the_schema_names(document
     create = inspect.signature(
         MatterWave(api_key="k", base_url="https://matterwave.test").embeddings.create
     )
-    accepted = set(create.parameters) - {"extra_body"}
+    accepted = set(create.parameters) - {"extra_body", "timeout", "max_retries"}
     assert accepted == expected, f"schema {expected} vs client {accepted}"
 
 

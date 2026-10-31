@@ -18,12 +18,13 @@ is the operator surface (the platform `admin` role, not an API key's), and
 send a message).
 """
 
-from . import frames
+from . import frames, webhooks
 from ._base import (
     APP_OPERATIONS,
     OPERATIONS,
     EmbeddingInput,
     Message,
+    RawResponse,
     Role,
     Tool,
     ToolChoice,
@@ -46,6 +47,7 @@ from ._resources import (
     AsyncAdminAnnouncements,
     AsyncAnnouncements,
     AsyncAttachments,
+    AsyncAudit,
     AsyncBudgetClient,
     AsyncEntitlementsClient,
     AsyncKeys,
@@ -55,6 +57,7 @@ from ._resources import (
     AsyncUsageClient,
     AsyncWebhooks,
     Attachments,
+    Audit,
     BudgetClient,
     EntitlementsClient,
     Keys,
@@ -78,10 +81,13 @@ from .errors import (
     McpToolError,
     MissingAPIKeyError,
     NotFoundError,
+    ParseError,
     PermissionDeniedError,
     RateLimit,
     RateLimitError,
     ServerError,
+    UnprocessableEntityError,
+    WebhookVerificationError,
 )
 from .frames import (
     CompactionFrame,
@@ -113,6 +119,8 @@ from .models import (
     AssistantMessage,
     Attachment,
     AttachmentLimits,
+    AuditEvent,
+    AuditPage,
     Budget,
     ChatCompletion,
     ChatCompletionChunk,
@@ -214,6 +222,9 @@ __all__ = [
     "Attachment",
     "AttachmentLimits",
     "Attachments",
+    "Audit",
+    "AuditEvent",
+    "AuditPage",
     "AuthenticationError",
     "BadRequestError",
     "Budget",
@@ -285,11 +296,13 @@ __all__ = [
     "NotificationsReadAll",
     "OrgInstructions",
     "OrgUsage",
+    "ParseError",
     "PartEndFrame",
     "PartStartFrame",
     "PermissionDeniedError",
     "RateLimit",
     "RateLimitError",
+    "RawResponse",
     "RemovedFeedback",
     "REPORT_KINDS",
     "Role",
@@ -322,7 +335,9 @@ __all__ = [
     "WebhookDeliveryList",
     "WebhookEndpoint",
     "WebhookEndpointList",
+    "WebhookVerificationError",
     "Webhooks",
     "frames",
+    "webhooks",
     "__version__",
 ]

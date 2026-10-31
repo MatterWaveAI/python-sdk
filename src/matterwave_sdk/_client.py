@@ -22,10 +22,11 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, Mapping, Sequence
 from types import TracebackType
-from typing import Any, Literal, overload
+from typing import Any, Literal, TypeVar, cast, overload
 
 import httpx
 
@@ -38,6 +39,7 @@ from ._resources import (
     AsyncAdmin,
     AsyncAnnouncements,
     AsyncAttachments,
+    AsyncAudit,
     AsyncBudgetClient,
     AsyncEntitlementsClient,
     AsyncKeys,
@@ -47,6 +49,7 @@ from ._resources import (
     AsyncUsageClient,
     AsyncWebhooks,
     Attachments,
+    Audit,
     BudgetClient,
     EntitlementsClient,
     Keys,
@@ -63,6 +66,7 @@ from .errors import (
     APITimeoutError,
     DeviceAuthError,
     MatterWaveError,
+    ParseError,
 )
 from .frames import TERMINAL_FRAMES, ConversationFrame, DeltaFrame, DoneFrame, frame_from_event
 from .models import (
@@ -113,8 +117,16 @@ class _Config:
         self.max_retries = max_retries
         self.default_headers = dict(default_headers or {})
 
-    def build(self, request: Request, client: httpx.Client | httpx.AsyncClient) -> httpx.Request:
+    def build(
+        self,
+        request: Request,
+        client: httpx.Client | httpx.AsyncClient,
+        timeout: float | httpx.Timeout | None = None,
+    ) -> httpx.Request:
         headers = _base.headers_for(request, self.api_key, USER_AGENT, self.default_headers)
+        # Most specific first: the call's own timeout, then the operation's
+        # (an MCP tool that runs a whole model turn), then the client's.
+        effective = timeout if timeout is not None else request.timeout
         return client.build_request(
             request.method,
             self.base_url + request.path,
@@ -122,7 +134,7 @@ class _Config:
             files=dict(request.files) if request.files else None,
             params=dict(request.params) or None,
             headers=headers,
-            timeout=request.timeout if request.timeout is not None else self.timeout,
+            timeout=effective if effective is not None else self.timeout,
         )
 
 
@@ -161,6 +173,12 @@ class Stream:
             if chunk.content:
                 yield chunk.content
 
+    def final_text(self) -> str:
+        """Drain the stream and return the whole answer: every chunk's text
+        joined, the role, stop and usage frames skipped. The accumulation
+        helper -- iterate for the pieces, call this for the whole."""
+        return "".join(self.text())
+
     def close(self) -> None:
         self._response.close()
 
@@ -195,6 +213,10 @@ class AsyncStream:
         async for chunk in self:
             if chunk.content:
                 yield chunk.content
+
+    async def final_text(self) -> str:
+        """As `Stream.final_text`: drain the stream, return the whole answer."""
+        return "".join([text async for text in self.text()])
 
     async def close(self) -> None:
         await self._response.aclose()
@@ -315,6 +337,11 @@ class ConversationStream:
             if isinstance(frame, DeltaFrame) and frame.content:
                 yield frame.content
 
+    def final_text(self) -> str:
+        """Drain the turn and return the whole answer: every delta joined,
+        reasoning and every other frame skipped."""
+        return "".join(self.text())
+
     def close(self) -> None:
         self._response.close()
 
@@ -378,6 +405,10 @@ class AsyncConversationStream:
             if isinstance(frame, DeltaFrame) and frame.content:
                 yield frame.content
 
+    async def final_text(self) -> str:
+        """As `ConversationStream.final_text`: drain the turn, return the answer."""
+        return "".join([text async for text in self.text()])
+
     async def close(self) -> None:
         await self._response.aclose()
 
@@ -394,6 +425,47 @@ class AsyncConversationStream:
 
 
 # --- the sync client ---------------------------------------------------------
+
+ModelT = TypeVar("ModelT")
+
+
+def _validator_of(response_model: type[ModelT]) -> Any:
+    """The classmethod that validates against `response_model`, preferring
+    pydantic v2's `model_validate` over v1's `parse_obj`; a type with
+    neither is refused before any request is made."""
+    validator: Any = response_model
+    if hasattr(validator, "model_validate"):
+        return validator.model_validate
+    if hasattr(validator, "parse_obj"):
+        return validator.parse_obj
+    raise TypeError(
+        "response_model must provide model_validate (pydantic v2) or parse_obj"
+        " (pydantic v1); use a plain dict if you want no validation."
+    )
+
+
+def _parse_completion_text(completion: ChatCompletion, response_model: type[ModelT]) -> ModelT:
+    """The parsed, validated answer behind `parse`: the message's text as
+    JSON, validated by the model the caller named. The validator's own
+    error propagates -- pydantic's ValidationError says which field the
+    model got wrong, and that is the caller's to catch."""
+    content = completion.content
+    if not content or not content.strip():
+        raise ParseError(
+            "The model answered with no content to parse"
+            " (a tool call or an empty message, not a JSON object).",
+            body=completion,
+        )
+    try:
+        data = json.loads(content)
+    except ValueError as exc:
+        raise ParseError(
+            "The model's answer is not JSON, so it cannot be validated against"
+            f" {getattr(response_model, '__name__', 'the model')}.",
+            cause=exc,
+            body=content,
+        ) from exc
+    return cast(ModelT, _validator_of(response_model)(data))
 
 
 class Completions:
@@ -420,6 +492,8 @@ class Completions:
         response_format: dict[str, Any] | None = None,
         conversation_id: str | None = None,
         extra_body: dict[str, Any] | None = None,
+        timeout: float | None = None,
+        max_retries: int | None = None,
     ) -> ChatCompletion: ...
 
     @overload
@@ -442,6 +516,8 @@ class Completions:
         response_format: dict[str, Any] | None = None,
         conversation_id: str | None = None,
         extra_body: dict[str, Any] | None = None,
+        timeout: float | None = None,
+        max_retries: int | None = None,
     ) -> Stream: ...
 
     def create(
@@ -463,13 +539,17 @@ class Completions:
         response_format: dict[str, Any] | None = None,
         conversation_id: str | None = None,
         extra_body: dict[str, Any] | None = None,
+        timeout: float | None = None,
+        max_retries: int | None = None,
     ) -> ChatCompletion | Stream:
         """`POST /v1/chat/completions`. `messages` is the whole prompt; the
         server prefixes nothing. `model=None` is the deployment's default.
         `tools`, `tool_choice` and `response_format` reach the model as
         sent; a tool call comes back in `completion.tool_calls` for the
         caller to run. `conversation_id` records the turn into that
-        conversation of the key owner's (stateless otherwise)."""
+        conversation of the key owner's (stateless otherwise). `timeout`
+        and `max_retries` are the call's own bounds, overriding the
+        client's for this one call."""
         body = _base.chat_completion_body(
             messages,
             model=model,
@@ -490,11 +570,48 @@ class Completions:
         )
         request = _base.chat_completions_request(body)
         if stream:
-            return Stream(self._client._send(request))
-        response = self._client._send(request)
+            return Stream(
+                self._client._send(request, timeout=timeout, max_retries=max_retries)
+            )
+        response = self._client._send(request, timeout=timeout, max_retries=max_retries)
         return ChatCompletion.from_dict(
             _base.parse_json_object(response), request_id=_base.request_id_of(response)
         )
+
+    def parse(
+        self,
+        messages: Sequence[Message],
+        *,
+        response_model: type[ModelT],
+        timeout: float | None = None,
+        max_retries: int | None = None,
+        **create_kwargs: Any,
+    ) -> ModelT:
+        """`create` plus validation: the answer's text is read as JSON and
+        handed to `response_model` for validation, whose instance comes
+        back -- the `.parse(response_model=Model)` the peers ship.
+
+        The model is asked for a JSON object (`response_format` of
+        `json_object`) unless the caller passes their own
+        `response_format` among `create_kwargs`; send
+        `response_format={"type": "json_schema", ...}` when the backend
+        serves schema enforcement. The remaining keyword arguments go to
+        `create` unchanged.
+
+        `MatterWaveError` when the answer is empty or is not JSON; a
+        validation failure raises `response_model`'s own error, exactly as
+        calling `model_validate` (pydantic) or `parse_obj` (pydantic v1)
+        would. Anything with either classmethod validates, so any pydantic
+        model works without this package depending on pydantic."""
+        _validator_of(response_model)  # refused here, before any request
+        completion = self.create(
+            messages,
+            response_format=create_kwargs.pop("response_format", None) or {"type": "json_object"},
+            timeout=timeout,
+            max_retries=max_retries,
+            **create_kwargs,
+        )
+        return _parse_completion_text(completion, response_model)
 
 
 class Chat:
@@ -515,6 +632,8 @@ class Embeddings:
         dimensions: int | None = None,
         user: str | None = None,
         extra_body: dict[str, Any] | None = None,
+        timeout: float | None = None,
+        max_retries: int | None = None,
     ) -> EmbeddingList:
         """`POST /v1/embeddings`: one embedding per input. A deployment serves
         one embedding model, so `model` may be omitted; `index().capabilities`
@@ -527,7 +646,9 @@ class Embeddings:
             user=user,
             extra_body=extra_body,
         )
-        response = self._client._send(_base.embeddings_request(body))
+        response = self._client._send(
+            _base.embeddings_request(body), timeout=timeout, max_retries=max_retries
+        )
         return EmbeddingList.from_dict(
             _base.parse_json_object(response), request_id=_base.request_id_of(response)
         )
@@ -587,6 +708,15 @@ class Conversations:
             cursor = page.next_cursor
             if cursor is None:
                 return
+
+    def items(
+        self, *, filter: str | None = None, limit: int | None = None
+    ) -> Iterator[Conversation]:
+        """Every conversation of every page, one at a time -- the item-level
+        paginator, walking `pages` so each page is fetched only as the
+        previous one runs dry."""
+        for page in self.pages(filter=filter, limit=limit):
+            yield from page
 
     def search(self, q: str, *, limit: int | None = None) -> SearchResults:
         """`GET /api/conversations/search`: full text over the caller's own messages."""
@@ -736,9 +866,19 @@ class Conversations:
         )
         return ConversationInstructions.from_dict(body, request_id=rid)
 
-    def _stream(self, request: Request, conversation_id: str) -> ConversationStream:
+    def _stream(
+        self,
+        request: Request,
+        conversation_id: str,
+        *,
+        timeout: float | None = None,
+        max_retries: int | None = None,
+    ) -> ConversationStream:
         return ConversationStream(
-            self._client, request, conversation_id, self._client._send(request)
+            self._client,
+            request,
+            conversation_id,
+            self._client._send(request, timeout=timeout, max_retries=max_retries),
         )
 
     def send(
@@ -750,10 +890,15 @@ class Conversations:
         temperature: float | None = None,
         attachment_ids: Sequence[str] | None = None,
         parent_id: str | None = None,
+        timeout: float | None = None,
+        max_retries: int | None = None,
     ) -> ConversationStream:
         """Append a user message and stream the reply. The server builds the
         prompt from the stored history and instructions; `parent_id` sends
-        onto that branch instead of the current leaf."""
+        onto that branch instead of the current leaf. `timeout` and
+        `max_retries` are the turn's own bounds, overriding the client's:
+        a long generation need not be cut by the 60s default, nor hold the
+        whole client at its pace."""
         request = _base.send_message_request(
             conversation_id,
             content,
@@ -762,7 +907,9 @@ class Conversations:
             attachment_ids=attachment_ids,
             parent_id=parent_id,
         )
-        return self._stream(request, conversation_id)
+        return self._stream(
+            request, conversation_id, timeout=timeout, max_retries=max_retries
+        )
 
     def edit(
         self,
@@ -772,12 +919,16 @@ class Conversations:
         *,
         model: str | None = None,
         temperature: float | None = None,
+        timeout: float | None = None,
+        max_retries: int | None = None,
     ) -> ConversationStream:
         """Edit a user message as a new branch beside it, and stream the answer."""
         request = _base.edit_message_request(
             conversation_id, message_id, content, model=model, temperature=temperature
         )
-        return self._stream(request, conversation_id)
+        return self._stream(
+            request, conversation_id, timeout=timeout, max_retries=max_retries
+        )
 
     def regenerate(
         self,
@@ -786,12 +937,16 @@ class Conversations:
         *,
         model: str | None = None,
         temperature: float | None = None,
+        timeout: float | None = None,
+        max_retries: int | None = None,
     ) -> ConversationStream:
         """Answer an assistant message's turn again, as a sibling of it."""
         request = _base.regenerate_message_request(
             conversation_id, message_id, model=model, temperature=temperature
         )
-        return self._stream(request, conversation_id)
+        return self._stream(
+            request, conversation_id, timeout=timeout, max_retries=max_retries
+        )
 
 
 class Messages:
@@ -979,10 +1134,16 @@ class MatterWave:
         max_retries: int = _base.DEFAULT_MAX_RETRIES,
         default_headers: Mapping[str, str] | None = None,
         http_client: httpx.Client | None = None,
+        on_request: Callable[[Request], object] | None = None,
+        on_response: Callable[[_base.RawResponse], object] | None = None,
     ) -> None:
         self._config = _Config(api_key, base_url, timeout, max_retries, default_headers)
         self._owns_http = http_client is None
         self._http = http_client or httpx.Client()
+        self._last_response: _base.RawResponse | None = None
+        self._on_request = on_request
+        self._on_response = on_response
+        self._closed = False
         self.chat = Chat(self)
         self.models = Models(self)
         self.embeddings = Embeddings(self)
@@ -992,6 +1153,7 @@ class MatterWave:
         self.auth = Auth(self)
         self.keys = Keys(self)
         self.usage = UsageClient(self)
+        self.audit = Audit(self)
         self.webhooks = Webhooks(self)
         self.attachments = Attachments(self)
         self.library = LibraryClient(self)
@@ -1006,6 +1168,14 @@ class MatterWave:
     @property
     def base_url(self) -> str:
         return self._config.base_url
+
+    @property
+    def last_response(self) -> _base.RawResponse | None:
+        """The last HTTP response received, success or refusal: status and
+        headers as they travelled, the request id, `Retry-After` and the
+        `X-RateLimit-*` window the parsed models leave behind. None until
+        something has been sent."""
+        return self._last_response
 
     def index(self) -> ApiIndex:
         """`GET /v1`: the version, the endpoints and the stability promise. No key needed."""
@@ -1033,6 +1203,12 @@ class MatterWave:
         )
 
     def close(self) -> None:
+        """Close the client's own connections and refuse anything further:
+        a request sent after close raises `MatterWaveError`, and an
+        in-flight conversation stream whose body dies when the transport
+        underneath it goes away is refused at its resume with the same
+        error, rather than retried against a dead client. Idempotent."""
+        self._closed = True
         if self._owns_http:
             self._http.close()
 
@@ -1047,25 +1223,46 @@ class MatterWave:
     ) -> None:
         self.close()
 
-    def _send(self, request: Request) -> httpx.Response:
+    def _send(
+        self,
+        request: Request,
+        *,
+        timeout: float | httpx.Timeout | None = None,
+        max_retries: int | None = None,
+    ) -> httpx.Response:
         """One operation, with the retry loop. A streamed response is handed
         back unread; a buffered one is read here so the body is available
-        for the retry decision and the error."""
+        for the retry decision and the error. `timeout` and `max_retries`
+        are the call's own bounds: where given, they override the client's,
+        so one long call need not hold the whole client at its pace."""
+        attempt_limit = self._config.max_retries if max_retries is None else max_retries
         attempt = 0
         while True:
-            http_request = self._config.build(request, self._http)
+            if self._closed:
+                raise MatterWaveError(
+                    f"{request.method} {request.path} was sent to a closed client."
+                )
+            if self._on_request is not None:
+                self._on_request(request)
+            http_request = self._config.build(request, self._http, timeout=timeout)
             try:
                 response = self._http.send(http_request, stream=request.stream)
             except httpx.HTTPError as exc:
-                if attempt >= self._config.max_retries:
+                if attempt >= attempt_limit:
                     raise _connection_error(exc, request) from exc
                 time.sleep(_base.backoff_s(attempt, None))
                 attempt += 1
                 continue
             if response.is_success:
+                self._last_response = _base.raw_response_of(response)
+                if self._on_response is not None:
+                    self._on_response(self._last_response)
                 return response
             body = response.read()
-            if attempt < self._config.max_retries and _base.should_retry(response, body):
+            self._last_response = _base.raw_response_of(response)
+            if self._on_response is not None:
+                self._on_response(self._last_response)
+            if attempt < attempt_limit and _base.should_retry(response, body):
                 response.close()
                 time.sleep(_base.backoff_s(attempt, _base.retry_after_of(response)))
                 attempt += 1
@@ -1101,6 +1298,8 @@ class AsyncCompletions:
         response_format: dict[str, Any] | None = None,
         conversation_id: str | None = None,
         extra_body: dict[str, Any] | None = None,
+        timeout: float | None = None,
+        max_retries: int | None = None,
     ) -> ChatCompletion: ...
 
     @overload
@@ -1123,6 +1322,8 @@ class AsyncCompletions:
         response_format: dict[str, Any] | None = None,
         conversation_id: str | None = None,
         extra_body: dict[str, Any] | None = None,
+        timeout: float | None = None,
+        max_retries: int | None = None,
     ) -> AsyncStream: ...
 
     async def create(
@@ -1144,6 +1345,8 @@ class AsyncCompletions:
         response_format: dict[str, Any] | None = None,
         conversation_id: str | None = None,
         extra_body: dict[str, Any] | None = None,
+        timeout: float | None = None,
+        max_retries: int | None = None,
     ) -> ChatCompletion | AsyncStream:
         body = _base.chat_completion_body(
             messages,
@@ -1165,11 +1368,33 @@ class AsyncCompletions:
         )
         request = _base.chat_completions_request(body)
         if stream:
-            return AsyncStream(await self._client._send(request))
-        response = await self._client._send(request)
+            return AsyncStream(
+                await self._client._send(request, timeout=timeout, max_retries=max_retries)
+            )
+        response = await self._client._send(request, timeout=timeout, max_retries=max_retries)
         return ChatCompletion.from_dict(
             _base.parse_json_object(response), request_id=_base.request_id_of(response)
         )
+
+    async def parse(
+        self,
+        messages: Sequence[Message],
+        *,
+        response_model: type[ModelT],
+        timeout: float | None = None,
+        max_retries: int | None = None,
+        **create_kwargs: Any,
+    ) -> ModelT:
+        """As `Completions.parse`: `create` plus validation of the answer."""
+        _validator_of(response_model)  # refused here, before any request
+        completion = await self.create(
+            messages,
+            response_format=create_kwargs.pop("response_format", None) or {"type": "json_object"},
+            timeout=timeout,
+            max_retries=max_retries,
+            **create_kwargs,
+        )
+        return _parse_completion_text(completion, response_model)
 
 
 class AsyncChat:
@@ -1190,6 +1415,8 @@ class AsyncEmbeddings:
         dimensions: int | None = None,
         user: str | None = None,
         extra_body: dict[str, Any] | None = None,
+        timeout: float | None = None,
+        max_retries: int | None = None,
     ) -> EmbeddingList:
         body = _base.embeddings_body(
             input,
@@ -1199,7 +1426,9 @@ class AsyncEmbeddings:
             user=user,
             extra_body=extra_body,
         )
-        response = await self._client._send(_base.embeddings_request(body))
+        response = await self._client._send(
+            _base.embeddings_request(body), timeout=timeout, max_retries=max_retries
+        )
         return EmbeddingList.from_dict(
             _base.parse_json_object(response), request_id=_base.request_id_of(response)
         )
@@ -1246,6 +1475,14 @@ class AsyncConversations:
             cursor = page.next_cursor
             if cursor is None:
                 return
+
+    async def items(
+        self, *, filter: str | None = None, limit: int | None = None
+    ) -> AsyncIterator[Conversation]:
+        """As `Conversations.items`: every conversation of every page."""
+        async for page in self.pages(filter=filter, limit=limit):
+            for conversation in page:
+                yield conversation
 
     async def search(self, q: str, *, limit: int | None = None) -> SearchResults:
         body, rid = await self._object(_base.search_conversations_request(q, limit))
@@ -1348,8 +1585,17 @@ class AsyncConversations:
         )
         return ConversationInstructions.from_dict(body, request_id=rid)
 
-    async def _stream(self, request: Request, conversation_id: str) -> AsyncConversationStream:
-        response = await self._client._send(request)
+    async def _stream(
+        self,
+        request: Request,
+        conversation_id: str,
+        *,
+        timeout: float | None = None,
+        max_retries: int | None = None,
+    ) -> AsyncConversationStream:
+        response = await self._client._send(
+            request, timeout=timeout, max_retries=max_retries
+        )
         return AsyncConversationStream(self._client, request, conversation_id, response)
 
     async def send(
@@ -1361,6 +1607,8 @@ class AsyncConversations:
         temperature: float | None = None,
         attachment_ids: Sequence[str] | None = None,
         parent_id: str | None = None,
+        timeout: float | None = None,
+        max_retries: int | None = None,
     ) -> AsyncConversationStream:
         request = _base.send_message_request(
             conversation_id,
@@ -1370,7 +1618,9 @@ class AsyncConversations:
             attachment_ids=attachment_ids,
             parent_id=parent_id,
         )
-        return await self._stream(request, conversation_id)
+        return await self._stream(
+            request, conversation_id, timeout=timeout, max_retries=max_retries
+        )
 
     async def edit(
         self,
@@ -1380,11 +1630,15 @@ class AsyncConversations:
         *,
         model: str | None = None,
         temperature: float | None = None,
+        timeout: float | None = None,
+        max_retries: int | None = None,
     ) -> AsyncConversationStream:
         request = _base.edit_message_request(
             conversation_id, message_id, content, model=model, temperature=temperature
         )
-        return await self._stream(request, conversation_id)
+        return await self._stream(
+            request, conversation_id, timeout=timeout, max_retries=max_retries
+        )
 
     async def regenerate(
         self,
@@ -1393,11 +1647,15 @@ class AsyncConversations:
         *,
         model: str | None = None,
         temperature: float | None = None,
+        timeout: float | None = None,
+        max_retries: int | None = None,
     ) -> AsyncConversationStream:
         request = _base.regenerate_message_request(
             conversation_id, message_id, model=model, temperature=temperature
         )
-        return await self._stream(request, conversation_id)
+        return await self._stream(
+            request, conversation_id, timeout=timeout, max_retries=max_retries
+        )
 
 
 class AsyncMessages:
@@ -1530,10 +1788,16 @@ class AsyncMatterWave:
         max_retries: int = _base.DEFAULT_MAX_RETRIES,
         default_headers: Mapping[str, str] | None = None,
         http_client: httpx.AsyncClient | None = None,
+        on_request: Callable[[Request], object] | None = None,
+        on_response: Callable[[_base.RawResponse], object] | None = None,
     ) -> None:
         self._config = _Config(api_key, base_url, timeout, max_retries, default_headers)
         self._owns_http = http_client is None
         self._http = http_client or httpx.AsyncClient()
+        self._last_response: _base.RawResponse | None = None
+        self._on_request = on_request
+        self._on_response = on_response
+        self._closed = False
         self.chat = AsyncChat(self)
         self.models = AsyncModels(self)
         self.embeddings = AsyncEmbeddings(self)
@@ -1543,6 +1807,7 @@ class AsyncMatterWave:
         self.auth = AsyncAuth(self)
         self.keys = AsyncKeys(self)
         self.usage = AsyncUsageClient(self)
+        self.audit = AsyncAudit(self)
         self.webhooks = AsyncWebhooks(self)
         self.attachments = AsyncAttachments(self)
         self.library = AsyncLibraryClient(self)
@@ -1557,6 +1822,11 @@ class AsyncMatterWave:
     @property
     def base_url(self) -> str:
         return self._config.base_url
+
+    @property
+    def last_response(self) -> _base.RawResponse | None:
+        """As `MatterWave.last_response`: the last HTTP response received."""
+        return self._last_response
 
     async def index(self) -> ApiIndex:
         response = await self._send(_base.index_request())
@@ -1577,6 +1847,9 @@ class AsyncMatterWave:
         )
 
     async def close(self) -> None:
+        """As `MatterWave.close`: refuse anything further and release the
+        client's own connections."""
+        self._closed = True
         if self._owns_http:
             await self._http.aclose()
 
@@ -1591,22 +1864,43 @@ class AsyncMatterWave:
     ) -> None:
         await self.close()
 
-    async def _send(self, request: Request) -> httpx.Response:
+    async def _send(
+        self,
+        request: Request,
+        *,
+        timeout: float | httpx.Timeout | None = None,
+        max_retries: int | None = None,
+    ) -> httpx.Response:
+        """As `MatterWave._send`: one operation with the retry loop, the
+        call's own `timeout` and `max_retries` winning over the client's."""
+        attempt_limit = self._config.max_retries if max_retries is None else max_retries
         attempt = 0
         while True:
-            http_request = self._config.build(request, self._http)
+            if self._closed:
+                raise MatterWaveError(
+                    f"{request.method} {request.path} was sent to a closed client."
+                )
+            if self._on_request is not None:
+                self._on_request(request)
+            http_request = self._config.build(request, self._http, timeout=timeout)
             try:
                 response = await self._http.send(http_request, stream=request.stream)
             except httpx.HTTPError as exc:
-                if attempt >= self._config.max_retries:
+                if attempt >= attempt_limit:
                     raise _connection_error(exc, request) from exc
                 await asyncio.sleep(_base.backoff_s(attempt, None))
                 attempt += 1
                 continue
             if response.is_success:
+                self._last_response = _base.raw_response_of(response)
+                if self._on_response is not None:
+                    self._on_response(self._last_response)
                 return response
             body = await response.aread()
-            if attempt < self._config.max_retries and _base.should_retry(response, body):
+            self._last_response = _base.raw_response_of(response)
+            if self._on_response is not None:
+                self._on_response(self._last_response)
+            if attempt < attempt_limit and _base.should_retry(response, body):
                 await response.aclose()
                 await asyncio.sleep(_base.backoff_s(attempt, _base.retry_after_of(response)))
                 attempt += 1
