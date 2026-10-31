@@ -115,8 +115,16 @@ class _Config:
         self.max_retries = max_retries
         self.default_headers = dict(default_headers or {})
 
-    def build(self, request: Request, client: httpx.Client | httpx.AsyncClient) -> httpx.Request:
+    def build(
+        self,
+        request: Request,
+        client: httpx.Client | httpx.AsyncClient,
+        timeout: float | httpx.Timeout | None = None,
+    ) -> httpx.Request:
         headers = _base.headers_for(request, self.api_key, USER_AGENT, self.default_headers)
+        # Most specific first: the call's own timeout, then the operation's
+        # (an MCP tool that runs a whole model turn), then the client's.
+        effective = timeout if timeout is not None else request.timeout
         return client.build_request(
             request.method,
             self.base_url + request.path,
@@ -124,7 +132,7 @@ class _Config:
             files=dict(request.files) if request.files else None,
             params=dict(request.params) or None,
             headers=headers,
-            timeout=request.timeout if request.timeout is not None else self.timeout,
+            timeout=effective if effective is not None else self.timeout,
         )
 
 
@@ -422,6 +430,8 @@ class Completions:
         response_format: dict[str, Any] | None = None,
         conversation_id: str | None = None,
         extra_body: dict[str, Any] | None = None,
+        timeout: float | None = None,
+        max_retries: int | None = None,
     ) -> ChatCompletion: ...
 
     @overload
@@ -444,6 +454,8 @@ class Completions:
         response_format: dict[str, Any] | None = None,
         conversation_id: str | None = None,
         extra_body: dict[str, Any] | None = None,
+        timeout: float | None = None,
+        max_retries: int | None = None,
     ) -> Stream: ...
 
     def create(
@@ -465,13 +477,17 @@ class Completions:
         response_format: dict[str, Any] | None = None,
         conversation_id: str | None = None,
         extra_body: dict[str, Any] | None = None,
+        timeout: float | None = None,
+        max_retries: int | None = None,
     ) -> ChatCompletion | Stream:
         """`POST /v1/chat/completions`. `messages` is the whole prompt; the
         server prefixes nothing. `model=None` is the deployment's default.
         `tools`, `tool_choice` and `response_format` reach the model as
         sent; a tool call comes back in `completion.tool_calls` for the
         caller to run. `conversation_id` records the turn into that
-        conversation of the key owner's (stateless otherwise)."""
+        conversation of the key owner's (stateless otherwise). `timeout`
+        and `max_retries` are the call's own bounds, overriding the
+        client's for this one call."""
         body = _base.chat_completion_body(
             messages,
             model=model,
@@ -492,8 +508,10 @@ class Completions:
         )
         request = _base.chat_completions_request(body)
         if stream:
-            return Stream(self._client._send(request))
-        response = self._client._send(request)
+            return Stream(
+                self._client._send(request, timeout=timeout, max_retries=max_retries)
+            )
+        response = self._client._send(request, timeout=timeout, max_retries=max_retries)
         return ChatCompletion.from_dict(
             _base.parse_json_object(response), request_id=_base.request_id_of(response)
         )
@@ -517,6 +535,8 @@ class Embeddings:
         dimensions: int | None = None,
         user: str | None = None,
         extra_body: dict[str, Any] | None = None,
+        timeout: float | None = None,
+        max_retries: int | None = None,
     ) -> EmbeddingList:
         """`POST /v1/embeddings`: one embedding per input. A deployment serves
         one embedding model, so `model` may be omitted; `index().capabilities`
@@ -529,7 +549,9 @@ class Embeddings:
             user=user,
             extra_body=extra_body,
         )
-        response = self._client._send(_base.embeddings_request(body))
+        response = self._client._send(
+            _base.embeddings_request(body), timeout=timeout, max_retries=max_retries
+        )
         return EmbeddingList.from_dict(
             _base.parse_json_object(response), request_id=_base.request_id_of(response)
         )
@@ -738,9 +760,19 @@ class Conversations:
         )
         return ConversationInstructions.from_dict(body, request_id=rid)
 
-    def _stream(self, request: Request, conversation_id: str) -> ConversationStream:
+    def _stream(
+        self,
+        request: Request,
+        conversation_id: str,
+        *,
+        timeout: float | None = None,
+        max_retries: int | None = None,
+    ) -> ConversationStream:
         return ConversationStream(
-            self._client, request, conversation_id, self._client._send(request)
+            self._client,
+            request,
+            conversation_id,
+            self._client._send(request, timeout=timeout, max_retries=max_retries),
         )
 
     def send(
@@ -752,10 +784,15 @@ class Conversations:
         temperature: float | None = None,
         attachment_ids: Sequence[str] | None = None,
         parent_id: str | None = None,
+        timeout: float | None = None,
+        max_retries: int | None = None,
     ) -> ConversationStream:
         """Append a user message and stream the reply. The server builds the
         prompt from the stored history and instructions; `parent_id` sends
-        onto that branch instead of the current leaf."""
+        onto that branch instead of the current leaf. `timeout` and
+        `max_retries` are the turn's own bounds, overriding the client's:
+        a long generation need not be cut by the 60s default, nor hold the
+        whole client at its pace."""
         request = _base.send_message_request(
             conversation_id,
             content,
@@ -764,7 +801,9 @@ class Conversations:
             attachment_ids=attachment_ids,
             parent_id=parent_id,
         )
-        return self._stream(request, conversation_id)
+        return self._stream(
+            request, conversation_id, timeout=timeout, max_retries=max_retries
+        )
 
     def edit(
         self,
@@ -774,12 +813,16 @@ class Conversations:
         *,
         model: str | None = None,
         temperature: float | None = None,
+        timeout: float | None = None,
+        max_retries: int | None = None,
     ) -> ConversationStream:
         """Edit a user message as a new branch beside it, and stream the answer."""
         request = _base.edit_message_request(
             conversation_id, message_id, content, model=model, temperature=temperature
         )
-        return self._stream(request, conversation_id)
+        return self._stream(
+            request, conversation_id, timeout=timeout, max_retries=max_retries
+        )
 
     def regenerate(
         self,
@@ -788,12 +831,16 @@ class Conversations:
         *,
         model: str | None = None,
         temperature: float | None = None,
+        timeout: float | None = None,
+        max_retries: int | None = None,
     ) -> ConversationStream:
         """Answer an assistant message's turn again, as a sibling of it."""
         request = _base.regenerate_message_request(
             conversation_id, message_id, model=model, temperature=temperature
         )
-        return self._stream(request, conversation_id)
+        return self._stream(
+            request, conversation_id, timeout=timeout, max_retries=max_retries
+        )
 
 
 class Messages:
@@ -1050,17 +1097,26 @@ class MatterWave:
     ) -> None:
         self.close()
 
-    def _send(self, request: Request) -> httpx.Response:
+    def _send(
+        self,
+        request: Request,
+        *,
+        timeout: float | httpx.Timeout | None = None,
+        max_retries: int | None = None,
+    ) -> httpx.Response:
         """One operation, with the retry loop. A streamed response is handed
         back unread; a buffered one is read here so the body is available
-        for the retry decision and the error."""
+        for the retry decision and the error. `timeout` and `max_retries`
+        are the call's own bounds: where given, they override the client's,
+        so one long call need not hold the whole client at its pace."""
+        attempt_limit = self._config.max_retries if max_retries is None else max_retries
         attempt = 0
         while True:
-            http_request = self._config.build(request, self._http)
+            http_request = self._config.build(request, self._http, timeout=timeout)
             try:
                 response = self._http.send(http_request, stream=request.stream)
             except httpx.HTTPError as exc:
-                if attempt >= self._config.max_retries:
+                if attempt >= attempt_limit:
                     raise _connection_error(exc, request) from exc
                 time.sleep(_base.backoff_s(attempt, None))
                 attempt += 1
@@ -1068,7 +1124,7 @@ class MatterWave:
             if response.is_success:
                 return response
             body = response.read()
-            if attempt < self._config.max_retries and _base.should_retry(response, body):
+            if attempt < attempt_limit and _base.should_retry(response, body):
                 response.close()
                 time.sleep(_base.backoff_s(attempt, _base.retry_after_of(response)))
                 attempt += 1
@@ -1104,6 +1160,8 @@ class AsyncCompletions:
         response_format: dict[str, Any] | None = None,
         conversation_id: str | None = None,
         extra_body: dict[str, Any] | None = None,
+        timeout: float | None = None,
+        max_retries: int | None = None,
     ) -> ChatCompletion: ...
 
     @overload
@@ -1126,6 +1184,8 @@ class AsyncCompletions:
         response_format: dict[str, Any] | None = None,
         conversation_id: str | None = None,
         extra_body: dict[str, Any] | None = None,
+        timeout: float | None = None,
+        max_retries: int | None = None,
     ) -> AsyncStream: ...
 
     async def create(
@@ -1147,6 +1207,8 @@ class AsyncCompletions:
         response_format: dict[str, Any] | None = None,
         conversation_id: str | None = None,
         extra_body: dict[str, Any] | None = None,
+        timeout: float | None = None,
+        max_retries: int | None = None,
     ) -> ChatCompletion | AsyncStream:
         body = _base.chat_completion_body(
             messages,
@@ -1168,8 +1230,10 @@ class AsyncCompletions:
         )
         request = _base.chat_completions_request(body)
         if stream:
-            return AsyncStream(await self._client._send(request))
-        response = await self._client._send(request)
+            return AsyncStream(
+                await self._client._send(request, timeout=timeout, max_retries=max_retries)
+            )
+        response = await self._client._send(request, timeout=timeout, max_retries=max_retries)
         return ChatCompletion.from_dict(
             _base.parse_json_object(response), request_id=_base.request_id_of(response)
         )
@@ -1193,6 +1257,8 @@ class AsyncEmbeddings:
         dimensions: int | None = None,
         user: str | None = None,
         extra_body: dict[str, Any] | None = None,
+        timeout: float | None = None,
+        max_retries: int | None = None,
     ) -> EmbeddingList:
         body = _base.embeddings_body(
             input,
@@ -1202,7 +1268,9 @@ class AsyncEmbeddings:
             user=user,
             extra_body=extra_body,
         )
-        response = await self._client._send(_base.embeddings_request(body))
+        response = await self._client._send(
+            _base.embeddings_request(body), timeout=timeout, max_retries=max_retries
+        )
         return EmbeddingList.from_dict(
             _base.parse_json_object(response), request_id=_base.request_id_of(response)
         )
@@ -1351,8 +1419,17 @@ class AsyncConversations:
         )
         return ConversationInstructions.from_dict(body, request_id=rid)
 
-    async def _stream(self, request: Request, conversation_id: str) -> AsyncConversationStream:
-        response = await self._client._send(request)
+    async def _stream(
+        self,
+        request: Request,
+        conversation_id: str,
+        *,
+        timeout: float | None = None,
+        max_retries: int | None = None,
+    ) -> AsyncConversationStream:
+        response = await self._client._send(
+            request, timeout=timeout, max_retries=max_retries
+        )
         return AsyncConversationStream(self._client, request, conversation_id, response)
 
     async def send(
@@ -1364,6 +1441,8 @@ class AsyncConversations:
         temperature: float | None = None,
         attachment_ids: Sequence[str] | None = None,
         parent_id: str | None = None,
+        timeout: float | None = None,
+        max_retries: int | None = None,
     ) -> AsyncConversationStream:
         request = _base.send_message_request(
             conversation_id,
@@ -1373,7 +1452,9 @@ class AsyncConversations:
             attachment_ids=attachment_ids,
             parent_id=parent_id,
         )
-        return await self._stream(request, conversation_id)
+        return await self._stream(
+            request, conversation_id, timeout=timeout, max_retries=max_retries
+        )
 
     async def edit(
         self,
@@ -1383,11 +1464,15 @@ class AsyncConversations:
         *,
         model: str | None = None,
         temperature: float | None = None,
+        timeout: float | None = None,
+        max_retries: int | None = None,
     ) -> AsyncConversationStream:
         request = _base.edit_message_request(
             conversation_id, message_id, content, model=model, temperature=temperature
         )
-        return await self._stream(request, conversation_id)
+        return await self._stream(
+            request, conversation_id, timeout=timeout, max_retries=max_retries
+        )
 
     async def regenerate(
         self,
@@ -1396,11 +1481,15 @@ class AsyncConversations:
         *,
         model: str | None = None,
         temperature: float | None = None,
+        timeout: float | None = None,
+        max_retries: int | None = None,
     ) -> AsyncConversationStream:
         request = _base.regenerate_message_request(
             conversation_id, message_id, model=model, temperature=temperature
         )
-        return await self._stream(request, conversation_id)
+        return await self._stream(
+            request, conversation_id, timeout=timeout, max_retries=max_retries
+        )
 
 
 class AsyncMessages:
@@ -1595,14 +1684,23 @@ class AsyncMatterWave:
     ) -> None:
         await self.close()
 
-    async def _send(self, request: Request) -> httpx.Response:
+    async def _send(
+        self,
+        request: Request,
+        *,
+        timeout: float | httpx.Timeout | None = None,
+        max_retries: int | None = None,
+    ) -> httpx.Response:
+        """As `MatterWave._send`: one operation with the retry loop, the
+        call's own `timeout` and `max_retries` winning over the client's."""
+        attempt_limit = self._config.max_retries if max_retries is None else max_retries
         attempt = 0
         while True:
-            http_request = self._config.build(request, self._http)
+            http_request = self._config.build(request, self._http, timeout=timeout)
             try:
                 response = await self._http.send(http_request, stream=request.stream)
             except httpx.HTTPError as exc:
-                if attempt >= self._config.max_retries:
+                if attempt >= attempt_limit:
                     raise _connection_error(exc, request) from exc
                 await asyncio.sleep(_base.backoff_s(attempt, None))
                 attempt += 1
@@ -1610,7 +1708,7 @@ class AsyncMatterWave:
             if response.is_success:
                 return response
             body = await response.aread()
-            if attempt < self._config.max_retries and _base.should_retry(response, body):
+            if attempt < attempt_limit and _base.should_retry(response, body):
                 await response.aclose()
                 await asyncio.sleep(_base.backoff_s(attempt, _base.retry_after_of(response)))
                 attempt += 1
