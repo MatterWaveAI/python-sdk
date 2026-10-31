@@ -124,6 +124,7 @@ from .models import (
     AuditPage,
     Budget,
     ChatCompletion,
+    ChatCompletionAccumulator,
     ChatCompletionChunk,
     Choice,
     ChunkChoice,
@@ -182,6 +183,7 @@ from .models import (
     WebhookDeliveryList,
     WebhookEndpoint,
     WebhookEndpointList,
+    tool_message,
     vision_of,
 )
 
@@ -231,6 +233,7 @@ __all__ = [
     "Budget",
     "BudgetClient",
     "ChatCompletion",
+    "ChatCompletionAccumulator",
     "ChatCompletionChunk",
     "Choice",
     "ChunkChoice",
@@ -325,6 +328,7 @@ __all__ = [
     "ToolCallFragment",
     "ToolChoice",
     "ToolFunction",
+    "tool_message",
     "UnknownFrame",
     "Usage",
     "UsageBalance",

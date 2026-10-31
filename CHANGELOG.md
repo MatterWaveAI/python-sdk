@@ -16,6 +16,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stream's `compacting` event, sent first on a turn that folds earlier
   messages before it is answered, so a client can restart its wait for the
   first token. Not terminal; `compaction` or `notice` follows.
+- `stream.final_message()` (sync and async) and `ChatCompletionAccumulator`:
+  a stream's text and its tool calls, each reassembled from its
+  `delta.tool_calls` fragments, as an `AssistantMessage`; the accumulator
+  also keeps the finish reason, usage and model.
+- `AssistantMessage.to_message()`, `ToolCall.to_dict()` and
+  `tool_message(call_id, content)`: the assistant turn and its `tool`
+  answers in the shape the next request's `messages` takes.
+- `AppModel.supports_tools` (`GET /api/models`) and `Me.local_agent_tools`
+  (`GET /api/me`): whether a model can call tools and whether the org lets
+  clients run local agent tools. `None` when the server does not send them.
 - `scripts/refresh_openapi.py <path-or-url>` refreshes `tests/openapi.json`
   from the app's export (`--check` exits 1 when it is behind), and the `ci`
   workflow takes an `openapi_source` URL on a manual run to test against it.

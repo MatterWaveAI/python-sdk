@@ -15,7 +15,10 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
+
+if TYPE_CHECKING:
+    from ._base import Message
 
 
 def _int(value: Any, default: int = 0) -> int:
@@ -69,6 +72,15 @@ class ToolCall:
             function=FunctionCall.from_dict(function if isinstance(function, dict) else {}),
         )
 
+    def to_dict(self) -> dict[str, Any]:
+        """The call as the wire spells it, for echoing back in the assistant
+        message that precedes its `tool` answer."""
+        return {
+            "id": self.id,
+            "type": self.type,
+            "function": {"name": self.function.name, "arguments": self.function.arguments},
+        }
+
 
 @dataclass(frozen=True)
 class AssistantMessage:
@@ -91,6 +103,25 @@ class AssistantMessage:
                 else None
             ),
         )
+
+    def to_message(self) -> Message:
+        """This message as the next request's prompt takes it: append it to
+        `messages`, then one `tool` message per call (`tool_message`), and
+        send the lot to continue the loop. `tool_calls` is left out when
+        there are none, as OpenAI shapes a plain answer."""
+        message: Message = {"role": "assistant", "content": self.content}
+        if self.tool_calls:
+            message["tool_calls"] = [call.to_dict() for call in self.tool_calls]
+        return message
+
+
+def tool_message(tool_call_id: str, content: str) -> Message:
+    """The `tool` message answering one call: its `id` as `tool_call_id`
+    and the result as text. A failed call is answered too, with the error
+    as `content`, so the model sees why rather than a gap."""
+    if not tool_call_id:
+        raise ValueError("tool_call_id must be the id of the call this answers")
+    return {"role": "tool", "tool_call_id": tool_call_id, "content": content}
 
 
 @dataclass(frozen=True)
@@ -256,6 +287,90 @@ class ChatCompletionChunk:
             usage=Usage.from_dict(usage) if isinstance(usage, dict) else None,
             request_id=request_id,
         )
+
+
+class ChatCompletionAccumulator:
+    """Folds a stream's chunks into the message they spell out: the text
+    joined, and each tool call put back together from its fragments. The
+    first fragment for an `index` carries the call's `id` and name, the
+    rest carry pieces of `arguments` to join in order; calls at different
+    indexes may interleave.
+
+        acc = ChatCompletionAccumulator()
+        for chunk in stream:
+            acc.add(chunk)          # render chunk.content as it arrives
+        message = acc.message()     # content and complete tool_calls
+
+    `Stream.final_message()` runs that loop."""
+
+    def __init__(self) -> None:
+        self._text: list[str] = []
+        self._calls: dict[int, _PendingCall] = {}
+        self.finish_reason: str | None = None
+        self.usage: Usage | None = None
+        self.model: str | None = None
+        self.id: str | None = None
+
+    def add(self, chunk: ChatCompletionChunk) -> None:
+        if chunk.usage is not None:
+            self.usage = chunk.usage
+        if chunk.model:
+            self.model = chunk.model
+        if chunk.id:
+            self.id = chunk.id
+        if not chunk.choices:
+            return
+        choice = chunk.choices[0]
+        if choice.finish_reason is not None:
+            self.finish_reason = choice.finish_reason
+        delta = choice.delta
+        if delta.content:
+            self._text.append(delta.content)
+        for fragment in delta.tool_calls or []:
+            call = self._calls.setdefault(fragment.index, _PendingCall())
+            if fragment.id:
+                call.id = fragment.id
+            if fragment.type:
+                call.type = fragment.type
+            if fragment.function.name:
+                call.name += fragment.function.name
+            if fragment.function.arguments:
+                call.arguments.append(fragment.function.arguments)
+
+    @property
+    def content(self) -> str:
+        return "".join(self._text)
+
+    @property
+    def tool_calls(self) -> list[ToolCall]:
+        """The calls so far, in index order, each with its arguments joined."""
+        return [
+            ToolCall(
+                id=call.id,
+                type=call.type,
+                function=FunctionCall(name=call.name, arguments="".join(call.arguments)),
+            )
+            for _, call in sorted(self._calls.items())
+        ]
+
+    def message(self) -> AssistantMessage:
+        """The assistant message the stream spelled out; `content` is None
+        on a pure tool-call turn, as the non-streamed answer has it."""
+        calls = self.tool_calls
+        text = self.content
+        return AssistantMessage(
+            role="assistant",
+            content=text if text or not calls else None,
+            tool_calls=calls or None,
+        )
+
+
+@dataclass
+class _PendingCall:
+    id: str = ""
+    type: str = "function"
+    name: str = ""
+    arguments: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -659,11 +774,16 @@ class Me:
     org_name: str | None
     org_role: str | None
     state: str | None = None
+    # The org's "local agent tools allowed" setting: whether a client may
+    # offer its agent mode, whose tools run on the user's machine. None
+    # when the server did not say.
+    local_agent_tools: bool | None = None
     request_id: str | None = field(default=None, compare=False)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> Me:
         roles = data.get("roles")
+        agent_tools = data.get("local_agent_tools")
         return cls(
             subject=_str(data.get("subject")),
             kind=_str(data.get("kind")),
@@ -674,6 +794,7 @@ class Me:
             org_name=_opt_str(data.get("org_name")),
             org_role=_opt_str(data.get("org_role")),
             state=_opt_str(data.get("state")),
+            local_agent_tools=agent_tools if isinstance(agent_tools, bool) else None,
             request_id=request_id,
         )
 
@@ -1636,6 +1757,9 @@ class AppModel:
     partner: bool = False
     research_preview: bool = False
     supports_vision: bool | None = None
+    # Whether the model can call tools, so a client can grey out its agent
+    # mode for one that cannot. None when the server did not say.
+    supports_tools: bool | None = None
     context_window: int | None = None
     multiplier: int = 0
     input_usd_per_m: float = 0.0
@@ -1644,6 +1768,7 @@ class AppModel:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> AppModel:
         vision = data.get("supports_vision")
+        tools = data.get("supports_tools")
         return cls(
             id=_str(data.get("id")),
             label=_str(data.get("label")),
@@ -1652,6 +1777,7 @@ class AppModel:
             partner=data.get("partner") is True,
             research_preview=data.get("research_preview") is True,
             supports_vision=vision if isinstance(vision, bool) else None,
+            supports_tools=tools if isinstance(tools, bool) else None,
             context_window=_opt_int(data.get("context_window")),
             multiplier=_int(data.get("multiplier")),
             input_usd_per_m=_float(data.get("input_usd_per_m")),

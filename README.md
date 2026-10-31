@@ -120,6 +120,38 @@ for call in completion.tool_calls:
     print(call.id, call.function.name, call.function.arguments)
 ```
 
+To continue the loop, send the assistant message back with one `tool` message
+per call. `message.to_message()` and `tool_message(call_id, content)` build them
+in the shape the request takes:
+
+```python
+from matterwave_sdk import tool_message
+
+messages.append(completion.choices[0].message.to_message())
+for call in completion.tool_calls:
+    messages.append(tool_message(call.id, run(call)))  # run(): your code
+completion = client.chat.completions.create(messages=messages, tools=tools)
+```
+
+On a stream, `stream.final_message()` drains it and returns the same message,
+each tool call put back together from its `delta.tool_calls` fragments (calls
+at different indexes may interleave). `ChatCompletionAccumulator` does the same
+one chunk at a time, for a client that renders the text as it arrives and also
+wants the finish reason and usage:
+
+```python
+acc = ChatCompletionAccumulator()
+for chunk in client.chat.completions.create(messages=messages, tools=tools, stream=True):
+    print(chunk.content, end="")
+    acc.add(chunk)
+message, finish = acc.message(), acc.finish_reason
+```
+
+`frequency_penalty` and `presence_penalty` (-2 to 2) are relayed as OpenAI
+defines them. Before offering an agent mode, a client reads two flags: the
+model row's `supports_tools` (`client.app_models()`) and the org's
+`local_agent_tools` (`client.me()`). Each is `None` when the server did not say.
+
 `client.embeddings.create(["one", "two"])` returns one embedding per input from
 the deployment's embedding model; `client.index().capabilities["embeddings"]`
 says whether one is configured.
