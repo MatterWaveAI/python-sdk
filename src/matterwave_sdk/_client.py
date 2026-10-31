@@ -38,6 +38,7 @@ from ._resources import (
     AsyncAdmin,
     AsyncAnnouncements,
     AsyncAttachments,
+    AsyncAudit,
     AsyncBudgetClient,
     AsyncEntitlementsClient,
     AsyncKeys,
@@ -47,6 +48,7 @@ from ._resources import (
     AsyncUsageClient,
     AsyncWebhooks,
     Attachments,
+    Audit,
     BudgetClient,
     EntitlementsClient,
     Keys,
@@ -992,6 +994,7 @@ class MatterWave:
         self.auth = Auth(self)
         self.keys = Keys(self)
         self.usage = UsageClient(self)
+        self.audit = Audit(self)
         self.webhooks = Webhooks(self)
         self.attachments = Attachments(self)
         self.library = LibraryClient(self)
@@ -1543,6 +1546,7 @@ class AsyncMatterWave:
         self.auth = AsyncAuth(self)
         self.keys = AsyncKeys(self)
         self.usage = AsyncUsageClient(self)
+        self.audit = AsyncAudit(self)
         self.webhooks = AsyncWebhooks(self)
         self.attachments = AsyncAttachments(self)
         self.library = AsyncLibraryClient(self)

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `client.audit.list()` and `client.audit.export_csv()` — the org's audit
+  trail (`GET /api/org/audit`, `GET /api/org/audit.csv`), the reads the org
+  pane's audit tab makes: one page of `audit_events` newest first (`data`,
+  `next_cursor`, `actions`) narrowed by `event` (an action exactly or as a
+  dotted prefix), `actor` (subject or email, case-insensitively),
+  `since`/`until`, `cursor` and `limit` (1 to 200, 50 when omitted), and
+  every matching row as the CSV the server streams. Owner or admin by
+  membership row: the platform refuses an API key on these routes, so they
+  answer a signed-in session.
+- `AuditPage` and `AuditEvent` models for the rows: `id`, `occurred_at`,
+  `actor` (the writer's subject), `actor_email` where one is resolved,
+  `action`, `target` and the writer's `detail`.
+
 ### Documentation
 
 - "Connect your editor to MatterWave": a README section and a `docs/mcp.md`

@@ -1021,6 +1021,66 @@ class OrgUsage:
         )
 
 
+# --- the audit trail -----------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class AuditEvent:
+    """One row of the org's trail (`GET /api/org/audit`): who changed what,
+    and when. `actor` is the subject the writer had in hand -- a system
+    actor's looks like `stripe:evt_...` -- and `actor_email` is filled in
+    where that subject has a users row, None otherwise. `detail` is the
+    writer's structured context, kept as sent."""
+
+    id: str
+    occurred_at: str
+    actor: str
+    actor_email: str | None
+    action: str
+    target: str | None
+    detail: dict[str, Any]
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> AuditEvent:
+        return cls(
+            id=_str(data.get("id")),
+            occurred_at=_str(data.get("occurred_at")),
+            actor=_str(data.get("actor")),
+            actor_email=_opt_str(data.get("actor_email")),
+            action=_str(data.get("action")),
+            target=_opt_str(data.get("target")),
+            detail=_dict(data.get("detail")),
+        )
+
+
+@dataclass(frozen=True)
+class AuditPage:
+    """`GET /api/org/audit`: one page of the trail, newest first.
+    `next_cursor` fetches the page after this one and is None on the last;
+    `actions` lists every action the trail holds, so a client's filter can
+    offer what exists rather than a list it maintains itself."""
+
+    data: list[AuditEvent]
+    actions: list[str]
+    next_cursor: str | None = None
+    request_id: str | None = field(default=None, compare=False)
+
+    def __iter__(self) -> Any:
+        return iter(self.data)
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> AuditPage:
+        return cls(
+            data=[AuditEvent.from_dict(r) for r in _dicts(data.get("data"))],
+            actions=_strs(data.get("actions")),
+            next_cursor=_opt_str(data.get("next_cursor")),
+            request_id=request_id,
+        )
+
+
 # --- webhooks ----------------------------------------------------------------
 
 

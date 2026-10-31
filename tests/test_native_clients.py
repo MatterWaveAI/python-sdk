@@ -1,6 +1,6 @@
-"""The native API clients against the fake API: keys, usage, webhooks,
-attachments, library and shares. Each test answers with the body the
-route in api/matterwave sends and checks the request the client made
+"""The native API clients against the fake API: keys, usage, audit,
+webhooks, attachments, library and shares. Each test answers with the body
+the route in api/matterwave sends and checks the request the client made
 (method, path, query, body) and what it parsed out of the answer.
 """
 
@@ -25,7 +25,7 @@ from matterwave_sdk import (
 )
 
 ROUTES = Path(__file__).resolve().parents[3] / "api" / "matterwave"
-NATIVE = ("keys", "usage", "webhooks", "attachments", "library", "shares", "budget")
+NATIVE = ("keys", "usage", "audit", "webhooks", "attachments", "library", "shares", "budget")
 
 KEY_ID = "key-0001"
 ENDPOINT_ID = "whe-0001"
@@ -339,6 +339,115 @@ def test_usage_a_malformed_period_is_the_servers_422(api, client: MatterWave) ->
     )
     with pytest.raises(APIError, match="period must look like 2026-10"):
         client.usage.export_csv(period="October")
+
+
+# --- audit ---------------------------------------------------------------------
+
+
+AUDIT_PAGE = {
+    "data": [
+        {
+            "id": "aud-0001",
+            "occurred_at": "2026-10-30T08:00:00+00:00",
+            "actor": "user-1",
+            "actor_email": "a@example.test",
+            "action": "org.sso.enforced",
+            "target": "org-1",
+            "detail": {"recovery_code": "rec-1"},
+        },
+        {
+            "id": "aud-0002",
+            "occurred_at": "2026-10-29T08:00:00+00:00",
+            "actor": "stripe:evt_1",
+            "actor_email": None,
+            "action": "org.domain.released",
+            "target": None,
+            "detail": {},
+        },
+    ],
+    "next_cursor": "Y3Vyc29y",
+    "actions": ["org.domain.released", "org.sso.enforced"],
+}
+
+AUDIT_CSV = (
+    "occurred_at,actor_email,actor_subject,action,target,detail\r\n"
+    '2026-10-30T08:00:00+00:00,a@example.test,user-1,org.sso.enforced,org-1,'
+    '"{""recovery_code"":""rec-1""}"\r\n'
+)
+
+
+def test_audit_list_passes_the_filters_and_parses_rows(api, client: MatterWave) -> None:
+    route = api.get("/api/org/audit").respond(200, json=AUDIT_PAGE, headers=H)
+    page = client.audit.list(event="org.sso", actor="a@example.test", cursor="c1", limit=25)
+    params = sent(route).url.params
+    assert (
+        params["event"],
+        params["actor"],
+        params["cursor"],
+        params["limit"],
+    ) == ("org.sso", "a@example.test", "c1", "25")
+    assert [row.action for row in page] == ["org.sso.enforced", "org.domain.released"]
+    assert page.data[1].actor_email is None and page.data[1].target is None
+    assert page.data[0].detail == {"recovery_code": "rec-1"}
+    assert page.next_cursor == "Y3Vyc29y"
+    assert page.actions == ["org.domain.released", "org.sso.enforced"]
+    assert page.request_id == REQUEST_ID
+
+
+def test_audit_list_without_filters_sends_no_params(api, client: MatterWave) -> None:
+    route = api.get("/api/org/audit").respond(200, json=AUDIT_PAGE, headers=H)
+    client.audit.list()
+    assert not sent(route).url.params
+
+
+def test_audit_since_and_until_go_as_instants(api, client: MatterWave) -> None:
+    route = api.get("/api/org/audit").respond(200, json=AUDIT_PAGE, headers=H)
+    client.audit.list(
+        since=datetime(2026, 10, 1, tzinfo=timezone.utc),
+        until="2026-11-01T00:00:00+00:00",
+    )
+    params = sent(route).url.params
+    assert (params["since"], params["until"]) == (
+        "2026-10-01T00:00:00+00:00",
+        "2026-11-01T00:00:00+00:00",
+    )
+
+
+def test_audit_a_limit_out_of_range_is_refused_before_the_request() -> None:
+    client = MatterWave(api_key="k", base_url="https://matterwave.test")
+    with pytest.raises(ValueError, match="limit must be 1 to 200"):
+        client.audit.list(limit=0)
+    with pytest.raises(ValueError, match="limit must be 1 to 200"):
+        client.audit.list(limit=201)
+
+
+def test_audit_export_csv_returns_the_text_the_server_streamed(api, client: MatterWave) -> None:
+    route = api.get("/api/org/audit.csv").respond(
+        200,
+        text=AUDIT_CSV,
+        headers={
+            "Content-Type": "text/csv; charset=utf-8",
+            "Content-Disposition": 'attachment; filename="audit-20261031.csv"',
+            **H,
+        },
+    )
+    assert client.audit.export_csv(event="org.sso") == AUDIT_CSV
+    assert sent(route).headers["accept"] == "text/csv"
+    assert sent(route).url.params["event"] == "org.sso"
+
+
+def test_audit_a_bad_cursor_is_the_servers_422(api, client: MatterWave) -> None:
+    api.get("/api/org/audit").respond(422, json={"detail": "The cursor is not valid."}, headers=H)
+    with pytest.raises(APIError, match="The cursor is not valid"):
+        client.audit.list(cursor="nonsense")
+
+
+def test_audit_refuses_an_api_key_the_way_the_route_does(api, client: MatterWave) -> None:
+    api.get("/api/org/audit").respond(
+        403, json={"detail": "Membership is managed by a person, not an API key."}, headers=H
+    )
+    with pytest.raises(PermissionDeniedError):
+        client.audit.list()
 
 
 # --- webhooks -----------------------------------------------------------------
@@ -837,6 +946,8 @@ async def test_async_clients_make_the_same_requests(api, async_client: AsyncMatt
     api.post(f"/api/keys/{KEY_ID}/rotate").respond(200, json=key_body(key="s"), headers=H)
     api.delete(f"/api/keys/{KEY_ID}").respond(204)
     api.get("/api/org/usage.csv").respond(200, text=CSV, headers=H)
+    api.get("/api/org/audit").respond(200, json=AUDIT_PAGE, headers=H)
+    api.get("/api/org/audit.csv").respond(200, text=AUDIT_CSV, headers=H)
     api.get("/api/org/webhooks").respond(200, json={"data": [], "events": []}, headers=H)
     api.post("/api/attachments").respond(201, json=attachment_body(), headers=H)
     api.get(f"/api/attachments/{ATTACHMENT_ID}/content").respond(200, content=b"hello")
@@ -847,6 +958,8 @@ async def test_async_clients_make_the_same_requests(api, async_client: AsyncMatt
         assert (await client.keys.rotate(KEY_ID)).key == "s"
         assert await client.keys.revoke(KEY_ID) is None
         assert await client.usage.export_csv() == CSV
+        assert [row.id for row in await client.audit.list()] == ["aud-0001", "aud-0002"]
+        assert await client.audit.export_csv() == AUDIT_CSV
         assert len(await client.webhooks.list()) == 0
         attachment = await client.attachments.upload(b"hello", "notes.txt")
         assert await client.attachments.download(attachment) == b"hello"

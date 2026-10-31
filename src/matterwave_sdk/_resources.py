@@ -1,14 +1,17 @@
-"""The native API clients: `keys`, `usage`, `webhooks`, `attachments`,
-`library`, `shares`, `budget`, `notifications`, `announcements`,
-`entitlements` and the `admin` namespace, sync and async. Each method is
-one route; the request is built in `_native` and the answer parsed into
-`models`, so the two halves here differ only in `await`.
+"""The native API clients: `keys`, `usage`, `audit`, `webhooks`,
+`attachments`, `library`, `shares`, `budget`, `notifications`,
+`announcements`, `entitlements` and the `admin` namespace, sync and async.
+Each method is one route; the request is built in `_native` and the answer
+parsed into `models`, so the two halves here differ only in `await`.
 
 These are the routes the web app's settings panes use, open to an API key
 as its owner. Managing keys needs a key with `keys:manage` (or a session),
 webhooks a key with `webhooks:manage`, the org usage report
 (`usage.org`, `usage.export_csv`) a key with `usage:read`, and moving a
-budget cap an owner or admin. The scope never widens the owner's role:
+budget cap an owner or admin. The audit trail (`audit.list`,
+`audit.export_csv`) is the one exception among the reads: the routes gate
+on the membership row alone, so an API key is refused there outright and a
+signed-in session is what answers. The scope never widens the owner's role:
 webhooks still need the owner to be an org owner or admin, and a member's
 `usage:read` key sees only their own row. Notifications are the caller's
 own rows, announcements are the operator's banner anyone signed in reads,
@@ -34,6 +37,7 @@ from .models import (
     ApiKeyList,
     Attachment,
     AttachmentLimits,
+    AuditPage,
     Budget,
     Conversation,
     ConversationTags,
@@ -257,6 +261,86 @@ class AsyncUsageClient(_Async):
 
     async def export_csv(self, *, period: str | None = None) -> str:
         return (await self._client._send(req.org_usage_csv_request(period))).text
+
+
+# --- audit ---------------------------------------------------------------------
+
+
+class Audit(_Sync):
+    """`/api/org/audit`: the org's trail of who changed what, the reads the
+    org pane's audit tab makes. Owner or admin, and by membership row rather
+    than a token claim: the platform refuses an API key on these routes
+    outright, so they answer a signed-in session."""
+
+    def list(
+        self,
+        *,
+        event: str | None = None,
+        actor: str | None = None,
+        since: datetime | str | None = None,
+        until: datetime | str | None = None,
+        cursor: str | None = None,
+        limit: int | None = None,
+    ) -> AuditPage:
+        """One page, newest first. `event` matches an action exactly or as a
+        dotted prefix (`org.sso` finds `org.sso.enforced`); `actor` matches
+        a subject or an email, case-insensitively; `since`/`until` bound the
+        window (a naive datetime is read as UTC); `cursor` is a previous
+        page's `next_cursor`; `limit` is 1 to 200 (50 when omitted). A
+        cursor this API did not mint is the server's 422."""
+        body, rid = self._object(
+            req.org_audit_request(
+                event=event, actor=actor, since=since, until=until, cursor=cursor, limit=limit
+            )
+        )
+        return AuditPage.from_dict(body, request_id=rid)
+
+    def export_csv(
+        self,
+        *,
+        event: str | None = None,
+        actor: str | None = None,
+        since: datetime | str | None = None,
+        until: datetime | str | None = None,
+    ) -> str:
+        """`GET /api/org/audit.csv`: every matching row, as the CSV text the
+        server streamed (the columns of `AuditEvent`, `detail` as JSON)."""
+        return self._client._send(
+            req.org_audit_csv_request(event=event, actor=actor, since=since, until=until)
+        ).text
+
+
+class AsyncAudit(_Async):
+    async def list(
+        self,
+        *,
+        event: str | None = None,
+        actor: str | None = None,
+        since: datetime | str | None = None,
+        until: datetime | str | None = None,
+        cursor: str | None = None,
+        limit: int | None = None,
+    ) -> AuditPage:
+        body, rid = await self._object(
+            req.org_audit_request(
+                event=event, actor=actor, since=since, until=until, cursor=cursor, limit=limit
+            )
+        )
+        return AuditPage.from_dict(body, request_id=rid)
+
+    async def export_csv(
+        self,
+        *,
+        event: str | None = None,
+        actor: str | None = None,
+        since: datetime | str | None = None,
+        until: datetime | str | None = None,
+    ) -> str:
+        return (
+            await self._client._send(
+                req.org_audit_csv_request(event=event, actor=actor, since=since, until=until)
+            )
+        ).text
 
 
 # --- webhooks ------------------------------------------------------------------

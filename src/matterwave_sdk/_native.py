@@ -1,4 +1,4 @@
-"""The requests the native API clients make: keys, usage, webhooks,
+"""The requests the native API clients make: keys, usage, audit, webhooks,
 attachments, library and shares. Pure, like the rest of `_base`: each
 function returns the `Request` a method sends, and the sync and async
 clients in `_resources.py` differ only in how they wait for it.
@@ -150,6 +150,74 @@ def org_usage_csv_request(period: str | None) -> Request:
         stream=False,
         headers={"Accept": "text/csv"},
         params=_period_params(period),
+    )
+
+
+# --- audit ---------------------------------------------------------------------
+
+
+AUDIT_LIMIT_MAX = 200
+
+
+def _audit_moment(value: datetime | str) -> str:
+    """A window edge. The route reads one without a zone as UTC -- what a
+    date typed into the pane means -- so a naive datetime goes as it is."""
+    return value.isoformat() if isinstance(value, datetime) else value
+
+
+def _audit_params(
+    *,
+    event: str | None,
+    actor: str | None,
+    since: datetime | str | None,
+    until: datetime | str | None,
+) -> dict[str, str]:
+    params: dict[str, str] = {}
+    if event is not None:
+        params["event"] = event
+    if actor is not None:
+        params["actor"] = actor
+    if since is not None:
+        params["since"] = _audit_moment(since)
+    if until is not None:
+        params["until"] = _audit_moment(until)
+    return params
+
+
+def org_audit_request(
+    *,
+    event: str | None,
+    actor: str | None,
+    since: datetime | str | None,
+    until: datetime | str | None,
+    cursor: str | None,
+    limit: int | None,
+) -> Request:
+    if limit is not None and not 1 <= limit <= AUDIT_LIMIT_MAX:
+        raise ValueError(f"limit must be 1 to {AUDIT_LIMIT_MAX}, got {limit}")
+    params = _audit_params(event=event, actor=actor, since=since, until=until)
+    if cursor is not None:
+        params["cursor"] = cursor
+    if limit is not None:
+        params["limit"] = str(limit)
+    return Request("GET", "/api/org/audit", None, keyed=True, stream=False, params=params)
+
+
+def org_audit_csv_request(
+    *,
+    event: str | None,
+    actor: str | None,
+    since: datetime | str | None,
+    until: datetime | str | None,
+) -> Request:
+    return Request(
+        "GET",
+        "/api/org/audit.csv",
+        None,
+        keyed=True,
+        stream=False,
+        headers={"Accept": "text/csv"},
+        params=_audit_params(event=event, actor=actor, since=since, until=until),
     )
 
 

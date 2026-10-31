@@ -136,6 +136,8 @@ APP_OPERATIONS: dict[str, tuple[str, str]] = {
     "usage.get": ("GET", "/api/me/usage"),
     "usage.org": ("GET", "/api/org/usage"),
     "usage.export_csv": ("GET", "/api/org/usage.csv"),
+    "audit.list": ("GET", "/api/org/audit"),
+    "audit.export_csv": ("GET", "/api/org/audit.csv"),
     "webhooks.list": ("GET", "/api/org/webhooks"),
     "webhooks.create": ("POST", "/api/org/webhooks"),
     "webhooks.get": ("GET", "/api/org/webhooks/{endpoint_id}"),
