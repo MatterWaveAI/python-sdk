@@ -173,6 +173,12 @@ class Stream:
             if chunk.content:
                 yield chunk.content
 
+    def final_text(self) -> str:
+        """Drain the stream and return the whole answer: every chunk's text
+        joined, the role, stop and usage frames skipped. The accumulation
+        helper -- iterate for the pieces, call this for the whole."""
+        return "".join(self.text())
+
     def close(self) -> None:
         self._response.close()
 
@@ -207,6 +213,10 @@ class AsyncStream:
         async for chunk in self:
             if chunk.content:
                 yield chunk.content
+
+    async def final_text(self) -> str:
+        """As `Stream.final_text`: drain the stream, return the whole answer."""
+        return "".join([text async for text in self.text()])
 
     async def close(self) -> None:
         await self._response.aclose()
@@ -327,6 +337,11 @@ class ConversationStream:
             if isinstance(frame, DeltaFrame) and frame.content:
                 yield frame.content
 
+    def final_text(self) -> str:
+        """Drain the turn and return the whole answer: every delta joined,
+        reasoning and every other frame skipped."""
+        return "".join(self.text())
+
     def close(self) -> None:
         self._response.close()
 
@@ -389,6 +404,10 @@ class AsyncConversationStream:
         async for frame in self:
             if isinstance(frame, DeltaFrame) and frame.content:
                 yield frame.content
+
+    async def final_text(self) -> str:
+        """As `ConversationStream.final_text`: drain the turn, return the answer."""
+        return "".join([text async for text in self.text()])
 
     async def close(self) -> None:
         await self._response.aclose()
@@ -689,6 +708,15 @@ class Conversations:
             cursor = page.next_cursor
             if cursor is None:
                 return
+
+    def items(
+        self, *, filter: str | None = None, limit: int | None = None
+    ) -> Iterator[Conversation]:
+        """Every conversation of every page, one at a time -- the item-level
+        paginator, walking `pages` so each page is fetched only as the
+        previous one runs dry."""
+        for page in self.pages(filter=filter, limit=limit):
+            yield from page
 
     def search(self, q: str, *, limit: int | None = None) -> SearchResults:
         """`GET /api/conversations/search`: full text over the caller's own messages."""
@@ -1106,11 +1134,15 @@ class MatterWave:
         max_retries: int = _base.DEFAULT_MAX_RETRIES,
         default_headers: Mapping[str, str] | None = None,
         http_client: httpx.Client | None = None,
+        on_request: Callable[[Request], object] | None = None,
+        on_response: Callable[[_base.RawResponse], object] | None = None,
     ) -> None:
         self._config = _Config(api_key, base_url, timeout, max_retries, default_headers)
         self._owns_http = http_client is None
         self._http = http_client or httpx.Client()
         self._last_response: _base.RawResponse | None = None
+        self._on_request = on_request
+        self._on_response = on_response
         self.chat = Chat(self)
         self.models = Models(self)
         self.embeddings = Embeddings(self)
@@ -1199,6 +1231,8 @@ class MatterWave:
         attempt_limit = self._config.max_retries if max_retries is None else max_retries
         attempt = 0
         while True:
+            if self._on_request is not None:
+                self._on_request(request)
             http_request = self._config.build(request, self._http, timeout=timeout)
             try:
                 response = self._http.send(http_request, stream=request.stream)
@@ -1210,9 +1244,13 @@ class MatterWave:
                 continue
             if response.is_success:
                 self._last_response = _base.raw_response_of(response)
+                if self._on_response is not None:
+                    self._on_response(self._last_response)
                 return response
             body = response.read()
             self._last_response = _base.raw_response_of(response)
+            if self._on_response is not None:
+                self._on_response(self._last_response)
             if attempt < attempt_limit and _base.should_retry(response, body):
                 response.close()
                 time.sleep(_base.backoff_s(attempt, _base.retry_after_of(response)))
@@ -1426,6 +1464,14 @@ class AsyncConversations:
             cursor = page.next_cursor
             if cursor is None:
                 return
+
+    async def items(
+        self, *, filter: str | None = None, limit: int | None = None
+    ) -> AsyncIterator[Conversation]:
+        """As `Conversations.items`: every conversation of every page."""
+        async for page in self.pages(filter=filter, limit=limit):
+            for conversation in page:
+                yield conversation
 
     async def search(self, q: str, *, limit: int | None = None) -> SearchResults:
         body, rid = await self._object(_base.search_conversations_request(q, limit))
@@ -1731,11 +1777,15 @@ class AsyncMatterWave:
         max_retries: int = _base.DEFAULT_MAX_RETRIES,
         default_headers: Mapping[str, str] | None = None,
         http_client: httpx.AsyncClient | None = None,
+        on_request: Callable[[Request], object] | None = None,
+        on_response: Callable[[_base.RawResponse], object] | None = None,
     ) -> None:
         self._config = _Config(api_key, base_url, timeout, max_retries, default_headers)
         self._owns_http = http_client is None
         self._http = http_client or httpx.AsyncClient()
         self._last_response: _base.RawResponse | None = None
+        self._on_request = on_request
+        self._on_response = on_response
         self.chat = AsyncChat(self)
         self.models = AsyncModels(self)
         self.embeddings = AsyncEmbeddings(self)
@@ -1811,6 +1861,8 @@ class AsyncMatterWave:
         attempt_limit = self._config.max_retries if max_retries is None else max_retries
         attempt = 0
         while True:
+            if self._on_request is not None:
+                self._on_request(request)
             http_request = self._config.build(request, self._http, timeout=timeout)
             try:
                 response = await self._http.send(http_request, stream=request.stream)
@@ -1822,9 +1874,13 @@ class AsyncMatterWave:
                 continue
             if response.is_success:
                 self._last_response = _base.raw_response_of(response)
+                if self._on_response is not None:
+                    self._on_response(self._last_response)
                 return response
             body = await response.aread()
             self._last_response = _base.raw_response_of(response)
+            if self._on_response is not None:
+                self._on_response(self._last_response)
             if attempt < attempt_limit and _base.should_retry(response, body):
                 await response.aclose()
                 await asyncio.sleep(_base.backoff_s(attempt, _base.retry_after_of(response)))
