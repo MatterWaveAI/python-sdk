@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `frequency_penalty` and `presence_penalty` on `chat.completions.create`
+  (sync and async), relayed to the model as OpenAI defines them (-2 to 2);
+  `None` leaves them out of the body.
+- `CompactingFrame` (`frames.CompactingFrame`, exported): the conversation
+  stream's `compacting` event, sent first on a turn that folds earlier
+  messages before it is answered, so a client can restart its wait for the
+  first token. Not terminal; `compaction` or `notice` follows.
+- `stream.final_message()` (sync and async) and `ChatCompletionAccumulator`:
+  a stream's text and its tool calls, each reassembled from its
+  `delta.tool_calls` fragments, as an `AssistantMessage`; the accumulator
+  also keeps the finish reason, usage and model.
+- `AssistantMessage.to_message()`, `ToolCall.to_dict()` and
+  `tool_message(call_id, content)`: the assistant turn and its `tool`
+  answers in the shape the next request's `messages` takes.
+- `AppModel.supports_tools` (`GET /api/models`) and `Me.local_agent_tools`
+  (`GET /api/me`): whether a model can call tools and whether the org lets
+  clients run local agent tools. `None` when the server does not send them.
+- `matterwave_sdk.agent`: the agent tool contract the coding clients share,
+  version `1.0.0` (`agent.CONTRACT_VERSION`). Its one source is
+  `src/matterwave_sdk/agent/contract.json`: the seven local tools
+  (`read_file`, `list_dir`, `glob`, `grep`, `edit`, `write_file`,
+  `run_shell`) with their JSON Schemas, which are read-only, the approval
+  modes `plan`, `ask` (the default), `auto-edit` and `yolo` with what each
+  allows and asks for, the default deny list (`.env*`, `*.pem`, `id_*`,
+  `.git/`, plus `.matterwaveignore`), the refusal and edit-error sentences,
+  the limits, the shell per platform, and the versioned agent-mode system
+  prompt. Typed constants (`TOOLS`, `APPROVAL_MODES`, `DEFAULT_DENY`, ...)
+  and helpers: `allowed(tool, mode)` (`allow`, `ask` or `deny`),
+  `tools_for_mode(mode)` (the `tools` for `/v1`; `plan` gets the read tools
+  only), `system_prompt(mode, root)`, `confine(root, path)` (resolve, follow
+  links, refuse `..`, outside paths, link escapes and denied files),
+  `DenyList`, `apply_edit` (exact, unique replace) and `unified_diff`.
+- `scripts/gen_agent_contract.py` writes the TypeScript SDK's copy of the
+  contract and of the shared conformance cases (`tests/agent_conformance.json`);
+  `--check` fails on drift, and the suite and CI run it.
+- `scripts/refresh_openapi.py <path-or-url>` refreshes `tests/openapi.json`
+  from the app's export (`--check` exits 1 when it is behind), and the `ci`
+  workflow takes an `openapi_source` URL on a manual run to test against it.
+
+### Changed
+
+- `tests/openapi.json` refreshed from the app's export: the two penalty
+  fields on `ChatCompletionRequest` and the `compacting` stream event.
+- CI runs `mypy` beside `ruff` and `pytest`, and checks the TypeScript
+  SDK's copy of the agent contract against `contract.json`.
+
+### Fixed
+
+- The README's link to a `docs/package-names.md` that only existed in the
+  old monorepo now points at the MatterWaveAI GitHub org.
+
 ## [0.5.0] - 2026-10-31
 
 ### Added

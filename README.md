@@ -11,9 +11,9 @@ pip install matterwave-sdk
 The distribution is `matterwave-sdk` and the import package is `matterwave_sdk`.
 The bare names belong to others: `matterwave` on PyPI is an unrelated physics
 library that ships its own top-level `matterwave` module, and `matterwave` is
-also the import name of this repo's API server (`api/`). See
-[docs/package-names.md](../../docs/package-names.md). Both PyPI packages
-publish under the [MatterWaveAI](https://pypi.org/org/MatterWaveAI/) org.
+also the import name of the MatterWave API server. Both PyPI packages publish
+under the [MatterWaveAI](https://pypi.org/org/MatterWaveAI/) org, and their
+sources live at [github.com/MatterWaveAI](https://github.com/MatterWaveAI).
 
 Python 3.10 or newer; the only dependency is `httpx`.
 
@@ -120,6 +120,40 @@ for call in completion.tool_calls:
     print(call.id, call.function.name, call.function.arguments)
 ```
 
+To continue the loop, send the assistant message back with one `tool` message
+per call. `message.to_message()` and `tool_message(call_id, content)` build them
+in the shape the request takes:
+
+```python
+from matterwave_sdk import tool_message
+
+messages.append(completion.choices[0].message.to_message())
+for call in completion.tool_calls:
+    messages.append(tool_message(call.id, run(call)))  # run(): your code
+completion = client.chat.completions.create(messages=messages, tools=tools)
+```
+
+On a stream, `stream.final_message()` drains it and returns the same message,
+each tool call put back together from its `delta.tool_calls` fragments (calls
+at different indexes may interleave). `ChatCompletionAccumulator` does the same
+one chunk at a time, for a client that renders the text as it arrives and also
+wants the finish reason and usage:
+
+```python
+from matterwave_sdk import ChatCompletionAccumulator
+
+acc = ChatCompletionAccumulator()
+for chunk in client.chat.completions.create(messages=messages, tools=tools, stream=True):
+    print(chunk.content, end="")
+    acc.add(chunk)
+message, finish = acc.message(), acc.finish_reason
+```
+
+`frequency_penalty` and `presence_penalty` (-2 to 2) are relayed as OpenAI
+defines them. Before offering an agent mode, a client reads two flags: the
+model row's `supports_tools` (`client.app_models()`) and the org's
+`local_agent_tools` (`client.me()`). Each is `None` when the server did not say.
+
 `client.embeddings.create(["one", "two"])` returns one embedding per input from
 the deployment's embedding model; `client.index().capabilities["embeddings"]`
 says whether one is configured.
@@ -170,7 +204,9 @@ now (a `ConflictError` when there is nothing to fold yet). `client.me()` says
 who the key acts as.
 
 The stream is named server-sent events, read into typed frames in
-`matterwave_sdk.frames`: `CompactionFrame`, `ContextFrame`, `MessageFrame` (the
+`matterwave_sdk.frames`: `CompactingFrame` (first, when the server is folding
+earlier turns before this one, so the first token is later than usual),
+`CompactionFrame`, `ContextFrame`, `MessageFrame` (the
 user turn as saved), `TitleFrame`, `PartStartFrame` / `DeltaFrame` /
 `PartEndFrame` per part (text, reasoning, tool call, tool result),
 `NoticeFrame`, and one terminal frame: `DoneFrame` (the assistant message),
@@ -296,6 +332,86 @@ answer = client.mcp.send_message("<conversation-id>", "Draft a three-line agenda
 print(answer.text)
 ```
 
+## The agent tool contract
+
+`matterwave_sdk.agent` is what the MatterWave coding clients (the TUI's `code`
+mode, the VS Code agent) share: the local tools a client offers the model on
+`/v1`, the approval modes that gate them, the paths those tools may touch, and
+the agent-mode system prompt. It is versioned (`agent.CONTRACT_VERSION`,
+`1.0.0`; the prompt carries its own `agent.SYSTEM_PROMPT_VERSION`), and its one
+source is `src/matterwave_sdk/agent/contract.json`, from which the TypeScript
+SDK's copy is generated.
+
+| Tool | Kind | Arguments |
+|---|---|---|
+| `read_file` | read | `path`, `start_line`?, `end_line`? |
+| `list_dir` | read | `path`? |
+| `glob` | read | `pattern`, `path`? |
+| `grep` | read | `pattern`, `path`?, `glob`?, `ignore_case`? |
+| `edit` | write | `path`, `old_string`, `new_string` (fails when missing or not unique) |
+| `write_file` | write | `path`, `content` |
+| `run_shell` | shell | `command`, `timeout_s`? |
+
+| Mode | Runs without asking | Asks first |
+|---|---|---|
+| `plan` | the read tools | nothing; writes and the shell are not offered at all |
+| `ask` (default) | the read tools | `edit`, `write_file`, `run_shell` |
+| `auto-edit` | the read tools, `edit`, `write_file` | `run_shell` |
+| `yolo` | everything | nothing; needs a flag each session and is never saved |
+
+```python
+import json
+from matterwave_sdk import agent, tool_message
+
+tools = agent.tools_for_mode("ask")                   # the `tools` to send
+system = agent.system_prompt("ask", root=str(root))   # names the tools, the mode and the root
+
+for call in completion.tool_calls:
+    decision = agent.allowed(call.function.name, "ask")  # "allow", "ask" or "deny"
+    args = json.loads(call.function.arguments)
+    try:
+        target = agent.confine(root, args["path"], write=call.function.name != "read_file")
+    except agent.PathRefused as refused:
+        messages.append(tool_message(call.id, str(refused)))  # the contract's sentence
+        continue
+    # an edit: apply it to the text, show the diff, write only once approved
+    old = target.absolute.read_text(encoding="utf-8")
+    new = agent.apply_edit(old, args["old_string"], args["new_string"], path=target.relative)
+    print(agent.unified_diff(old, new, target.relative))
+```
+
+`confine(root, path)` resolves a tool's path and returns where it really leads,
+or raises `PathRefused` (with a `reason` and the sentence to hand back to the
+model) before anything is read or written: for a `..` segment, an absolute path
+outside the root, a link that leads out of the root (symbolic links, and
+junctions on Windows), a path on the deny list, by its own name or its
+target's, or a write to a protected path. The deny list is `.env*`, `*.pem`,
+`id_*` and `.git/` plus the lines of the workspace's `.matterwaveignore`, and it
+applies to reads too, so those files are never sent to the model;
+`.matterwaveignore` itself can be read but not written. Confinement is not a
+sandbox: `run_shell` reaches whatever the user can, which is why it asks.
+
+`apply_edit` is `edit`'s exact replace on text (`EditError` when the string is
+missing, not unique, empty or unchanged; a model's LF strings still match a
+CRLF file), and `unified_diff` prints the diff an approval shows. The TypeScript
+SDK ports both line for line, and the two suites run the same conformance cases
+(`tests/agent_conformance.json`), so the two clients refuse, edit and print
+alike.
+
+To change the contract, edit `contract.json`, bump `contract_version` (major
+when a tool, field or mode goes or changes meaning, minor when one is added,
+patch when only text changes), and regenerate the TypeScript copy with that
+repo checked out beside this one:
+
+```
+uv run python scripts/gen_agent_contract.py            # writes ../typescript-sdk
+uv run python scripts/gen_agent_contract.py --check    # exit 1 when the copy has drifted
+```
+
+The suite runs the check whenever the TypeScript SDK sits beside this checkout
+(or `MATTERWAVE_TS_SDK` names one), and CI clones it to run the check on every
+push.
+
 ## Development
 
 ```
@@ -304,8 +420,9 @@ uv run pytest
 uv run ruff check . && uv run mypy
 ```
 
-`tests/test_openapi_contract.py` checks this client against
-`docs/developers/openapi.json` at the repo root, so a new operation on the API
+`tests/test_openapi_contract.py` checks this client against the app's
+exported OpenAPI document, `docs/developers/openapi.json` in the app repo,
+through the snapshot in `tests/openapi.json`, so a new operation on the API
 and a new method here have to land together. That document is the `/v1`
 contract; the conversation, device-login and native routes are listed apart in
 `APP_OPERATIONS` and checked against it only where it names their paths.
@@ -315,3 +432,19 @@ SDK. The
 conversation stream's frames are the exception: the document lists them under
 `x-sse-events`, and `frames.FRAMES_BY_EVENT` is held to that list, event by
 event and field by field.
+
+### Refreshing the OpenAPI snapshot
+
+`scripts/refresh_openapi.py` copies the app's export over `tests/openapi.json`,
+from a path or an http(s) URL, after checking it is the export (an OpenAPI
+document with `paths` and `x-sse-events`). `--check` writes nothing and exits 1
+when the snapshot is behind:
+
+```
+uv run python scripts/refresh_openapi.py ../matterwave-app/docs/developers/openapi.json
+uv run python scripts/refresh_openapi.py --check https://<host>/<path>/openapi.json
+```
+
+In CI, run the `ci` workflow by hand (`workflow_dispatch`) with an
+`openapi_source` URL: it refreshes the snapshot from it before the tests, so the
+run says whether this client still matches that API.

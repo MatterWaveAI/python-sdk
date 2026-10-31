@@ -15,10 +15,11 @@ device code and returns the key to use. `client.keys`, `client.usage`,
 `client.shares` are the app's native routes for the same, `client.admin`
 is the operator surface (the platform `admin` role, not an API key's), and
 `client.mcp` speaks the `/mcp` JSON-RPC endpoint (list tools, call one,
-send a message).
+send a message). `matterwave_sdk.agent` is the agent tool contract the
+coding clients share, with its path, edit, diff and approval helpers.
 """
 
-from . import frames, webhooks
+from . import agent, frames, webhooks
 from ._base import (
     APP_OPERATIONS,
     OPERATIONS,
@@ -90,6 +91,7 @@ from .errors import (
     WebhookVerificationError,
 )
 from .frames import (
+    CompactingFrame,
     CompactionFrame,
     ContextFrame,
     ConversationFrame,
@@ -123,6 +125,7 @@ from .models import (
     AuditPage,
     Budget,
     ChatCompletion,
+    ChatCompletionAccumulator,
     ChatCompletionChunk,
     Choice,
     ChunkChoice,
@@ -181,6 +184,7 @@ from .models import (
     WebhookDeliveryList,
     WebhookEndpoint,
     WebhookEndpointList,
+    tool_message,
     vision_of,
 )
 
@@ -230,10 +234,12 @@ __all__ = [
     "Budget",
     "BudgetClient",
     "ChatCompletion",
+    "ChatCompletionAccumulator",
     "ChatCompletionChunk",
     "Choice",
     "ChunkChoice",
     "ChunkDelta",
+    "CompactingFrame",
     "CompactionFrame",
     "ConflictError",
     "ContextFrame",
@@ -323,6 +329,7 @@ __all__ = [
     "ToolCallFragment",
     "ToolChoice",
     "ToolFunction",
+    "tool_message",
     "UnknownFrame",
     "Usage",
     "UsageBalance",
@@ -337,6 +344,7 @@ __all__ = [
     "WebhookEndpointList",
     "WebhookVerificationError",
     "Webhooks",
+    "agent",
     "frames",
     "webhooks",
     "__version__",

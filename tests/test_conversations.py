@@ -223,6 +223,23 @@ def test_tool_parts_unknown_events_and_notices(api, client: MatterWave) -> None:
     assert unknown.data == {"n": 1}
 
 
+def test_compacting_comes_first_and_is_not_terminal(api, client: MatterWave) -> None:
+    # The server sends `compacting` before it decodes the summary, so a
+    # client can restart its first-token wait; the turn goes on after it.
+    body = (
+        sse_frame("compacting", {"detail": "Summarising earlier messages."})
+        + sse_frame("notice", {"detail": "Older messages may be cut.", "code": "compaction"})
+        + sse_frame("message", USER)
+        + sse_frame("done", ASSISTANT)
+    )
+    api.post(f"/api/conversations/{CONV}/messages").mock(return_value=_sse(body))
+    got = list(client.conversations.send(CONV, "Hi there"))
+    assert isinstance(got[0], f.CompactingFrame)
+    assert got[0].detail == "Summarising earlier messages."
+    assert f.CompactingFrame not in f.TERMINAL_FRAMES
+    assert isinstance(got[-1], f.DoneFrame)
+
+
 @pytest.mark.parametrize(
     ("event", "data", "cls"),
     [

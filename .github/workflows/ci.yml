@@ -1,11 +1,21 @@
 # CI on every push and pull request: lint and test. The publish workflow
 # (publish-pypi.yml) stays tag-only and runs the same suite before building.
+#
+# Run it by hand with `openapi_source` (a URL of the app's exported
+# docs/developers/openapi.json) to test this client against that API: the
+# snapshot in tests/openapi.json is refreshed from it before the tests.
 name: ci
 
 on:
   push:
     branches: ["**"]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      openapi_source:
+        description: "URL of the app's openapi.json to test against (blank: the committed snapshot)"
+        required: false
+        default: ""
 
 jobs:
   test:
@@ -16,5 +26,24 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --frozen --extra dev
+      - name: Refresh the OpenAPI snapshot from the given source
+        if: github.event_name == 'workflow_dispatch' && inputs.openapi_source != ''
+        env:
+          OPENAPI_SOURCE: ${{ inputs.openapi_source }}
+        run: |
+          uv run python scripts/refresh_openapi.py "$OPENAPI_SOURCE"
+          git diff --stat tests/openapi.json
       - run: uv run ruff check
+      - run: uv run mypy
+      # The agent contract's one source is here; the TypeScript SDK carries a
+      # generated copy. Check it out beside this repo (the same branch when
+      # it has one) so the drift check, and the suite's own, have it to read.
+      - name: Check out the TypeScript SDK beside this repo
+        env:
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          git clone --depth 1 --branch "$BRANCH" https://github.com/MatterWaveAI/typescript-sdk ../typescript-sdk \
+            || git clone --depth 1 https://github.com/MatterWaveAI/typescript-sdk ../typescript-sdk
+      - name: The TypeScript SDK's agent contract matches contract.json
+        run: uv run python scripts/gen_agent_contract.py --check --ts-sdk ../typescript-sdk
       - run: uv run pytest

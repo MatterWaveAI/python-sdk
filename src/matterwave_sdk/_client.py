@@ -74,7 +74,9 @@ from .models import (
     REPORT_KINDS,
     ApiIndex,
     AppModelList,
+    AssistantMessage,
     ChatCompletion,
+    ChatCompletionAccumulator,
     ChatCompletionChunk,
     Conversation,
     ConversationContext,
@@ -179,6 +181,17 @@ class Stream:
         helper -- iterate for the pieces, call this for the whole."""
         return "".join(self.text())
 
+    def final_message(self) -> AssistantMessage:
+        """Drain the stream and return the assistant message it spelled out:
+        the text, and each tool call reassembled from its fragments, ready
+        to run. `final_message().to_message()` is what the next request's
+        `messages` takes. For the finish reason and usage as well, feed the
+        chunks to a `ChatCompletionAccumulator` yourself."""
+        accumulator = ChatCompletionAccumulator()
+        for chunk in self:
+            accumulator.add(chunk)
+        return accumulator.message()
+
     def close(self) -> None:
         self._response.close()
 
@@ -217,6 +230,14 @@ class AsyncStream:
     async def final_text(self) -> str:
         """As `Stream.final_text`: drain the stream, return the whole answer."""
         return "".join([text async for text in self.text()])
+
+    async def final_message(self) -> AssistantMessage:
+        """As `Stream.final_message`: drain the stream, return the message
+        with its tool calls reassembled."""
+        accumulator = ChatCompletionAccumulator()
+        async for chunk in self:
+            accumulator.add(chunk)
+        return accumulator.message()
 
     async def close(self) -> None:
         await self._response.aclose()
@@ -484,6 +505,8 @@ class Completions:
         max_completion_tokens: int | None = None,
         temperature: float | None = None,
         top_p: float | None = None,
+        frequency_penalty: float | None = None,
+        presence_penalty: float | None = None,
         stop: str | Sequence[str] | None = None,
         n: int | None = None,
         user: str | None = None,
@@ -508,6 +531,8 @@ class Completions:
         max_completion_tokens: int | None = None,
         temperature: float | None = None,
         top_p: float | None = None,
+        frequency_penalty: float | None = None,
+        presence_penalty: float | None = None,
         stop: str | Sequence[str] | None = None,
         n: int | None = None,
         user: str | None = None,
@@ -531,6 +556,8 @@ class Completions:
         max_completion_tokens: int | None = None,
         temperature: float | None = None,
         top_p: float | None = None,
+        frequency_penalty: float | None = None,
+        presence_penalty: float | None = None,
         stop: str | Sequence[str] | None = None,
         n: int | None = None,
         user: str | None = None,
@@ -559,6 +586,8 @@ class Completions:
             max_completion_tokens=max_completion_tokens,
             temperature=temperature,
             top_p=top_p,
+            frequency_penalty=frequency_penalty,
+            presence_penalty=presence_penalty,
             stop=stop,
             n=n,
             user=user,
@@ -1290,6 +1319,8 @@ class AsyncCompletions:
         max_completion_tokens: int | None = None,
         temperature: float | None = None,
         top_p: float | None = None,
+        frequency_penalty: float | None = None,
+        presence_penalty: float | None = None,
         stop: str | Sequence[str] | None = None,
         n: int | None = None,
         user: str | None = None,
@@ -1314,6 +1345,8 @@ class AsyncCompletions:
         max_completion_tokens: int | None = None,
         temperature: float | None = None,
         top_p: float | None = None,
+        frequency_penalty: float | None = None,
+        presence_penalty: float | None = None,
         stop: str | Sequence[str] | None = None,
         n: int | None = None,
         user: str | None = None,
@@ -1337,6 +1370,8 @@ class AsyncCompletions:
         max_completion_tokens: int | None = None,
         temperature: float | None = None,
         top_p: float | None = None,
+        frequency_penalty: float | None = None,
+        presence_penalty: float | None = None,
         stop: str | Sequence[str] | None = None,
         n: int | None = None,
         user: str | None = None,
@@ -1357,6 +1392,8 @@ class AsyncCompletions:
             max_completion_tokens=max_completion_tokens,
             temperature=temperature,
             top_p=top_p,
+            frequency_penalty=frequency_penalty,
+            presence_penalty=presence_penalty,
             stop=stop,
             n=n,
             user=user,
