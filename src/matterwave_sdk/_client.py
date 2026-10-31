@@ -22,10 +22,11 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, Mapping, Sequence
 from types import TracebackType
-from typing import Any, Literal, overload
+from typing import Any, Literal, TypeVar, cast, overload
 
 import httpx
 
@@ -65,6 +66,7 @@ from .errors import (
     APITimeoutError,
     DeviceAuthError,
     MatterWaveError,
+    ParseError,
 )
 from .frames import TERMINAL_FRAMES, ConversationFrame, DeltaFrame, DoneFrame, frame_from_event
 from .models import (
@@ -405,6 +407,47 @@ class AsyncConversationStream:
 
 # --- the sync client ---------------------------------------------------------
 
+ModelT = TypeVar("ModelT")
+
+
+def _validator_of(response_model: type[ModelT]) -> Any:
+    """The classmethod that validates against `response_model`, preferring
+    pydantic v2's `model_validate` over v1's `parse_obj`; a type with
+    neither is refused before any request is made."""
+    validator: Any = response_model
+    if hasattr(validator, "model_validate"):
+        return validator.model_validate
+    if hasattr(validator, "parse_obj"):
+        return validator.parse_obj
+    raise TypeError(
+        "response_model must provide model_validate (pydantic v2) or parse_obj"
+        " (pydantic v1); use a plain dict if you want no validation."
+    )
+
+
+def _parse_completion_text(completion: ChatCompletion, response_model: type[ModelT]) -> ModelT:
+    """The parsed, validated answer behind `parse`: the message's text as
+    JSON, validated by the model the caller named. The validator's own
+    error propagates -- pydantic's ValidationError says which field the
+    model got wrong, and that is the caller's to catch."""
+    content = completion.content
+    if not content or not content.strip():
+        raise ParseError(
+            "The model answered with no content to parse"
+            " (a tool call or an empty message, not a JSON object).",
+            body=completion,
+        )
+    try:
+        data = json.loads(content)
+    except ValueError as exc:
+        raise ParseError(
+            "The model's answer is not JSON, so it cannot be validated against"
+            f" {getattr(response_model, '__name__', 'the model')}.",
+            cause=exc,
+            body=content,
+        ) from exc
+    return cast(ModelT, _validator_of(response_model)(data))
+
 
 class Completions:
     def __init__(self, client: MatterWave) -> None:
@@ -515,6 +558,41 @@ class Completions:
         return ChatCompletion.from_dict(
             _base.parse_json_object(response), request_id=_base.request_id_of(response)
         )
+
+    def parse(
+        self,
+        messages: Sequence[Message],
+        *,
+        response_model: type[ModelT],
+        timeout: float | None = None,
+        max_retries: int | None = None,
+        **create_kwargs: Any,
+    ) -> ModelT:
+        """`create` plus validation: the answer's text is read as JSON and
+        handed to `response_model` for validation, whose instance comes
+        back -- the `.parse(response_model=Model)` the peers ship.
+
+        The model is asked for a JSON object (`response_format` of
+        `json_object`) unless the caller passes their own
+        `response_format` among `create_kwargs`; send
+        `response_format={"type": "json_schema", ...}` when the backend
+        serves schema enforcement. The remaining keyword arguments go to
+        `create` unchanged.
+
+        `MatterWaveError` when the answer is empty or is not JSON; a
+        validation failure raises `response_model`'s own error, exactly as
+        calling `model_validate` (pydantic) or `parse_obj` (pydantic v1)
+        would. Anything with either classmethod validates, so any pydantic
+        model works without this package depending on pydantic."""
+        _validator_of(response_model)  # refused here, before any request
+        completion = self.create(
+            messages,
+            response_format=create_kwargs.pop("response_format", None) or {"type": "json_object"},
+            timeout=timeout,
+            max_retries=max_retries,
+            **create_kwargs,
+        )
+        return _parse_completion_text(completion, response_model)
 
 
 class Chat:
@@ -1248,6 +1326,26 @@ class AsyncCompletions:
         return ChatCompletion.from_dict(
             _base.parse_json_object(response), request_id=_base.request_id_of(response)
         )
+
+    async def parse(
+        self,
+        messages: Sequence[Message],
+        *,
+        response_model: type[ModelT],
+        timeout: float | None = None,
+        max_retries: int | None = None,
+        **create_kwargs: Any,
+    ) -> ModelT:
+        """As `Completions.parse`: `create` plus validation of the answer."""
+        _validator_of(response_model)  # refused here, before any request
+        completion = await self.create(
+            messages,
+            response_format=create_kwargs.pop("response_format", None) or {"type": "json_object"},
+            timeout=timeout,
+            max_retries=max_retries,
+            **create_kwargs,
+        )
+        return _parse_completion_text(completion, response_model)
 
 
 class AsyncChat:

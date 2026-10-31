@@ -144,6 +144,19 @@ class WebhookVerificationError(MatterWaveError):
         self.__cause__ = cause
 
 
+class ParseError(MatterWaveError):
+    """A structured-output parse that could not produce the model: the
+    answer was empty or was not JSON. A schema failure is not here -- the
+    validator's own error (a pydantic `ValidationError`, say) is what
+    propagates, because it says which field the model got wrong. `body`
+    carries the text that would not parse."""
+
+    def __init__(self, message: str, *, cause: BaseException | None = None, body: Any = None) -> None:
+        super().__init__(message)
+        self.__cause__ = cause
+        self.body = body
+
+
 class McpError(MatterWaveError):
     """A JSON-RPC error the `/mcp` endpoint answered with.
 
