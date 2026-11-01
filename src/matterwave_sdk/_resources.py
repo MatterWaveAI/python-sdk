@@ -1218,7 +1218,9 @@ class AsyncPasskeys(_Async):
         body, rid = await self._object(req.start_passkey_login_request(email, auth_request))
         return PasskeyLoginStart.from_dict(body, request_id=rid)
 
-    async def login_finish(self, challenge: str, credential: Mapping[str, Any]) -> PasskeyLoginFinish:
+    async def login_finish(
+        self, challenge: str, credential: Mapping[str, Any]
+    ) -> PasskeyLoginFinish:
         body, rid = await self._object(req.finish_passkey_login_request(challenge, credential))
         return PasskeyLoginFinish.from_dict(body, request_id=rid)
 
@@ -1254,7 +1256,9 @@ class Mfa(_Sync):
         body, rid = self._object(req.mfa_totp_confirm_request(code))
         return TotpConfirmed.from_dict(body, request_id=rid)
 
-    def totp_remove(self, *, code: str | None = None, recovery_code: str | None = None) -> TotpRemoved:
+    def totp_remove(
+        self, *, code: str | None = None, recovery_code: str | None = None
+    ) -> TotpRemoved:
         """`DELETE /api/me/mfa/totp`: remove the authenticator, on proof
         of it (a code) or of a recovery code -- the session cookie alone is
         not proof enough to remove the factor that protects it. Refused

@@ -96,9 +96,7 @@ def export_body(**extra) -> dict:
     }
 
 
-READY_URL = (
-    f"/api/me/export/{EXPORT_ID}/download?expires=1799000000&sig=abc123"
-)
+READY_URL = f"/api/me/export/{EXPORT_ID}/download?expires=1799000000&sig=abc123"
 
 
 def test_export_start_answers_at_once_with_a_pending_job(api, client: MatterWave) -> None:
@@ -129,9 +127,7 @@ def test_export_get_reports_readiness_with_a_fresh_link(api, client: MatterWave)
     with pytest.raises(ValueError, match="export_id"):
         client.exports.get("../keys")
     # Another person's export is the same 404 as none.
-    api.get("/api/me/export/exp-9999").respond(
-        404, json={"detail": "No such export."}, headers=H
-    )
+    api.get("/api/me/export/exp-9999").respond(404, json={"detail": "No such export."}, headers=H)
     with pytest.raises(NotFoundError):
         client.exports.get("exp-9999")
 
@@ -191,9 +187,7 @@ def import_body(**extra) -> dict:
     }
 
 
-def test_import_start_uploads_the_file_and_counts_what_was_found(
-    api, client: MatterWave
-) -> None:
+def test_import_start_uploads_the_file_and_counts_what_was_found(api, client: MatterWave) -> None:
     route = api.post("/api/me/imports").respond(
         202,
         json=import_body(status="pending", conversations_total=7),
@@ -213,9 +207,12 @@ def test_import_list_is_newest_first(api, client: MatterWave) -> None:
         200,
         json={
             "data": [
-                import_body(id="imp-0002", status="completed",
-                            completed_at="2026-10-31T09:05:00+00:00",
-                            started_at="2026-10-31T09:04:00+00:00"),
+                import_body(
+                    id="imp-0002",
+                    status="completed",
+                    completed_at="2026-10-31T09:05:00+00:00",
+                    started_at="2026-10-31T09:04:00+00:00",
+                ),
                 import_body(id="imp-0003", status="failed", error="Malformed export"),
             ]
         },

@@ -111,9 +111,7 @@ def test_org_get_is_any_members_and_rename_is_admins(api, client: MatterWave) ->
         client.org.rename("   ")
 
 
-def test_close_requires_the_name_and_reports_each_side_effect(
-    api, client: MatterWave
-) -> None:
+def test_close_requires_the_name_and_reports_each_side_effect(api, client: MatterWave) -> None:
     route = api.post("/api/org/close").respond(
         200,
         json={
@@ -195,9 +193,7 @@ def test_model_policy_read(api, client: MatterWave) -> None:
     assert route.called
 
 
-def test_model_policy_put_sends_null_to_lift_and_list_to_restrict(
-    api, client: MatterWave
-) -> None:
+def test_model_policy_put_sends_null_to_lift_and_list_to_restrict(api, client: MatterWave) -> None:
     route = api.put("/api/org/models").mock(
         return_value=httpx.Response(200, json=model_policy_body(), headers=H)
     )
@@ -229,9 +225,7 @@ def test_sharing_get_and_set(api, client: MatterWave) -> None:
     assert off.enabled is False
 
 
-def test_org_shares_list_the_creator_and_revoke_answers(
-    api, client: MatterWave
-) -> None:
+def test_org_shares_list_the_creator_and_revoke_answers(api, client: MatterWave) -> None:
     listed = api.get("/api/org/shares").respond(
         200,
         json={
@@ -256,9 +250,7 @@ def test_org_shares_list_the_creator_and_revoke_answers(
     shares = client.org.shares()
     assert shares.data[0].created_by == "user-0002"
     assert shares.data[0].include_attachments is True
-    api.delete(f"/api/org/shares/{SHARE_ID}").respond(
-        200, json={"status": "revoked"}, headers=H
-    )
+    api.delete(f"/api/org/shares/{SHARE_ID}").respond(200, json={"status": "revoked"}, headers=H)
     assert client.org.revoke_share(SHARE_ID).status == "revoked"
     # A link of another org and one that does not exist are the same 404.
     api.delete(f"/api/org/shares/{SHARE_ID}").respond(
@@ -297,9 +289,7 @@ def test_sso_read_carries_the_blockers(api, client: MatterWave) -> None:
     assert route.called
 
 
-def test_sso_enable_hands_back_the_break_glass_code_once(
-    api, client: MatterWave
-) -> None:
+def test_sso_enable_hands_back_the_break_glass_code_once(api, client: MatterWave) -> None:
     route = api.put("/api/org/sso").respond(
         200, json={"sso_required": True, "recovery": recovery_body()}, headers=H
     )
@@ -343,9 +333,7 @@ def test_domains_claim_list_and_release(api, client: MatterWave) -> None:
     claimed = client.org.domains.claim(" Example.TEST ")
     assert body_of(claim) == {"domain": "example.test"}
     assert claimed.verified is False
-    listed = api.get("/api/org/domains").respond(
-        200, json={"data": [domain_body()]}, headers=H
-    )
+    listed = api.get("/api/org/domains").respond(200, json={"data": [domain_body()]}, headers=H)
     assert len(client.org.domains.list()) == 1
     release = api.delete(f"/api/org/domains/{DOMAIN}").respond(204)
     assert client.org.domains.release(DOMAIN) is None
@@ -354,9 +342,7 @@ def test_domains_claim_list_and_release(api, client: MatterWave) -> None:
         client.org.domains.claim("not a domain")
 
 
-def test_domain_challenge_is_stable_and_verify_has_three_answers(
-    api, client: MatterWave
-) -> None:
+def test_domain_challenge_is_stable_and_verify_has_three_answers(api, client: MatterWave) -> None:
     challenge = api.get(f"/api/org/domains/{DOMAIN}/challenge").respond(
         200,
         json={
@@ -443,9 +429,7 @@ def test_idp_list_never_carries_a_secret(api, client: MatterWave) -> None:
     assert route.called
 
 
-def test_idp_attach_is_https_only_and_detach_removes(
-    api, client: MatterWave
-) -> None:
+def test_idp_attach_is_https_only_and_detach_removes(api, client: MatterWave) -> None:
     route = api.post("/api/org/idp").respond(201, json=idp_body(), headers=H)
     attached = client.org.idps.attach(
         name="Acme SSO",
@@ -527,12 +511,8 @@ async def test_async_org_makes_the_same_requests(api, async_client: AsyncMatterW
     api.get("/api/org/sharing").respond(200, json={"enabled": True}, headers=H)
     api.put("/api/org/sharing").respond(200, json={"enabled": False}, headers=H)
     api.get("/api/org/shares").respond(200, json={"data": []}, headers=H)
-    api.delete(f"/api/org/shares/{SHARE_ID}").respond(
-        200, json={"status": "revoked"}, headers=H
-    )
-    api.get("/api/org/sso").respond(
-        200, json={"sso_required": False, "blockers": []}, headers=H
-    )
+    api.delete(f"/api/org/shares/{SHARE_ID}").respond(200, json={"status": "revoked"}, headers=H)
+    api.get("/api/org/sso").respond(200, json={"sso_required": False, "blockers": []}, headers=H)
     api.put("/api/org/sso").respond(
         200, json={"sso_required": True, "recovery": recovery_body()}, headers=H
     )

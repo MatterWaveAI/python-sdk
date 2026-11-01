@@ -141,16 +141,15 @@ def test_mint_answers_a_code_that_lives_ten_minutes(api, client: MatterWave) -> 
         client.sync.pairings.mint("   ")
 
 
-def test_devices_list_carries_the_box_name_and_revoked_rows(
-    api, client: MatterWave
-) -> None:
+def test_devices_list_carries_the_box_name_and_revoked_rows(api, client: MatterWave) -> None:
     route = api.get("/api/sync/devices").respond(
         200,
         json={
             "data": [
                 device_body(),
-                device_body(id="key-edge-2", box_name="Old box",
-                            revoked_at="2026-10-30T09:00:00+00:00"),
+                device_body(
+                    id="key-edge-2", box_name="Old box", revoked_at="2026-10-30T09:00:00+00:00"
+                ),
             ]
         },
         headers=H,
@@ -281,27 +280,29 @@ def test_push_upserts_by_id_and_reports_rejections(api, client: MatterWave) -> N
     assert mixed.rejected[0]["status"] == 409
 
 
-def test_push_refuses_a_wrong_version_or_an_overfull_conversation(
-    api, client: MatterWave
-) -> None:
+def test_push_refuses_a_wrong_version_or_an_overfull_conversation(api, client: MatterWave) -> None:
     route = api.post("/api/sync/conversations").respond(
         200,
-        json={"conversation_id": "x", "accepted": 0, "updated": 0, "already_present": 0,
-              "rejected": []},
+        json={
+            "conversation_id": "x",
+            "accepted": 0,
+            "updated": 0,
+            "already_present": 0,
+            "rejected": [],
+        },
         headers=H,
     )
     with pytest.raises(ValueError, match="format_version"):
         client.sync.push(CONVERSATION, format_version=2)
     with pytest.raises(ValueError, match="messages"):
-        client.sync.push(
-            {**CONVERSATION, "messages": [{"id": str(i)} for i in range(501)]}
-        )
+        client.sync.push({**CONVERSATION, "messages": [{"id": str(i)} for i in range(501)]})
     with pytest.raises(ValueError, match="conversation"):
         client.sync.push({})
     assert route.call_count == 0
     # The conversation id not being the caller's to write is the 409/410 pair.
     api.post("/api/sync/conversations").respond(
-        409, json={"detail": "A conversation with this id exists under another account."},
+        409,
+        json={"detail": "A conversation with this id exists under another account."},
         headers=H,
     )
     with pytest.raises(MatterWaveError, match="another account"):

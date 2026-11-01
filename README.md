@@ -341,8 +341,8 @@ The caller's own account, with a key (as its owner) or a person's token:
 
 ```python
 client.account.update(full_name="Ada Lovelace")
-client.account.accept_terms("2026-10")          # a version other than the current one is a 422
-held = client.account.enforcement()              # state "none", or the warning or limit and why
+client.account.accept_terms("2026-10")  # a version other than the current one is a 422
+held = client.account.enforcement()  # state "none", or the warning or limit and why
 client.preferences.update(product_updates=True)  # reads, changes what was passed, writes back
 for session in client.sessions.list():
     print(session.user_agent, session.last_seen_at)
@@ -356,11 +356,11 @@ job = client.imports.create(Path("conversations.json").read_bytes(), "conversati
 print(client.imports.wait(job.id).conversations_created)
 
 said = client.speech.transcribe(Path("note.ogg").read_bytes(), "note.ogg", language="en")
-client.attachments.scan(attachment_id)          # poll until scan_status is "clean"
-data = client.attachments.view(attachment_id)   # the bytes, through the signed link the route mints
+client.attachments.scan(attachment_id)  # poll until scan_status is "clean"
+data = client.attachments.view(attachment_id)  # the bytes, through the signed link the route mints
 
-status = client.billing.status()                # the plan, its limits, and dunning when late
-catalog = MatterWave(api_key=None).plans.list() # public: the price list and model prices
+status = client.billing.status()  # the plan, its limits, and dunning when late
+catalog = MatterWave(api_key=None).plans.list()  # public: the price list and model prices
 ```
 
 `account`: `update`, `accept_terms`, `enforcement`, `onboarding_complete`, and
@@ -403,18 +403,18 @@ admin = MatterWave(access_token=signin.session(token))
 for member in admin.members.list():
     print(member.email, member.role, member.state)
 admin.members.set_role(subject, "admin")
-invite = admin.invites.create("new.hire@example.com", role="member")   # mailed; `mail` says if it went
-link = admin.invite_links.create(role="viewer", max_uses=5)             # link.url is shown this once
+invite = admin.invites.create("new.hire@example.com", role="member")  # mailed; `mail` says if sent
+link = admin.invite_links.create(role="viewer", max_uses=5)  # link.url is shown this once
 
-admin.org.set_models(["grt-nano", "grt-pro"])    # the allow-list; None allows the whole plan
-admin.org.set_sharing(False)                     # silences every share link without revoking it
+admin.org.set_models(["grt-nano", "grt-pro"])  # the allow-list; None allows the whole plan
+admin.org.set_sharing(False)  # silences every share link without revoking it
 admin.org.domains.claim("example.com")
-print(admin.org.domains.challenge("example.com").record.value)   # publish, then verify()
+print(admin.org.domains.challenge("example.com").record.value)  # publish, then verify()
 admin.org.idps.attach(name="Okta", issuer="https://acme.okta.com", client_id=..., client_secret=...)
-enforced = admin.org.set_sso(True)               # owner only; store enforced.recovery.code offline
+enforced = admin.org.set_sso(True)  # owner only; store enforced.recovery.code offline
 
 print(admin.billing.invoices().data[0].hosted_invoice_url)
-checkout = admin.billing.checkout("team", annual=True)            # send the person to checkout.url
+checkout = admin.billing.checkout("team", annual=True)  # send the person to checkout.url
 ```
 
 `org`: `get`, `rename`, `close` (owner only, irreversible; `confirm` is the org's
@@ -445,6 +445,7 @@ only then decodes the body; anything else raises `WebhookVerificationError`.
 
 ```python
 from matterwave_sdk import WebhookVerificationError, webhooks
+
 
 def receive(body: bytes, headers: dict[str, str]) -> int:
     try:

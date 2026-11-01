@@ -102,9 +102,7 @@ def members_body(**extra) -> dict:
     return {
         "data": [
             member_body(),
-            member_body(
-                subject="user-0002", role="member", name=None, last_seen_at=None
-            ),
+            member_body(subject="user-0002", role="member", name=None, last_seen_at=None),
         ],
         "role": "owner",
         "seats": {"used": 3, "max": 5, "billed": 2},
@@ -112,9 +110,7 @@ def members_body(**extra) -> dict:
     }
 
 
-def test_members_list_carries_the_callers_role_and_the_seats(
-    api, client: MatterWave
-) -> None:
+def test_members_list_carries_the_callers_role_and_the_seats(api, client: MatterWave) -> None:
     route = api.get("/api/org/members").respond(200, json=members_body(), headers=H)
     members = client.members.list()
     assert sent(route).headers["authorization"] == f"Bearer {API_KEY}"
@@ -125,9 +121,7 @@ def test_members_list_carries_the_callers_role_and_the_seats(
     assert members.seats.billed == 2  # a per-seat plan's paying rows
 
 
-def test_set_role_sends_the_role_and_refuses_an_unknown_one(
-    api, client: MatterWave
-) -> None:
+def test_set_role_sends_the_role_and_refuses_an_unknown_one(api, client: MatterWave) -> None:
     route = api.put(f"/api/org/members/{SUBJECT}/role").respond(
         200, json=member_body(role="admin"), headers=H
     )
@@ -175,7 +169,8 @@ def invite_body(**extra) -> dict:
 
 def test_invites_list_statuses(api, client: MatterWave) -> None:
     route = api.get("/api/org/invites").respond(
-        200, json={"data": [invite_body(), invite_body(id="inv-0002", status="accepted")]},
+        200,
+        json={"data": [invite_body(), invite_body(id="inv-0002", status="accepted")]},
         headers=H,
     )
     invites = client.invites.list()
@@ -185,9 +180,7 @@ def test_invites_list_statuses(api, client: MatterWave) -> None:
 
 
 def test_invite_create_mails_and_says_whether_it_went(api, client: MatterWave) -> None:
-    route = api.post("/api/org/invites").respond(
-        201, json=invite_body(mail="sent"), headers=H
-    )
+    route = api.post("/api/org/invites").respond(201, json=invite_body(mail="sent"), headers=H)
     sent_invite = client.invites.create("Bob@Example.test", role="admin")
     assert body_of(route) == {"email": "bob@example.test", "role": "admin"}
     assert sent_invite.mail == "sent" and sent_invite.detail is None
@@ -222,9 +215,7 @@ def test_invite_resend_rotates_and_revokes(api, client: MatterWave) -> None:
         client.invites.revoke(INVITE_ID)
 
 
-def test_invite_lookup_is_anonymous_and_accept_is_keyed(
-    api, client: MatterWave
-) -> None:
+def test_invite_lookup_is_anonymous_and_accept_is_keyed(api, client: MatterWave) -> None:
     lookup = api.post("/api/org/invites/lookup").respond(
         200,
         json={
@@ -268,7 +259,8 @@ def link_body(**extra) -> dict:
 
 def test_links_list_never_carries_a_token(api, client: MatterWave) -> None:
     route = api.get("/api/org/invite-links").respond(
-        200, json={"data": [link_body(), link_body(id="lnk-0002", status="used_up")]},
+        200,
+        json={"data": [link_body(), link_body(id="lnk-0002", status="used_up")]},
         headers=H,
     )
     links = client.invite_links.list()
@@ -277,9 +269,7 @@ def test_links_list_never_carries_a_token(api, client: MatterWave) -> None:
     assert all("token" not in str(link) for link in links)
 
 
-def test_link_create_hands_the_token_once_and_never_for_owner(
-    api, client: MatterWave
-) -> None:
+def test_link_create_hands_the_token_once_and_never_for_owner(api, client: MatterWave) -> None:
     route = api.post("/api/org/invite-links").respond(
         201,
         json={**link_body(), "token": "link-tok", "url": "https://x.test/join?link=link-tok"},
@@ -328,9 +318,7 @@ def test_join_lookup_and_join(api, client: MatterWave) -> None:
     assert sent(join).headers["authorization"] == f"Bearer {API_KEY}"
     assert membership.role == "owner"
     # An expired or used-up link is the 410 the route answers.
-    api.post("/api/join").respond(
-        410, json={"detail": "That link has been used up."}, headers=H
-    )
+    api.post("/api/join").respond(410, json={"detail": "That link has been used up."}, headers=H)
     from matterwave_sdk import MatterWaveError
 
     with pytest.raises(MatterWaveError, match="used up"):

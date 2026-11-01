@@ -2331,9 +2331,7 @@ class PasswordChanged:
     request_id: str | None = field(default=None, compare=False)
 
     @classmethod
-    def from_dict(
-        cls, data: dict[str, Any], *, request_id: str | None = None
-    ) -> PasswordChanged:
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> PasswordChanged:
         return cls(
             status=_str(data.get("status"), "changed"),
             revoked=_int(data.get("revoked")),
@@ -2376,9 +2374,7 @@ class EmailChangeState:
     request_id: str | None = field(default=None, compare=False)
 
     @classmethod
-    def from_dict(
-        cls, data: dict[str, Any], *, request_id: str | None = None
-    ) -> EmailChangeState:
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> EmailChangeState:
         return cls(
             email=_opt_str(data.get("email")),
             pending_email=_opt_str(data.get("pending_email")),
@@ -2566,9 +2562,7 @@ class PasskeyLoginStart:
     request_id: str | None = field(default=None, compare=False)
 
     @classmethod
-    def from_dict(
-        cls, data: dict[str, Any], *, request_id: str | None = None
-    ) -> PasskeyLoginStart:
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> PasskeyLoginStart:
         options = data.get("options")
         return cls(
             challenge=_str(data.get("challenge")),
@@ -2907,15 +2901,11 @@ class EdgeSyncStatus:
             paired_at=_opt_str(data.get("paired_at")),
             last_synced_at=_opt_str(data.get("last_synced_at")),
             last_attempt_at=_opt_str(data.get("last_attempt_at")),
-            offline=(
-                data.get("offline") if isinstance(data.get("offline"), bool) else None
-            ),
+            offline=(data.get("offline") if isinstance(data.get("offline"), bool) else None),
             pending=_opt_int(data.get("pending")),
             pending_messages=_opt_int(data.get("pending_messages")),
             pending_capped=(
-                data.get("pending_capped")
-                if isinstance(data.get("pending_capped"), bool)
-                else None
+                data.get("pending_capped") if isinstance(data.get("pending_capped"), bool) else None
             ),
             stopped=_opt_str(data.get("stopped")),
             last_error=_opt_str(data.get("last_error")),

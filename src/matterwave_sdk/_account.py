@@ -321,7 +321,9 @@ class AsyncAccount(_Async):
         return EmailChangeState.from_dict(body, request_id=rid)
 
     async def start_email_change(self, new_email: str, current_password: str) -> EmailChangeStarted:
-        body, rid = await self._object(native_req.start_email_change_request(new_email, current_password))
+        body, rid = await self._object(
+            native_req.start_email_change_request(new_email, current_password)
+        )
         return EmailChangeStarted.from_dict(body, request_id=rid)
 
     async def verify_email_change(self, code: str) -> EmailChanged:

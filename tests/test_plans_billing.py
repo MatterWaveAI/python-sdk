@@ -120,16 +120,19 @@ CATALOG = {
         ),
     ],
     "models": [
-        {"id": "grt-nano", "label": "GRT Nano", "multiplier": 1,
-         "input_usd_per_m": 0.5, "output_usd_per_m": 1.5},
+        {
+            "id": "grt-nano",
+            "label": "GRT Nano",
+            "multiplier": 1,
+            "input_usd_per_m": 0.5,
+            "output_usd_per_m": 1.5,
+        },
     ],
     "default_model": "grt-nano",
 }
 
 
-def test_plans_catalog_is_cheapest_first_with_the_price_table(
-    api, client: MatterWave
-) -> None:
+def test_plans_catalog_is_cheapest_first_with_the_price_table(api, client: MatterWave) -> None:
     route = api.get("/api/plans").respond(200, json=CATALOG, headers=H)
     catalog = client.billing.plans()
     assert [plan.code for plan in catalog] == ["free", "team"]
@@ -142,9 +145,7 @@ def test_plans_catalog_is_cheapest_first_with_the_price_table(
     assert route.called
 
 
-def test_switch_plan_moves_to_free_and_carries_the_reason(
-    api, client: MatterWave
-) -> None:
+def test_switch_plan_moves_to_free_and_carries_the_reason(api, client: MatterWave) -> None:
     route = api.put("/api/plan").respond(
         200,
         json={
@@ -183,8 +184,11 @@ def test_switch_plan_moves_to_free_and_carries_the_reason(
     # the error table has no 402 class of its own).
     api.put("/api/plan").respond(
         402,
-        json={"detail": "Start a subscription to move to Team.",
-              "plan": "team", "checkout_url": "https://checkout.stripe.com/x"},
+        json={
+            "detail": "Start a subscription to move to Team.",
+            "plan": "team",
+            "checkout_url": "https://checkout.stripe.com/x",
+        },
         headers=H,
     )
     with pytest.raises(APIError, match="subscription"):
@@ -244,9 +248,7 @@ def test_portal_answers_a_url(api, client: MatterWave) -> None:
     assert sent(route).content == b""
 
 
-def test_status_is_readable_by_any_member_and_keeps_the_plan_facts(
-    api, client: MatterWave
-) -> None:
+def test_status_is_readable_by_any_member_and_keeps_the_plan_facts(api, client: MatterWave) -> None:
     route = api.get("/api/billing/status").respond(
         200,
         json={
@@ -331,9 +333,7 @@ def test_a_bad_plan_code_is_the_servers_400(api, client: MatterWave) -> None:
 
 
 @pytest.mark.asyncio
-async def test_async_billing_makes_the_same_requests(
-    api, async_client: AsyncMatterWave
-) -> None:
+async def test_async_billing_makes_the_same_requests(api, async_client: AsyncMatterWave) -> None:
     api.get("/api/plans").respond(200, json=CATALOG, headers=H)
     api.put("/api/plan").respond(
         200,

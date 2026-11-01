@@ -174,7 +174,9 @@ class _Config:
             raise MatterWaveConfigError(
                 "pass api_key or access_token, not both: each is the whole bearer"
             )
-        if access_token is not None and not (isinstance(access_token, str) or callable(access_token)):
+        if access_token is not None and not (
+            isinstance(access_token, str) or callable(access_token)
+        ):
             raise TypeError("access_token must be a token or a callable that returns one")
         # A person's token replaces the key outright, so MATTERWAVE_API_KEY
         # is not read beside one.
