@@ -19,12 +19,15 @@ from typing import Any, Literal, TypedDict
 import httpx
 
 from .errors import (
+    CONNECTOR_CONVERSATION_CODE,
     APIError,
+    ConnectorConversationError,
     DeviceAuthError,
     MissingAPIKeyError,
     RateLimit,
     error_class_for,
 )
+from .models import ConversationSource
 
 API_KEY_ENV = "MATTERWAVE_API_KEY"
 BASE_URL_ENV = "MATTERWAVE_BASE_URL"
@@ -943,11 +946,24 @@ def error_from_response(response: httpx.Response, body: bytes | None = None) -> 
     detail = _detail_text(payload.get("detail")) if isinstance(payload, dict) else None
     if detail:
         # The app's own routes answer `{"detail": ..., "request_id": ...}`,
-        # FastAPI's shape with the ids beside it, rather than OpenAI's.
+        # FastAPI's shape with the ids beside it, rather than OpenAI's. A
+        # few put a `code` beside the detail, and one of those names the
+        # thread the conversation is answered in.
+        request_id = request_id_of(response) or _opt_str(payload.get("request_id"))
+        code = _opt_str(payload.get("code"))
+        if response.status_code == 409 and code == CONNECTOR_CONVERSATION_CODE:
+            source = payload.get("source")
+            return ConnectorConversationError(
+                detail,
+                source=ConversationSource.from_dict(source if isinstance(source, dict) else {}),
+                request_id=request_id,
+                body=payload,
+            )
         return cls(
             detail,
             status_code=response.status_code,
-            request_id=request_id_of(response) or _opt_str(payload.get("request_id")),
+            code=code,
+            request_id=request_id,
             retry_after=retry_after_of(response),
             rate_limit=rate_limit_of(response),
             body=payload,

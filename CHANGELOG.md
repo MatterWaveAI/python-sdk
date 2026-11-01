@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `Conversation.preset_id`, `Conversation.preset` (`ConversationPreset`:
+  the id and name) and `Conversation.source` (`ConversationSource`: the
+  `connector`, `connection_id`, `channel_label` and `url` of the thread a
+  connector opened the conversation from), each `None` when the server
+  does not send it.
+- `ConnectorConversationError`, the `ConflictError` with `code`
+  `connector_conversation`: a send, edit or regenerate in a conversation a
+  connector opened, which is answered in its own thread alone. Its
+  `source` is the thread; a fork of the conversation takes messages.
+- An app-route refusal (`{"detail": ...}`) that carries a `code` beside
+  the detail now has it on the error's `code`.
 - `frequency_penalty` and `presence_penalty` on `chat.completions.create`
   (sync and async), relayed to the model as OpenAI defines them (-2 to 2);
   `None` leaves them out of the body.

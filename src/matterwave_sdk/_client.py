@@ -950,7 +950,10 @@ class Conversations:
         onto that branch instead of the current leaf. `timeout` and
         `max_retries` are the turn's own bounds, overriding the client's:
         a long generation need not be cut by the 60s default, nor hold the
-        whole client at its pace."""
+        whole client at its pace. `ConnectorConversationError` for a
+        conversation a connector opened (`source` set): it is answered in
+        its thread alone, and so are `edit` and `regenerate`; fork it to
+        continue here."""
         request = _base.send_message_request(
             conversation_id,
             content,

@@ -16,6 +16,9 @@ from matterwave_sdk import (
     APIConnectionError,
     AsyncMatterWave,
     ConflictError,
+    ConnectorConversationError,
+    ConversationPreset,
+    ConversationSource,
     MatterWave,
     NotFoundError,
 )
@@ -820,6 +823,140 @@ def test_a_fork_of_a_temporary_conversation_is_the_same_conflict(
     with pytest.raises(ConflictError) as caught:
         client.conversations.fork(CONV, "m-user")
     assert caught.value.message == "A temporary conversation is not kept, so it cannot be forked."
+
+
+# --- a connector's conversation ------------------------------------------------
+
+SLACK_SOURCE = {
+    "connector": "slack",
+    "connection_id": "conn-1",
+    "channel_label": "#support",
+    "url": "https://acme.slack.com/archives/C01/p1700000000000100",
+}
+
+
+def test_a_conversation_carries_its_preset_and_connector_source(
+    api, client: MatterWave
+) -> None:
+    api.get(f"/api/conversations/{CONV}").mock(
+        return_value=httpx.Response(
+            200,
+            json=conversation(
+                preset_id="pre-1",
+                preset={"id": "pre-1", "name": "Support"},
+                source=SLACK_SOURCE,
+            ),
+        )
+    )
+    conv = client.conversations.get(CONV)
+    assert conv.preset_id == "pre-1"
+    assert conv.preset == ConversationPreset(id="pre-1", name="Support")
+    assert conv.source == ConversationSource(
+        connector="slack",
+        connection_id="conn-1",
+        channel_label="#support",
+        url="https://acme.slack.com/archives/C01/p1700000000000100",
+    )
+
+
+def test_a_conversation_a_person_started_has_no_preset_and_no_source(
+    api, client: MatterWave
+) -> None:
+    # The server sends the three as null; an older one leaves them out.
+    api.get(f"/api/conversations/{CONV}").mock(
+        return_value=httpx.Response(
+            200, json=conversation(preset_id=None, preset=None, source=None)
+        )
+    )
+    conv = client.conversations.get(CONV)
+    assert conv.preset_id is None and conv.preset is None and conv.source is None
+    api.get(f"/api/conversations/{CONV}").mock(return_value=httpx.Response(200, json=conversation()))
+    conv = client.conversations.get(CONV)
+    assert conv.preset_id is None and conv.preset is None and conv.source is None
+
+
+def test_a_send_into_a_connector_conversation_is_its_own_conflict(
+    api, client: MatterWave
+) -> None:
+    # The app's shape for it: `detail` for people, `code` and the thread
+    # beside it, so a client can point at where the answer will be.
+    refusal = {
+        "detail": "This conversation is answered from slack in #support; reply there. "
+        "Fork it to continue it here.",
+        "code": "connector_conversation",
+        "source": SLACK_SOURCE,
+        "request_id": REQUEST_ID,
+    }
+    api.post(f"/api/conversations/{CONV}/messages").mock(
+        return_value=httpx.Response(409, json=refusal)
+    )
+    with pytest.raises(ConnectorConversationError) as caught:
+        client.conversations.send(CONV, "Hi there")
+    err = caught.value
+    assert isinstance(err, ConflictError)
+    assert err.status_code == 409
+    assert err.code == "connector_conversation"
+    assert err.message.startswith("This conversation is answered from slack in #support")
+    assert err.request_id == REQUEST_ID
+    assert err.source.connector == "slack"
+    assert err.source.channel_label == "#support"
+    assert err.source.url == SLACK_SOURCE["url"]
+    assert err.body == refusal
+
+
+def test_an_edit_and_a_regenerate_in_a_connector_conversation_are_the_same(
+    api, client: MatterWave
+) -> None:
+    refusal = {
+        "detail": "This conversation is answered from slack in #support; reply there.",
+        "code": "connector_conversation",
+        "source": SLACK_SOURCE,
+        "request_id": REQUEST_ID,
+    }
+    api.post(f"/api/conversations/{CONV}/messages/m-user/edit").mock(
+        return_value=httpx.Response(409, json=refusal)
+    )
+    api.post(f"/api/conversations/{CONV}/messages/m-asst/regenerate").mock(
+        return_value=httpx.Response(409, json=refusal)
+    )
+    with pytest.raises(ConnectorConversationError) as edited:
+        client.conversations.edit(CONV, "m-user", "Again")
+    with pytest.raises(ConnectorConversationError) as regenerated:
+        client.conversations.regenerate(CONV, "m-asst")
+    assert edited.value.source == regenerated.value.source
+    assert regenerated.value.source.connector == "slack"
+
+
+@pytest.mark.asyncio
+async def test_the_async_send_raises_the_same_connector_conflict(
+    api, async_client: AsyncMatterWave
+) -> None:
+    api.post(f"/api/conversations/{CONV}/messages").mock(
+        return_value=httpx.Response(
+            409,
+            json={
+                "detail": "This conversation is answered from slack in #support; reply there.",
+                "code": "connector_conversation",
+                "source": {"connector": "slack", "channel_label": "#support"},
+                "request_id": REQUEST_ID,
+            },
+        )
+    )
+    with pytest.raises(ConnectorConversationError) as caught:
+        await async_client.conversations.send(CONV, "Hi there")
+    assert caught.value.source == ConversationSource(connector="slack", channel_label="#support")
+
+
+def test_a_409_without_the_code_stays_a_plain_conflict(api, client: MatterWave) -> None:
+    api.post(f"/api/conversations/{CONV}/messages").mock(
+        return_value=httpx.Response(
+            409, json={"detail": "A temporary conversation is not kept.", "request_id": REQUEST_ID}
+        )
+    )
+    with pytest.raises(ConflictError) as caught:
+        client.conversations.send(CONV, "Hi there")
+    assert not isinstance(caught.value, ConnectorConversationError)
+    assert caught.value.code is None
 
 
 # --- instructions -----------------------------------------------------------------

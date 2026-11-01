@@ -12,6 +12,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .models import ConversationSource
+
+# The `code` the app puts beside `detail` on the 409 for a turn in a
+# conversation a connector opened.
+CONNECTOR_CONVERSATION_CODE = "connector_conversation"
+
 
 @dataclass(frozen=True)
 class RateLimit:
@@ -107,6 +113,32 @@ class NotFoundError(APIError):
 class ConflictError(APIError):
     """409: the request is valid but the state does not allow it, such as a
     compaction with nothing to fold yet."""
+
+
+class ConnectorConversationError(ConflictError):
+    """409 with `code` `connector_conversation`: a send, edit or regenerate
+    in a conversation a connector opened (one started from Slack, say),
+    which is answered in its own thread alone. `source` says which
+    connector and channel, with a link to the thread when the connector
+    has one. A fork of the conversation is ordinary and takes messages."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        source: ConversationSource,
+        status_code: int | None = 409,
+        request_id: str | None = None,
+        body: Any = None,
+    ) -> None:
+        super().__init__(
+            message,
+            status_code=status_code,
+            code=CONNECTOR_CONVERSATION_CODE,
+            request_id=request_id,
+            body=body,
+        )
+        self.source = source
 
 
 class UnprocessableEntityError(APIError):
