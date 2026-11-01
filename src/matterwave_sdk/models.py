@@ -633,6 +633,44 @@ class ConversationMessage:
 
 
 @dataclass(frozen=True)
+class ConversationPreset:
+    """The org preset a conversation answers with, as the conversation
+    carries it beside `preset_id`: the id again, and the name a composer
+    can label the choice with."""
+
+    id: str
+    name: str
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ConversationPreset:
+        return cls(id=_str(data.get("id")), name=_str(data.get("name")))
+
+
+@dataclass(frozen=True)
+class ConversationSource:
+    """Where a connector opened a conversation: which connector (`slack`),
+    the connection it came through, the channel as a person would name it
+    (`#support`), and a link to the thread when the connector has one.
+    Such a conversation is answered in that thread alone -- `send`, `edit`
+    and `regenerate` in it raise `ConnectorConversationError` -- and a
+    fork of it is an ordinary conversation with no source."""
+
+    connector: str
+    connection_id: str | None = None
+    channel_label: str | None = None
+    url: str | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ConversationSource:
+        return cls(
+            connector=_str(data.get("connector")),
+            connection_id=_opt_str(data.get("connection_id")),
+            channel_label=_opt_str(data.get("channel_label")),
+            url=_opt_str(data.get("url")),
+        )
+
+
+@dataclass(frozen=True)
 class Conversation:
     """A conversation. `messages` is the active path when the route returned
     one (`get`, `set_active_leaf`, `fork`) or every message for `tree`, and
@@ -655,6 +693,14 @@ class Conversation:
     # shared, forked, filed or tagged, and is hard-deleted a day after its
     # last message. Fixed at creation.
     temporary: bool = False
+    # The org preset the conversation answers with, when it is on one: the
+    # id, and the same with its name as `preset`. None for a conversation
+    # answering with its own picks.
+    preset_id: str | None = None
+    preset: ConversationPreset | None = None
+    # Where a connector opened the conversation; None for one a person
+    # started.
+    source: ConversationSource | None = None
     messages: list[ConversationMessage] = field(default_factory=list)
     tree: list[ConversationMessage] | None = None
     # The instruction levels in force, as `get` reports them; the server owns the shape.
@@ -665,6 +711,8 @@ class Conversation:
     def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> Conversation:
         tree = data.get("tree")
         instructions = data.get("instructions")
+        preset = data.get("preset")
+        source = data.get("source")
         return cls(
             id=_str(data.get("id")),
             title=_str(data.get("title")),
@@ -680,6 +728,9 @@ class Conversation:
             archived_at=_opt_str(data.get("archived_at")),
             folder_id=_opt_str(data.get("folder_id")),
             temporary=data.get("temporary") is True,
+            preset_id=_opt_str(data.get("preset_id")),
+            preset=ConversationPreset.from_dict(preset) if isinstance(preset, dict) else None,
+            source=ConversationSource.from_dict(source) if isinstance(source, dict) else None,
             messages=[ConversationMessage.from_dict(m) for m in _dicts(data.get("messages"))],
             tree=(
                 [ConversationMessage.from_dict(m) for m in _dicts(tree)]
@@ -1136,10 +1187,42 @@ class UsageTotals:
 
 
 @dataclass(frozen=True)
+class ConnectionUsage:
+    """One connector connection's share of the month: what the turns it
+    answered cost, biggest first. `connector` and `display_name` are None
+    once the connection is deleted; its spend keeps its id."""
+
+    connection_id: str
+    connector: str | None
+    display_name: str | None
+    weighted_tokens: int
+    tokens: int
+    cost_micros: int
+    turns: int
+    last_active: str | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ConnectionUsage:
+        return cls(
+            connection_id=_str(data.get("connection_id")),
+            connector=_opt_str(data.get("connector")),
+            display_name=_opt_str(data.get("display_name")),
+            weighted_tokens=_int(data.get("weighted_tokens")),
+            tokens=_int(data.get("tokens")),
+            cost_micros=_int(data.get("cost_micros")),
+            turns=_int(data.get("turns")),
+            last_active=_opt_str(data.get("last_active")),
+        )
+
+
+@dataclass(frozen=True)
 class OrgUsage:
     """`GET /api/org/usage`: one calendar month per member. `scope` is `org`
     for an owner or admin (every member) and `self` for anyone else (their
-    own row); `totals` are over the rows returned."""
+    own row); `totals` are over the rows returned. `by_connection` is the
+    part of those rows that connector turns made, per connection, scoped the
+    same way: every connection for an owner or admin, the ones a member paid
+    for otherwise. Chat and API turns are in no connection's row."""
 
     period: str
     period_start: str
@@ -1148,6 +1231,7 @@ class OrgUsage:
     scope: str
     data: list[MemberUsage]
     totals: UsageTotals
+    by_connection: list[ConnectionUsage] = field(default_factory=list)
     request_id: str | None = field(default=None, compare=False)
 
     def __iter__(self) -> Any:
@@ -1166,6 +1250,7 @@ class OrgUsage:
             scope=_str(data.get("scope")),
             data=[MemberUsage.from_dict(r) for r in _dicts(data.get("data"))],
             totals=UsageTotals.from_dict(_dict(data.get("totals"))),
+            by_connection=[ConnectionUsage.from_dict(r) for r in _dicts(data.get("by_connection"))],
             request_id=request_id,
         )
 

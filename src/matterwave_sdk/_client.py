@@ -58,6 +58,7 @@ from ._account import (
     Speech,
 )
 from ._base import EmbeddingInput, Message, Request, Tool, ToolChoice
+from ._connectors import AsyncConnections, AsyncPresets, Connections, Presets
 from ._mcp import AsyncMcp, Mcp
 from ._org import (
     AsyncInviteLinks,
@@ -924,6 +925,7 @@ class Conversations:
         title: str | None = None,
         model: str | None = None,
         temporary: bool | None = None,
+        preset_id: str | None = None,
     ) -> Conversation:
         """`POST /api/conversations`. An untitled one is named from its
         first message. `temporary=True` asks the server not to keep the
@@ -931,8 +933,14 @@ class Conversations:
         search, cannot be pinned, shared, forked, filed or tagged -- each
         a 409 saying a temporary conversation is not kept -- and it is
         hard-deleted 24 hours after its last message. The choice is fixed
-        at creation; nothing later turns it on or off."""
-        body, rid = self._object(_base.create_conversation_request(title, model, temporary))
+        at creation; nothing later turns it on or off.
+
+        `preset_id` puts the conversation on one of the org's live presets
+        (`client.presets.list()`), whose model, instructions and tools its
+        turns then answer with; None, the default, is no preset."""
+        body, rid = self._object(
+            _base.create_conversation_request(title, model, temporary, preset_id)
+        )
         return Conversation.from_dict(body, request_id=rid)
 
     def get(self, conversation_id: str, *, full: bool = False) -> Conversation:
@@ -946,17 +954,21 @@ class Conversations:
         *,
         title: str | None = None,
         default_model: str | None = _base.UNSET,
+        preset_id: str | None = _base.UNSET,
     ) -> Conversation:
         """`PATCH /api/conversations/{id}`: rename the conversation, set the
-        model its turns use when a turn names none, or both.
+        model its turns use when a turn names none, put it on a preset, or
+        any of them together.
 
         `default_model=None` clears the model back to the deployment's
-        default; leaving the keyword out leaves it alone. `title` is the
-        person's name for the conversation, 1-200 characters once trimmed.
+        default, and `preset_id=None` takes the conversation off its preset,
+        back to its own model and instructions; leaving either keyword out
+        leaves it alone. `title` is the person's name for the conversation,
+        1-200 characters once trimmed.
         """
         body, rid = self._object(
             _base.update_conversation_request(
-                conversation_id, title=title, default_model=default_model
+                conversation_id, title=title, default_model=default_model, preset_id=preset_id
             )
         )
         return Conversation.from_dict(body, request_id=rid)
@@ -1091,7 +1103,10 @@ class Conversations:
         onto that branch instead of the current leaf. `timeout` and
         `max_retries` are the turn's own bounds, overriding the client's:
         a long generation need not be cut by the 60s default, nor hold the
-        whole client at its pace."""
+        whole client at its pace. `ConnectorConversationError` for a
+        conversation a connector opened (`source` set): it is answered in
+        its thread alone, and so are `edit` and `regenerate`; fork it to
+        continue here."""
         request = _base.send_message_request(
             conversation_id,
             content,
@@ -1428,6 +1443,8 @@ class MatterWave:
         self.mfa = Mfa(self)
         self.accounts = BrowserAccounts(self)
         self.sync = Sync(self)
+        self.presets = Presets(self)
+        self.connections = Connections(self)
 
     @property
     def base_url(self) -> str:
@@ -1831,8 +1848,11 @@ class AsyncConversations:
         title: str | None = None,
         model: str | None = None,
         temporary: bool | None = None,
+        preset_id: str | None = None,
     ) -> Conversation:
-        body, rid = await self._object(_base.create_conversation_request(title, model, temporary))
+        body, rid = await self._object(
+            _base.create_conversation_request(title, model, temporary, preset_id)
+        )
         return Conversation.from_dict(body, request_id=rid)
 
     async def get(self, conversation_id: str, *, full: bool = False) -> Conversation:
@@ -1845,10 +1865,11 @@ class AsyncConversations:
         *,
         title: str | None = None,
         default_model: str | None = _base.UNSET,
+        preset_id: str | None = _base.UNSET,
     ) -> Conversation:
         body, rid = await self._object(
             _base.update_conversation_request(
-                conversation_id, title=title, default_model=default_model
+                conversation_id, title=title, default_model=default_model, preset_id=preset_id
             )
         )
         return Conversation.from_dict(body, request_id=rid)
@@ -2202,6 +2223,8 @@ class AsyncMatterWave:
         self.mfa = AsyncMfa(self)
         self.accounts = AsyncBrowserAccounts(self)
         self.sync = AsyncSync(self)
+        self.presets = AsyncPresets(self)
+        self.connections = AsyncConnections(self)
 
     @property
     def base_url(self) -> str:

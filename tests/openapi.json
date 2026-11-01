@@ -1286,6 +1286,18 @@
       "Model": {
         "additionalProperties": false,
         "properties": {
+          "context_window": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Context Window"
+          },
           "created": {
             "title": "Created",
             "type": "integer"
@@ -1303,13 +1315,18 @@
             "const": "matterwave",
             "title": "Owned By",
             "type": "string"
+          },
+          "supports_tools": {
+            "title": "Supports Tools",
+            "type": "boolean"
           }
         },
         "required": [
           "id",
           "object",
           "created",
-          "owned_by"
+          "owned_by",
+          "supports_tools"
         ],
         "title": "Model",
         "type": "object"
@@ -1810,7 +1827,7 @@
     "version": "0.1.0",
     "x-api-version": "v1",
     "x-extensions": {
-      "metadata.conversation_id": "persist the turn into a conversation"
+      "metadata.conversation_id": "persist the turn, tool rounds included, into a conversation"
     },
     "x-stability": {
       "preview_prefix": "/v1/preview/",
@@ -1850,7 +1867,7 @@
     },
     "/v1/chat/completions": {
       "post": {
-        "description": "Send a conversation and get the model's reply, as one `chat.completion`\nobject or, with `stream: true`, a stream of `chat.completion.chunk`\nevents. OpenAI's request and response shapes; `model` may be omitted for\nthe deployment's default.\n\nThe request's `messages` are the whole prompt. With\n`metadata.conversation_id` the turn is also recorded into that\nconversation, but stored history is never added to the prompt: the\ncaller owns the context, as every OpenAI client assumes.\n\n`tools`, `tool_choice` and `response_format` go to the model as sent and\nwhat comes back is relayed: tool calls arrive in `message.tool_calls` (or\nstreamed `delta.tool_calls`) for the caller to run, never run here. A\n`tool_choice` that demanded a call the model did not make is a 400\n`tool_calls_unsupported`, not prose parsed as an answer.",
+        "description": "Send a conversation and get the model's reply, as one `chat.completion`\nobject or, with `stream: true`, a stream of `chat.completion.chunk`\nevents. OpenAI's request and response shapes; `model` may be omitted for\nthe deployment's default.\n\nThe request's `messages` are the whole prompt. With\n`metadata.conversation_id` the turn is also recorded into that\nconversation, tool rounds included: the assistant's `tool_calls` and\nthe `tool` messages that answer them are stored as `tool_call` and\n`tool_result` parts of one assistant message, as the server's own tool\nturns are, and history a request repeats is not stored again. Stored\nhistory is never added to the prompt: the caller owns the context, as\nevery OpenAI client assumes.\n\n`tools`, `tool_choice` and `response_format` go to the model as sent and\nwhat comes back is relayed: tool calls arrive in `message.tool_calls` (or\nstreamed `delta.tool_calls`) for the caller to run, never run here. A\n`tool_choice` that demanded a call the model did not make is a 400\n`tool_calls_unsupported`, not prose parsed as an answer.",
         "operationId": "openai_chat_completions",
         "requestBody": {
           "content": {
