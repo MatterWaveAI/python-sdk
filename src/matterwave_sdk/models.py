@@ -17,6 +17,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
+from .errors import MatterWaveError
+
 if TYPE_CHECKING:
     from ._base import Message
 
@@ -300,8 +302,9 @@ class ChatCompletionAccumulator:
         for chunk in stream:
             acc.add(chunk)          # render chunk.content as it arrives
         message = acc.message()     # content and complete tool_calls
+        completion = acc.completion()  # the same, with finish reason and usage
 
-    `Stream.final_message()` runs that loop."""
+    `Stream.final_message()` and `Stream.final_completion()` run that loop."""
 
     def __init__(self) -> None:
         self._text: list[str] = []
@@ -310,6 +313,8 @@ class ChatCompletionAccumulator:
         self.usage: Usage | None = None
         self.model: str | None = None
         self.id: str | None = None
+        self.created: int | None = None
+        self.request_id: str | None = None
 
     def add(self, chunk: ChatCompletionChunk) -> None:
         if chunk.usage is not None:
@@ -318,6 +323,10 @@ class ChatCompletionAccumulator:
             self.model = chunk.model
         if chunk.id:
             self.id = chunk.id
+        if chunk.created:
+            self.created = chunk.created
+        if chunk.request_id:
+            self.request_id = chunk.request_id
         if not chunk.choices:
             return
         choice = chunk.choices[0]
@@ -362,6 +371,26 @@ class ChatCompletionAccumulator:
             role="assistant",
             content=text if text or not calls else None,
             tool_calls=calls or None,
+        )
+
+    def completion(self) -> ChatCompletion:
+        """The whole answer in the shape a non-streamed `create` returns:
+        the message, its finish reason, the usage, the id and model. The
+        usage is all zeros when the stream carried none -- ask for it with
+        `include_usage=True`. `MatterWaveError` when no chunk carried a
+        finish reason: the stream was cut short, so it is not a whole
+        answer."""
+        if self.finish_reason is None:
+            raise MatterWaveError(
+                "The stream ended without a finish reason, so it is not a whole completion."
+            )
+        return ChatCompletion(
+            id=self.id or "",
+            created=self.created or 0,
+            model=self.model or "",
+            choices=[Choice(index=0, message=self.message(), finish_reason=self.finish_reason)],
+            usage=self.usage or Usage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
+            request_id=self.request_id,
         )
 
 

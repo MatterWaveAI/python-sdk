@@ -139,3 +139,87 @@ def test_tolerance_is_wideable_for_a_slow_receiver() -> None:
     assert webhooks.verify_signature(
         SECRET, headers_with(old), BODY, now=NOW, tolerance_s=700
     ) is True
+
+
+# --- Standard Webhooks ----------------------------------------------------------
+
+# The Standard Webhooks specification's own test vector, which the platform's
+# sender is tested against too.
+STD_SECRET = "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw"
+STD_ID = "msg_p5jXN8AQM9LWM0D4loKWxJek"
+STD_T = 1614265330
+STD_BODY = b'{"test": 2432232314}'
+STD_SIGNATURE = "v1,g0hM9SsE+OTPJTGt/tmIKtSyZlE3uFJELVlNIOLJ1OE="
+
+
+def standard_headers(signature: str, msg_id: str = STD_ID, timestamp: int = STD_T) -> dict:
+    return {
+        "webhook-id": msg_id,
+        "webhook-timestamp": str(timestamp),
+        "webhook-signature": signature,
+    }
+
+
+def test_sign_standard_matches_the_specifications_vector() -> None:
+    assert webhooks.sign_standard(STD_SECRET, STD_ID, STD_T, STD_BODY) == STD_SIGNATURE
+
+
+def test_a_standard_signature_verifies_and_its_refusals() -> None:
+    headers = standard_headers(STD_SIGNATURE)
+    verify = webhooks.verify_standard_signature
+    assert verify(STD_SECRET, headers, STD_BODY, now=STD_T + 1) is True
+    assert verify(STD_SECRET, headers, STD_BODY + b" ", now=STD_T + 1) is False
+    assert verify(STD_SECRET, headers, STD_BODY, now=STD_T + 301) is False
+    assert verify(STD_SECRET, headers, STD_BODY, now=STD_T + 301, tolerance_s=600) is True
+    assert verify("whsec_" + "A" * 32, headers, STD_BODY, now=STD_T) is False
+    assert (
+        verify(STD_SECRET, standard_headers(STD_SIGNATURE, msg_id="msg_other"), STD_BODY, now=STD_T)
+        is False
+    )
+    assert (
+        verify(STD_SECRET, standard_headers("v2," + STD_SIGNATURE[3:]), STD_BODY, now=STD_T)
+        is False
+    )
+    assert (
+        verify(STD_SECRET, {**headers, "webhook-timestamp": "soon"}, STD_BODY, now=STD_T) is False
+    )
+    for missing in ("webhook-id", "webhook-timestamp", "webhook-signature"):
+        partial = {k: v for k, v in headers.items() if k != missing}
+        assert verify(STD_SECRET, partial, STD_BODY, now=STD_T) is False
+
+
+def test_any_v1_element_of_a_rotation_may_match_and_the_names_are_case_blind() -> None:
+    other = webhooks.sign_standard("whsec_" + "B" * 32, STD_ID, STD_T, STD_BODY)
+    headers = {k.upper(): v for k, v in standard_headers(f"{other} {STD_SIGNATURE}").items()}
+    assert webhooks.verify_standard_signature(STD_SECRET, headers, STD_BODY, now=STD_T) is True
+
+
+def test_a_legacy_url_safe_secret_still_decodes() -> None:
+    legacy = "whsec_" + "-_" * 21 + "A"
+    assert len(webhooks.secret_key_bytes(legacy)) == 32
+    signature = webhooks.sign_standard(legacy, STD_ID, STD_T, STD_BODY)
+    headers = standard_headers(signature)
+    assert webhooks.verify_standard_signature(legacy, headers, STD_BODY, now=STD_T) is True
+
+
+def test_unwrap_accepts_a_delivery_with_only_the_standard_headers() -> None:
+    signature = webhooks.sign_standard(SECRET, "evt_1", int(NOW), BODY)
+    headers = standard_headers(signature, msg_id="evt_1", timestamp=int(NOW))
+    assert webhooks.unwrap(BODY, headers, SECRET, now=NOW)["id"] == "evt_1"
+
+
+def test_unwrap_accepts_the_platforms_delivery_carrying_both_schemes() -> None:
+    headers = {
+        **headers_with(webhooks.sign(SECRET, int(NOW), BODY)),
+        **standard_headers(
+            webhooks.sign_standard(SECRET, "evt_1", int(NOW), BODY), "evt_1", int(NOW)
+        ),
+    }
+    assert webhooks.unwrap(BODY, headers, SECRET, now=NOW)["id"] == "evt_1"
+
+
+def test_unwrap_refuses_a_standard_signature_under_another_secret() -> None:
+    signature = webhooks.sign_standard("whsec_" + "C" * 32, "evt_1", int(NOW), BODY)
+    headers = standard_headers(signature, msg_id="evt_1", timestamp=int(NOW))
+    with pytest.raises(WebhookVerificationError, match="missing, stale or wrong"):
+        webhooks.unwrap(BODY, headers, SECRET, now=NOW)

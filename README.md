@@ -135,7 +135,9 @@ completion = client.chat.completions.create(messages=messages, tools=tools)
 
 On a stream, `stream.final_message()` drains it and returns the same message,
 each tool call put back together from its `delta.tool_calls` fragments (calls
-at different indexes may interleave). `ChatCompletionAccumulator` does the same
+at different indexes may interleave); `stream.final_completion()` returns the
+whole `ChatCompletion` instead, with the finish reason and the usage (pass
+`include_usage=True` for the usage). `ChatCompletionAccumulator` does the same
 one chunk at a time, for a client that renders the text as it arrives and also
 wants the finish reason and usage:
 
@@ -290,6 +292,30 @@ from matterwave_sdk import items_of, pages_of
 for event in items_of(pages_of(lambda cursor: client.audit.list(event="org.sso", cursor=cursor))):
     print(event.occurred_at, event.action)
 ```
+
+## Receiving webhooks
+
+`client.webhooks` manages endpoints; `matterwave_sdk.webhooks` is the
+receiver's half. Every delivery is signed twice under the endpoint's secret:
+`MatterWave-Signature` (`t=<unix>,v1=<hex>`) and the Standard Webhooks headers
+(`webhook-id`, `webhook-timestamp`, `webhook-signature`). `unwrap` accepts the
+delivery when either verifies within five minutes of the receiver's clock, and
+only then decodes the body; anything else raises `WebhookVerificationError`.
+
+```python
+from matterwave_sdk import WebhookVerificationError, webhooks
+
+def receive(body: bytes, headers: dict[str, str]) -> int:
+    try:
+        event = webhooks.unwrap(body, headers, WEBHOOK_SECRET)  # the raw body, not re-encoded JSON
+    except WebhookVerificationError:
+        return 400
+    handle(event["type"], event["data"])  # dedupe on event["id"]: delivery is at-least-once
+    return 204
+```
+
+`verify_signature` and `verify_standard_signature` check one scheme each;
+`sign` and `sign_standard` write them, for tests and for replaying a delivery.
 
 ## Device login
 

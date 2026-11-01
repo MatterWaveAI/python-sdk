@@ -186,12 +186,22 @@ class Stream:
         """Drain the stream and return the assistant message it spelled out:
         the text, and each tool call reassembled from its fragments, ready
         to run. `final_message().to_message()` is what the next request's
-        `messages` takes. For the finish reason and usage as well, feed the
-        chunks to a `ChatCompletionAccumulator` yourself."""
+        `messages` takes. `final_completion()` has the finish reason and
+        usage as well."""
         accumulator = ChatCompletionAccumulator()
         for chunk in self:
             accumulator.add(chunk)
         return accumulator.message()
+
+    def final_completion(self) -> ChatCompletion:
+        """Drain the stream and return the whole answer as the non-streamed
+        call would have: the message with its tool calls reassembled, the
+        finish reason, the usage (all zeros unless the call passed
+        `include_usage=True`), the id and the model."""
+        accumulator = ChatCompletionAccumulator()
+        for chunk in self:
+            accumulator.add(chunk)
+        return accumulator.completion()
 
     def close(self) -> None:
         self._response.close()
@@ -239,6 +249,14 @@ class AsyncStream:
         async for chunk in self:
             accumulator.add(chunk)
         return accumulator.message()
+
+    async def final_completion(self) -> ChatCompletion:
+        """As `Stream.final_completion`: drain the stream, return the whole
+        answer with its finish reason and usage."""
+        accumulator = ChatCompletionAccumulator()
+        async for chunk in self:
+            accumulator.add(chunk)
+        return accumulator.completion()
 
     async def close(self) -> None:
         await self._response.aclose()

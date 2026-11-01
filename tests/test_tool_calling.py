@@ -18,6 +18,7 @@ from matterwave_sdk import (
     ChatCompletionAccumulator,
     ChatCompletionChunk,
     MatterWave,
+    MatterWaveError,
     Me,
     ToolCall,
     tool_message,
@@ -194,3 +195,47 @@ def test_local_agent_tools_on_me(api, client: MatterWave, sent, read) -> None:
     me = client.me()
     assert isinstance(me, Me)
     assert me.local_agent_tools is read
+
+
+def test_final_completion_is_the_whole_answer_with_finish_reason_and_usage(
+    api, client: MatterWave
+) -> None:
+    _stream(api, TWO_CALLS)
+    stream = client.chat.completions.create(messages=PROMPT, stream=True, include_usage=True)
+    completion = stream.final_completion()
+    assert completion.id == "chatcmpl-01"
+    assert completion.model == "grt-nano"
+    assert completion.created == 1790621573
+    assert completion.choices[0].finish_reason == "tool_calls"
+    assert completion.content == "Reading both."
+    assert [c.id for c in completion.tool_calls] == ["call_a", "call_b"]
+    assert completion.usage.total_tokens == 42
+    assert completion.request_id == stream.request_id
+
+
+def test_final_completion_without_a_usage_frame_reports_zero_usage(api, client: MatterWave) -> None:
+    body = chunk({"role": "assistant", "content": "Hi."}) + chunk({}, "stop") + "data: [DONE]\n\n"
+    _stream(api, body)
+    completion = client.chat.completions.create(messages=PROMPT, stream=True).final_completion()
+    assert completion.content == "Hi."
+    assert completion.choices[0].finish_reason == "stop"
+    assert completion.usage.total_tokens == 0
+
+
+@pytest.mark.asyncio
+async def test_the_async_final_completion_matches(api, async_client: AsyncMatterWave) -> None:
+    _stream(api, TWO_CALLS)
+    stream = await async_client.chat.completions.create(messages=PROMPT, stream=True)
+    completion = await stream.final_completion()
+    assert completion.choices[0].finish_reason == "tool_calls"
+    assert len(completion.tool_calls) == 2
+    assert completion.usage.total_tokens == 42
+
+
+def test_final_completion_refuses_a_stream_cut_before_its_finish_reason(
+    api, client: MatterWave
+) -> None:
+    _stream(api, chunk({"role": "assistant", "content": "Half"}) + "data: [DONE]\n\n")
+    stream = client.chat.completions.create(messages=PROMPT, stream=True)
+    with pytest.raises(MatterWaveError, match="without a finish reason"):
+        stream.final_completion()

@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `stream.final_completion()` (sync and async) and
+  `ChatCompletionAccumulator.completion()`: the whole streamed answer as a
+  `ChatCompletion` -- the message with its tool calls, the finish reason, the
+  usage, the id and model. A stream that ended without a finish reason raises
+  `MatterWaveError` rather than pass for a whole answer.
+- Standard Webhooks verification: `webhooks.verify_standard_signature`
+  checks `webhook-id`, `webhook-timestamp` and `webhook-signature` (`v1,` and
+  base64, keyed by the base64 after `whsec_`), and `webhooks.unwrap` accepts a
+  delivery whose MatterWave or Standard Webhooks signature verifies.
+  `webhooks.sign_standard` and `webhooks.secret_key_bytes` write and key them.
 - Page and item iterators for every cursor-paged list: `audit.pages()` /
   `audit.items()` (the same filters as `audit.list`) and
   `library.search_pages(q)` / `library.search_items(q)`, sync and async.
