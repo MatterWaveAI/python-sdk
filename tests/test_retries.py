@@ -314,3 +314,63 @@ async def test_the_async_client_holds_writes_back_the_same_way(
         await async_client.keys.create("ci")
     assert post.call_count == 1
     assert keys.call_count == 2
+
+
+# --- the longest wait ----------------------------------------------------------
+
+
+def test_a_retry_after_beyond_the_maximum_raises_at_once(api, client, sleeps) -> None:
+    route = api.post("/v1/chat/completions").mock(
+        side_effect=[
+            httpx.Response(429, json=RATE_LIMITED, headers={"Retry-After": "3600"}),
+            httpx.Response(200, json=completion_body()),
+        ]
+    )
+    with pytest.raises(RateLimitError) as caught:
+        _ask(client)
+    assert caught.value.retry_after == 3600.0
+    assert route.call_count == 1
+    assert sleeps == []
+
+
+def test_a_wait_at_the_maximum_is_still_taken(api, client, sleeps) -> None:
+    route = api.post("/v1/chat/completions").mock(
+        side_effect=[
+            httpx.Response(429, json=RATE_LIMITED, headers={"Retry-After": "60"}),
+            httpx.Response(200, json=completion_body()),
+        ]
+    )
+    _ask(client)
+    assert route.call_count == 2
+    assert sleeps == [60.0]
+
+
+def test_max_retry_wait_moves_the_line_for_a_5xx_too(api, sleeps) -> None:
+    client = MatterWave(api_key="k", base_url=BASE_URL, max_retry_wait=2.0)
+    route = api.get("/api/me").mock(
+        side_effect=[
+            httpx.Response(503, json=UPSTREAM, headers={"Retry-After": "5"}),
+            httpx.Response(200, json=ME),
+        ]
+    )
+    with pytest.raises(ServerError) as caught:
+        client.me()
+    assert caught.value.retry_after == 5.0
+    assert route.call_count == 1
+
+
+def test_a_negative_maximum_is_refused() -> None:
+    with pytest.raises(ValueError, match="max_retry_wait"):
+        MatterWave(api_key="k", base_url=BASE_URL, max_retry_wait=-1)
+
+
+@pytest.mark.asyncio
+async def test_the_async_client_caps_the_wait_the_same_way(api, sleeps) -> None:
+    client = AsyncMatterWave(api_key="k", base_url=BASE_URL)
+    route = api.post("/v1/chat/completions").mock(
+        return_value=httpx.Response(429, json=RATE_LIMITED, headers={"Retry-After": "61"})
+    )
+    with pytest.raises(RateLimitError):
+        await client.chat.completions.create(messages=[{"role": "user", "content": "hi"}])
+    assert route.call_count == 1
+    assert sleeps == []

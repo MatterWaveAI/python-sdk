@@ -113,13 +113,17 @@ class _Config:
         timeout: float | httpx.Timeout | None,
         max_retries: int,
         default_headers: Mapping[str, str] | None,
+        max_retry_wait: float = _base.DEFAULT_MAX_RETRY_WAIT_S,
     ) -> None:
         if max_retries < 0:
             raise ValueError("max_retries must be 0 or more")
+        if not max_retry_wait >= 0:
+            raise ValueError("max_retry_wait must be 0 or more")
         self.api_key = _base.resolve_api_key(api_key)
         self.base_url = _base.resolve_base_url(base_url)
         self.timeout = _base.DEFAULT_TIMEOUT_S if timeout is None else timeout
         self.max_retries = max_retries
+        self.max_retry_wait = max_retry_wait
         self.default_headers = dict(default_headers or {})
 
     def build(
@@ -1155,6 +1159,8 @@ class Auth:
 class MatterWave:
     """The blocking client. `api_key` defaults to `MATTERWAVE_API_KEY`,
     `base_url` to `MATTERWAVE_BASE_URL` (the origin, with or without `/v1`).
+    `max_retry_wait` is the longest one retry may wait, in seconds: a
+    `Retry-After` beyond it raises the error at once, `retry_after` set.
     Pass `http_client` to share a connection pool or a mock transport."""
 
     def __init__(
@@ -1164,12 +1170,15 @@ class MatterWave:
         base_url: str | None = None,
         timeout: float | httpx.Timeout | None = None,
         max_retries: int = _base.DEFAULT_MAX_RETRIES,
+        max_retry_wait: float = _base.DEFAULT_MAX_RETRY_WAIT_S,
         default_headers: Mapping[str, str] | None = None,
         http_client: httpx.Client | None = None,
         on_request: Callable[[Request], object] | None = None,
         on_response: Callable[[_base.RawResponse], object] | None = None,
     ) -> None:
-        self._config = _Config(api_key, base_url, timeout, max_retries, default_headers)
+        self._config = _Config(
+            api_key, base_url, timeout, max_retries, default_headers, max_retry_wait
+        )
         self._owns_http = http_client is None
         self._http = http_client or httpx.Client()
         self._last_response: _base.RawResponse | None = None
@@ -1294,11 +1303,14 @@ class MatterWave:
             self._last_response = _base.raw_response_of(response)
             if self._on_response is not None:
                 self._on_response(self._last_response)
-            if attempt < attempt_limit and _base.should_retry(
-                response, body, safe_to_repeat=request.safe_to_repeat
+            delay = _base.backoff_s(attempt, _base.retry_after_of(response))
+            if (
+                attempt < attempt_limit
+                and delay <= self._config.max_retry_wait
+                and _base.should_retry(response, body, safe_to_repeat=request.safe_to_repeat)
             ):
                 response.close()
-                time.sleep(_base.backoff_s(attempt, _base.retry_after_of(response)))
+                time.sleep(delay)
                 attempt += 1
                 continue
             response.close()
@@ -1828,12 +1840,15 @@ class AsyncMatterWave:
         base_url: str | None = None,
         timeout: float | httpx.Timeout | None = None,
         max_retries: int = _base.DEFAULT_MAX_RETRIES,
+        max_retry_wait: float = _base.DEFAULT_MAX_RETRY_WAIT_S,
         default_headers: Mapping[str, str] | None = None,
         http_client: httpx.AsyncClient | None = None,
         on_request: Callable[[Request], object] | None = None,
         on_response: Callable[[_base.RawResponse], object] | None = None,
     ) -> None:
-        self._config = _Config(api_key, base_url, timeout, max_retries, default_headers)
+        self._config = _Config(
+            api_key, base_url, timeout, max_retries, default_headers, max_retry_wait
+        )
         self._owns_http = http_client is None
         self._http = http_client or httpx.AsyncClient()
         self._last_response: _base.RawResponse | None = None
@@ -1942,11 +1957,14 @@ class AsyncMatterWave:
             self._last_response = _base.raw_response_of(response)
             if self._on_response is not None:
                 self._on_response(self._last_response)
-            if attempt < attempt_limit and _base.should_retry(
-                response, body, safe_to_repeat=request.safe_to_repeat
+            delay = _base.backoff_s(attempt, _base.retry_after_of(response))
+            if (
+                attempt < attempt_limit
+                and delay <= self._config.max_retry_wait
+                and _base.should_retry(response, body, safe_to_repeat=request.safe_to_repeat)
             ):
                 await response.aclose()
-                await asyncio.sleep(_base.backoff_s(attempt, _base.retry_after_of(response)))
+                await asyncio.sleep(delay)
                 attempt += 1
                 continue
             await response.aclose()

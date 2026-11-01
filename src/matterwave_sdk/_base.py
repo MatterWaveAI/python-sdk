@@ -38,6 +38,10 @@ DEFAULT_MAX_RETRIES = 2
 # capped, with jitter so a fleet of clients does not retry in lockstep.
 BACKOFF_BASE_S = 0.5
 BACKOFF_CAP_S = 8.0
+# The longest a retry may wait. A `Retry-After` beyond it (an hour, say) is
+# the server's way of saying "not now"; the error is raised rather than the
+# call hanging until then, and carries the delay for the caller to decide.
+DEFAULT_MAX_RETRY_WAIT_S = 60.0
 
 # A 429 the server says is the organisation's budget, not the window.
 # Waiting does not refill a budget; retrying it only delays the real answer.
