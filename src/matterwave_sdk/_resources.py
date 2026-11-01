@@ -4,14 +4,17 @@
 Each method is one route; the request is built in `_native` and the answer
 parsed into `models`, so the two halves here differ only in `await`.
 
-These are the routes the web app's settings panes use, open to an API key
-as its owner. Managing keys needs a key with `keys:manage` (or a session),
-webhooks a key with `webhooks:manage`, the org usage report
-(`usage.org`, `usage.export_csv`) a key with `usage:read`, and moving a
-budget cap an owner or admin. The audit trail (`audit.list`,
-`audit.export_csv`) is the one exception among the reads: the routes gate
-on the membership row alone, so an API key is refused there outright and a
-signed-in session is what answers. The scope never widens the owner's role:
+These are the routes the web app's settings panes use, most of them open to
+an API key as its owner. Managing keys needs a key with `keys:manage` (or a
+person's token), webhooks a key with `webhooks:manage`, and the org usage
+report (`usage.org`, `usage.export_csv`) a key with `usage:read`. The audit
+trail (`audit.list`, `audit.export_csv`), the member budgets and every
+budget cap (`budget.members`, `set_overage_cap`, `set_member_default_cap`,
+`set_member_cap`) gate on the caller's membership row rather than a key
+scope: they refuse every API key with a 403 "Membership is managed by a
+person, not an API key." and answer a person's token (`access_token=`,
+`client.auth.person`) from an owner or admin. `CREDENTIALS` lists the
+credential every operation needs. The scope never widens the owner's role:
 webhooks still need the owner to be an org owner or admin, and a member's
 `usage:read` key sees only their own row. Notifications are the caller's
 own rows, announcements are the operator's banner anyone signed in reads,
@@ -272,8 +275,9 @@ class AsyncUsageClient(_Async):
 class Audit(_Sync):
     """`/api/org/audit`: the org's trail of who changed what, the reads the
     org pane's audit tab makes. Owner or admin, and by membership row rather
-    than a token claim: the platform refuses an API key on these routes
-    outright, so they answer a signed-in session."""
+    than a token claim: the platform refuses an API key 403 "Membership is
+    managed by a person, not an API key.", so every method here needs a
+    person's token (`access_token=`)."""
 
     def list(
         self,
@@ -290,7 +294,10 @@ class Audit(_Sync):
         a subject or an email, case-insensitively; `since`/`until` bound the
         window (a naive datetime is read as UTC); `cursor` is a previous
         page's `next_cursor`; `limit` is 1 to 200 (50 when omitted). A
-        cursor this API did not mint is the server's 422."""
+        cursor this API did not mint is the server's 422.
+
+        An API key is refused 403 "Membership is managed by a person, not an
+        API key."; this needs a person's token (`access_token=`)."""
         body, rid = self._object(
             req.org_audit_request(
                 event=event, actor=actor, since=since, until=until, cursor=cursor, limit=limit
@@ -308,7 +315,10 @@ class Audit(_Sync):
         limit: int | None = None,
     ) -> Iterator[AuditPage]:
         """Every page of `list` under the same filters, first to last, each
-        fetched as the previous one is consumed."""
+        fetched as the previous one is consumed.
+
+        An API key is refused 403 "Membership is managed by a person, not an
+        API key."; this needs a person's token (`access_token=`)."""
         return pages_of(
             lambda cursor: self.list(
                 event=event, actor=actor, since=since, until=until, cursor=cursor, limit=limit
@@ -324,7 +334,11 @@ class Audit(_Sync):
         until: datetime | str | None = None,
         limit: int | None = None,
     ) -> Iterator[AuditEvent]:
-        """Every matching event, newest first, one at a time across the pages."""
+        """Every matching event, newest first, one at a time across the
+        pages.
+
+        An API key is refused 403 "Membership is managed by a person, not an
+        API key."; this needs a person's token (`access_token=`)."""
         return items_of(self.pages(event=event, actor=actor, since=since, until=until, limit=limit))
 
     def export_csv(
@@ -336,7 +350,10 @@ class Audit(_Sync):
         until: datetime | str | None = None,
     ) -> str:
         """`GET /api/org/audit.csv`: every matching row, as the CSV text the
-        server streamed (the columns of `AuditEvent`, `detail` as JSON)."""
+        server streamed (the columns of `AuditEvent`, `detail` as JSON).
+
+        An API key is refused 403 "Membership is managed by a person, not an
+        API key."; this needs a person's token (`access_token=`)."""
         return self._client._send(
             req.org_audit_csv_request(event=event, actor=actor, since=since, until=until)
         ).text
@@ -701,7 +718,10 @@ class AsyncLibraryClient(_Async):
 class BudgetClient(_Sync):
     """`/api/budget`: the org's allowance, what it has spent past it, and
     the caps that stop it. Every member may read the balance (their own cap
-    and spend included); moving a cap is an owner or admin, and audited."""
+    and spend included), with a key or a person's token; the member list
+    and moving a cap are an owner's or admin's, audited, and refuse an API
+    key 403 "Membership is managed by a person, not an API key.": they need
+    a person's token (`access_token=`)."""
 
     def get(self) -> Budget:
         """`GET /api/budget`: the period, the overage and the caps, with the
@@ -712,26 +732,38 @@ class BudgetClient(_Sync):
     def set_overage_cap(self, overage_cap_micros: int) -> Budget:
         """`PUT /api/budget`: the most overage a period may run up, in
         micro-dollars at list price. 0 restores the plan's default (its
-        monthly price). Owner or admin only."""
+        monthly price). Owner or admin only.
+
+        An API key is refused 403 "Membership is managed by a person, not an
+        API key."; this needs a person's token (`access_token=`)."""
         body, rid = self._object(req.set_overage_cap_request(overage_cap_micros))
         return Budget.from_dict(body, request_id=rid)
 
     def members(self) -> MemberBudgetList:
         """`GET /api/budget/members`: every member's cap in force and spend
-        this month. Owner or admin only."""
+        this month. Owner or admin only.
+
+        An API key is refused 403 "Membership is managed by a person, not an
+        API key."; this needs a person's token (`access_token=`)."""
         body, rid = self._object(req.member_budgets_request())
         return MemberBudgetList.from_dict(body, request_id=rid)
 
     def set_member_default_cap(self, member_default_cap_micros: int | None) -> MemberBudgetList:
         """`PUT /api/budget/members`: the cap every member without one of
-        their own is held to; None lifts it. Owner or admin only."""
+        their own is held to; None lifts it. Owner or admin only.
+
+        An API key is refused 403 "Membership is managed by a person, not an
+        API key."; this needs a person's token (`access_token=`)."""
         body, rid = self._object(req.set_member_default_cap_request(member_default_cap_micros))
         return MemberBudgetList.from_dict(body, request_id=rid)
 
     def set_member_cap(self, subject: str, cap_micros: int | None) -> MemberBudget:
         """`PUT /api/budget/members/{subject}`: one member's own cap, which
         beats the org's default up or down; None removes it so the default
-        applies. Owner or admin only, and only for a current member."""
+        applies. Owner or admin only, and only for a current member.
+
+        An API key is refused 403 "Membership is managed by a person, not an
+        API key."; this needs a person's token (`access_token=`)."""
         body, rid = self._object(req.set_member_cap_request(subject, cap_micros))
         return MemberBudget.from_dict(body, request_id=rid)
 

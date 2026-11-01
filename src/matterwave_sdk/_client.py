@@ -1089,7 +1089,7 @@ class Instructions:
     level is additive policy every member is subject to; the conversation
     level replaces the user's for that thread (`conversations.update_
     instructions` is the same idea, one thread at a time). Reads of the org
-    level are admin-only, as are writes."""
+    level are admin-only, as are writes, and both need a person's token."""
 
     def __init__(self, client: MatterWave) -> None:
         self._client = client
@@ -1115,13 +1115,19 @@ class Instructions:
 
     def org(self) -> OrgInstructions:
         """`GET /api/org/instructions`: the org's policy text.
-        `PermissionDeniedError` for anyone but an owner or admin."""
+        `PermissionDeniedError` for anyone but an owner or admin.
+
+        An API key is refused 403 "Membership is managed by a person, not an
+        API key."; this needs a person's token (`access_token=`)."""
         body, rid = self._object(_base.org_instructions_get_request())
         return OrgInstructions.from_dict(body, request_id=rid)
 
     def update_org(self, text: str) -> OrgInstructions:
         """`PUT /api/org/instructions`: set (or with "", clear) the policy
-        every member's turns are prefixed with. Owner or admin only."""
+        every member's turns are prefixed with. Owner or admin only.
+
+        An API key is refused 403 "Membership is managed by a person, not an
+        API key."; this needs a person's token (`access_token=`)."""
         body, rid = self._object(_base.org_instructions_request(text))
         return OrgInstructions.from_dict(body, request_id=rid)
 
