@@ -483,8 +483,10 @@ Python does; TypeScript throws `MatterWaveConfigError` for those too.
 ```
 uv sync --extra dev
 uv run pytest
-uv run ruff check . && uv run mypy
+uv run ruff check . && uv run ruff format --check && uv run mypy
 ```
+
+CI runs the same on Python 3.10, 3.11, 3.12 and 3.13.
 
 `pre-commit install` once per clone runs gitleaks on every commit, the same
 secret scan CI runs over the whole history.

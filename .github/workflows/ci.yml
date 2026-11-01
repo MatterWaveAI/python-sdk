@@ -1,5 +1,6 @@
-# CI on every push and pull request: lint and test. The publish workflow
-# (publish-pypi.yml) stays tag-only and runs the same suite before building.
+# CI on every push and pull request: lint, format, types and the suite, on
+# each supported Python. The publish workflow (publish-pypi.yml) stays
+# tag-only and runs the same checks before building.
 #
 # Run it by hand with `openapi_source` (a URL of the app's exported
 # docs/developers/openapi.json) to test this client against that API: the
@@ -25,11 +26,17 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Every Python `requires-python` admits that is still maintained.
+        python: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           enable-cache: true
+          python-version: ${{ matrix.python }}
       - run: uv sync --frozen --extra dev
       - name: Refresh the OpenAPI snapshot from the given source
         if: github.event_name == 'workflow_dispatch' && inputs.openapi_source != ''
@@ -39,6 +46,7 @@ jobs:
           uv run python scripts/refresh_openapi.py "$OPENAPI_SOURCE"
           git diff --stat tests/openapi.json
       - run: uv run ruff check
+      - run: uv run ruff format --check
       - name: No private ticket ids in tracked files
         run: sh scripts/check-ticket-ids.sh
       - run: uv run mypy
