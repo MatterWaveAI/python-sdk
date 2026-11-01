@@ -60,6 +60,8 @@ from .models import (
     DomainClaim,
     DomainClaimList,
     DomainVerification,
+    EdgeDeviceList,
+    EdgeSyncStatus,
     EmailChangeCancelled,
     EmailChanged,
     EmailChangeStarted,
@@ -94,6 +96,8 @@ from .models import (
     OrgInfo,
     OrgShareList,
     OrgUsage,
+    PairedKey,
+    PairingCode,
     Passkey,
     PasskeyList,
     PasskeyLoginFinish,
@@ -115,6 +119,7 @@ from .models import (
     SharingPolicy,
     SsoPolicySet,
     SsoSettings,
+    SyncOutcome,
     Tag,
     TermsAccepted,
     TotpConfirmed,
@@ -2290,3 +2295,137 @@ class AsyncSpeech(_Async):
         return Transcription.from_dict(body, request_id=rid)
 
 
+# --- edge pairing and sync (T-229) ----------------------------------------------------------------------------
+
+
+class SyncPairings(_Sync):
+    """Minting pairing codes and the device list. **Owner or admin by
+    membership row, by session and never by key** -- pairing a box is a
+    sign-in for a box, and a leaked key must not mint sign-ins."""
+
+    def mint(self, name: str) -> PairingCode:
+        """`POST /api/sync/pairings` (201): a twelve-character code the box
+        redeems once for its key, ten minutes to live."""
+        body, rid = self._object(req.mint_pairing_request(name))
+        return PairingCode.from_dict(body, request_id=rid)
+
+    def devices(self) -> EdgeDeviceList:
+        """`GET /api/sync/devices`: the org's paired boxes -- their keys,
+        never the values, revoked ones included (they are the record of an
+        unpairing)."""
+        body, rid = self._object(req.list_edge_devices_request())
+        return EdgeDeviceList.from_dict(body, request_id=rid)
+
+    def unpair(self, key_id: str) -> None:
+        """`DELETE /api/sync/devices/{id}`: revoke a box's key. The box
+        notices on its next push (401) and stops. Only an edge key:
+        anything else is the API keys pane's to revoke, and a 404 here."""
+        self._none(req.unpair_edge_device_request(key_id))
+
+
+class AsyncSyncPairings(_Async):
+    """As `SyncPairings`; every method a coroutine."""
+
+    async def mint(self, name: str) -> PairingCode:
+        body, rid = await self._object(req.mint_pairing_request(name))
+        return PairingCode.from_dict(body, request_id=rid)
+
+    async def devices(self) -> EdgeDeviceList:
+        body, rid = await self._object(req.list_edge_devices_request())
+        return EdgeDeviceList.from_dict(body, request_id=rid)
+
+    async def unpair(self, key_id: str) -> None:
+        await self._none(req.unpair_edge_device_request(key_id))
+
+
+class Sync(_Sync):
+    """Edge pairing and the mirror it buys: an admin mints a code, the box
+    redeems it once for a device key holding `conversations:import` and
+    nothing else, and the box pushes conversations with that key. **The box
+    is its own client** -- build a `MatterWave` with the paired key and
+    call `push`; this resource is the platform side, with the redeem route
+    beside it for a box that pairs itself. A session is refused on the push
+    route outright: it is a machine route, and the key is the containment --
+    one that leaks from a box can add conversations to that one account and
+    nothing else."""
+
+    def __init__(self, client: MatterWave) -> None:
+        super().__init__(client)
+        self.pairings = SyncPairings(client)
+
+    def pair(self, code: str, *, device_id: str | None = None) -> PairedKey:
+        """`POST /api/sync/pair`: trade a code for the box's key, once.
+        Anonymous -- the box has no session and the code is the credential.
+        Unknown, expired and already used are one 404, so a guess learns
+        nothing. The plaintext key is in this answer and nowhere else."""
+        body, rid = self._object(req.redeem_pairing_request(code, device_id))
+        return PairedKey.from_dict(body, request_id=rid)
+
+    def status(self) -> EdgeSyncStatus:
+        """`GET /api/sync/status`: what the box's sync job last did --
+        counts, times and the stop reason, never content. `{"box": false,
+        "paired": false}` on a process that is not an edge box at all,
+        which is every platform pod."""
+        body, rid = self._object(req.sync_status_request())
+        return EdgeSyncStatus.from_dict(body, request_id=rid)
+
+    def push(
+        self,
+        conversation: Mapping[str, Any],
+        *,
+        format_version: int = req.SYNC_FORMAT_VERSION,
+        source: str = "edge",
+        device_id: str | None = None,
+    ) -> SyncOutcome:
+        """`POST /api/sync/conversations`: upsert one conversation and
+        insert its messages by id. The payload is the export's shape
+        (`id`, `title`, `created_at`, `updated_at`, `messages`: each with
+        `id`, `conversation_id`, `role`, `parts`, `created_at`). 200 with
+        the counts is the answer even when some messages were rejected --
+        read `rejected` per id -- while the whole request is refused when
+        the conversation id is not the caller's to write (409) or was
+        deleted on the platform (410). Needs the device key, not a
+        session."""
+        body, rid = self._object(
+            req.push_conversation_request(
+                conversation,
+                format_version=format_version,
+                source=source,
+                device_id=device_id,
+            )
+        )
+        return SyncOutcome.from_dict(body, request_id=rid)
+
+
+class AsyncSync(_Async):
+    """As `Sync`; every method a coroutine."""
+
+    def __init__(self, client: AsyncMatterWave) -> None:
+        super().__init__(client)
+        self.pairings = AsyncSyncPairings(client)
+
+    async def pair(self, code: str, *, device_id: str | None = None) -> PairedKey:
+        body, rid = await self._object(req.redeem_pairing_request(code, device_id))
+        return PairedKey.from_dict(body, request_id=rid)
+
+    async def status(self) -> EdgeSyncStatus:
+        body, rid = await self._object(req.sync_status_request())
+        return EdgeSyncStatus.from_dict(body, request_id=rid)
+
+    async def push(
+        self,
+        conversation: Mapping[str, Any],
+        *,
+        format_version: int = req.SYNC_FORMAT_VERSION,
+        source: str = "edge",
+        device_id: str | None = None,
+    ) -> SyncOutcome:
+        body, rid = await self._object(
+            req.push_conversation_request(
+                conversation,
+                format_version=format_version,
+                source=source,
+                device_id=device_id,
+            )
+        )
+        return SyncOutcome.from_dict(body, request_id=rid)

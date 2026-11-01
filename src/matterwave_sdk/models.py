@@ -4017,3 +4017,186 @@ class Transcription:
         return cls(text=_str(data.get("text")), request_id=request_id)
 
 
+# --- edge pairing and sync ----------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class PairingCode:
+    """`POST /api/sync/pairings`: a code an edge box redeems once for its
+    key. Twelve characters shown paired-dashed, ten minutes to live."""
+
+    code: str
+    name: str
+    expires_in: int
+    expires_at: str
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> PairingCode:
+        return cls(
+            code=_str(data.get("code")),
+            name=_str(data.get("name")),
+            expires_in=_int(data.get("expires_in"), 600),
+            expires_at=_str(data.get("expires_at")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class EdgeDevice:
+    """One paired box: its key (never the value) and the name it was
+    paired under. Revoked ones are listed too -- they are the record of an
+    unpairing."""
+
+    id: str
+    name: str
+    box_name: str
+    prefix: str
+    kind: str
+    scopes: list[str]
+    created_at: str
+    expires_at: str | None = None
+    revoked_at: str | None = None
+    last_used_at: str | None = None
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> EdgeDevice:
+        return cls(
+            id=_str(data.get("id")),
+            name=_str(data.get("name")),
+            box_name=_str(data.get("box_name")),
+            prefix=_str(data.get("prefix")),
+            kind=_str(data.get("kind")),
+            scopes=_strs(data.get("scopes")),
+            created_at=_str(data.get("created_at")),
+            expires_at=_opt_str(data.get("expires_at")),
+            revoked_at=_opt_str(data.get("revoked_at")),
+            last_used_at=_opt_str(data.get("last_used_at")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class EdgeDeviceList:
+    """`GET /api/sync/devices`: the org's paired boxes."""
+
+    data: list[EdgeDevice]
+    request_id: str | None = field(default=None, compare=False)
+
+    def __iter__(self) -> Any:
+        return iter(self.data)
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> EdgeDeviceList:
+        return cls(
+            data=[EdgeDevice.from_dict(d) for d in _dicts(data.get("data"))],
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class PairedKey:
+    """`POST /api/sync/pair`: the box's key, minted at redemption. The
+    plaintext `key` is in this answer and nowhere else; the box stores it
+    and pushes with it."""
+
+    key: str = field(repr=False)
+    key_id: str
+    name: str
+    scopes: list[str]
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> PairedKey:
+        return cls(
+            key=_str(data.get("key")),
+            key_id=_str(data.get("key_id")),
+            name=_str(data.get("name")),
+            scopes=_strs(data.get("scopes")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class EdgeSyncStatus:
+    """`GET /api/sync/status`: what the box's sync job last did -- counts,
+    times and the stop reason, never content. `box` is False and `paired`
+    False on a process that is not an edge box at all (a platform pod)."""
+
+    box: bool
+    paired: bool
+    device_id: str | None = None
+    platform_url: str | None = None
+    name: str | None = None
+    paired_at: str | None = None
+    last_synced_at: str | None = None
+    last_attempt_at: str | None = None
+    offline: bool | None = None
+    pending: int | None = None
+    pending_messages: int | None = None
+    pending_capped: bool | None = None
+    stopped: str | None = None
+    last_error: str | None = None
+    skipped: int | None = None
+    skipped_recent: int | None = None
+    next_attempt_at: str | None = None
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> EdgeSyncStatus:
+        return cls(
+            box=data.get("box") is True,
+            paired=data.get("paired") is True,
+            device_id=_opt_str(data.get("device_id")),
+            platform_url=_opt_str(data.get("platform_url")),
+            name=_opt_str(data.get("name")),
+            paired_at=_opt_str(data.get("paired_at")),
+            last_synced_at=_opt_str(data.get("last_synced_at")),
+            last_attempt_at=_opt_str(data.get("last_attempt_at")),
+            offline=(
+                data.get("offline") if isinstance(data.get("offline"), bool) else None
+            ),
+            pending=_opt_int(data.get("pending")),
+            pending_messages=_opt_int(data.get("pending_messages")),
+            pending_capped=(
+                data.get("pending_capped")
+                if isinstance(data.get("pending_capped"), bool)
+                else None
+            ),
+            stopped=_opt_str(data.get("stopped")),
+            last_error=_opt_str(data.get("last_error")),
+            skipped=_opt_int(data.get("skipped")),
+            skipped_recent=_opt_int(data.get("skipped_recent")),
+            next_attempt_at=_opt_str(data.get("next_attempt_at")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class SyncOutcome:
+    """`POST /api/sync/conversations`: the platform's answer to one pushed
+    conversation. `accepted + updated + already_present` equal to what was
+    sent is the acknowledgement; anything else is named in `rejected` by
+    message id."""
+
+    conversation_id: str
+    accepted: int
+    updated: int
+    already_present: int
+    rejected: list[dict[str, Any]]
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> SyncOutcome:
+        return cls(
+            conversation_id=_str(data.get("conversation_id")),
+            accepted=_int(data.get("accepted")),
+            updated=_int(data.get("updated")),
+            already_present=_int(data.get("already_present")),
+            rejected=_dicts(data.get("rejected")),
+            request_id=request_id,
+        )

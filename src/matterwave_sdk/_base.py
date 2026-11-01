@@ -262,7 +262,15 @@ APP_OPERATIONS: dict[str, tuple[str, str]] = {
     "accounts.logout": ("POST", "/api/accounts/{slot}/logout"),
     "accounts.logout_all": ("POST", "/api/accounts/logout-all"),
     "speech.transcribe": ("POST", "/api/speech/transcribe"),
+    # --- edge pairing and sync (T-229) -----------------------------------------------
+    "sync.pairings.mint": ("POST", "/api/sync/pairings"),
+    "sync.pairings.devices": ("GET", "/api/sync/devices"),
+    "sync.pairings.unpair": ("DELETE", "/api/sync/devices/{key_id}"),
+    "sync.pair": ("POST", "/api/sync/pair"),
+    "sync.status": ("GET", "/api/sync/status"),
+    "sync.push": ("POST", "/api/sync/conversations"),
 }
+
 
 Role = Literal["system", "user", "assistant", "tool"]
 

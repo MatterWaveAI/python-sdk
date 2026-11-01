@@ -1421,3 +1421,74 @@ def transcribe_request(
     )
 
 
+# --- edge pairing and sync ----------------------------------------------------------------------------
+
+
+MAX_BOX_NAME = 64
+SYNC_FORMAT_VERSION = 1
+SYNC_SOURCE_MAX = 32
+SYNC_MAX_MESSAGES = 500
+
+
+def mint_pairing_request(name: str) -> Request:
+    cleaned = "".join(ch for ch in name if ch >= " " and ch != "\x7f").strip()
+    if not cleaned:
+        raise ValueError("name the box")
+    return Request(
+        "POST", "/api/sync/pairings", {"name": cleaned[:MAX_BOX_NAME]}, keyed=True, stream=False
+    )
+
+
+def list_edge_devices_request() -> Request:
+    return Request("GET", "/api/sync/devices", None, keyed=True, stream=False)
+
+
+def unpair_edge_device_request(key_id: str) -> Request:
+    path = f"/api/sync/devices/{_segment('key_id', key_id)}"
+    return Request("DELETE", path, None, keyed=True, stream=False)
+
+
+def redeem_pairing_request(code: str, device_id: str | None) -> Request:
+    """The box's half. Anonymous: the box has no session and the code is
+    the credential."""
+    if not code or len(code) > 40:
+        raise ValueError("code must be 1 to 40 characters")
+    body: dict[str, Any] = {"code": code}
+    if device_id is not None:
+        if not device_id or len(device_id) > 64:
+            raise ValueError("device_id must be 1 to 64 characters")
+        body["device_id"] = device_id
+    return Request("POST", "/api/sync/pair", body, keyed=False, stream=False)
+
+
+def sync_status_request() -> Request:
+    return Request("GET", "/api/sync/status", None, keyed=True, stream=False)
+
+
+def push_conversation_request(
+    conversation: Mapping[str, Any],
+    *,
+    format_version: int,
+    source: str,
+    device_id: str | None,
+) -> Request:
+    """One conversation, upserted by id. The payload is the export's shape
+    and is the box's to build; the version and the foreign-message check
+    are the server's, and its 422 names either."""
+    if format_version != SYNC_FORMAT_VERSION:
+        raise ValueError(f"format_version must be {SYNC_FORMAT_VERSION}")
+    if not source or len(source) > SYNC_SOURCE_MAX:
+        raise ValueError(f"source must be 1 to {SYNC_SOURCE_MAX} characters")
+    if not isinstance(conversation, Mapping) or not conversation:
+        raise ValueError("conversation must be the export-shaped object to upsert")
+    messages = conversation.get("messages")
+    if isinstance(messages, list) and len(messages) > SYNC_MAX_MESSAGES:
+        raise ValueError(f"a conversation carries at most {SYNC_MAX_MESSAGES} messages")
+    body: dict[str, Any] = {
+        "format_version": format_version,
+        "source": source,
+        "conversation": dict(conversation),
+    }
+    if device_id is not None:
+        body["device_id"] = device_id
+    return Request("POST", "/api/sync/conversations", body, keyed=True, stream=False)

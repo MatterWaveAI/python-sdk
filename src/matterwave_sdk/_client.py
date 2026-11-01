@@ -57,6 +57,7 @@ from ._resources import (
     AsyncPasskeys,
     AsyncShares,
     AsyncSpeech,
+    AsyncSync,
     AsyncUsageClient,
     AsyncWebhooks,
     Attachments,
@@ -76,6 +77,7 @@ from ._resources import (
     Passkeys,
     Shares,
     Speech,
+    Sync,
     UsageClient,
     Webhooks,
 )
@@ -1223,6 +1225,7 @@ class MatterWave:
         self.mfa = Mfa(self)
         self.accounts = BrowserAccounts(self)
         self.speech = Speech(self)
+        self.sync = Sync(self)
         self.mcp = Mcp(self)
 
     @property
@@ -1895,6 +1898,7 @@ class AsyncMatterWave:
         self.mfa = AsyncMfa(self)
         self.accounts = AsyncBrowserAccounts(self)
         self.speech = AsyncSpeech(self)
+        self.sync = AsyncSync(self)
         self.mcp = AsyncMcp(self)
 
     @property
