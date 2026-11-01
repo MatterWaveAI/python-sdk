@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Route drift tests that run in every checkout: `tests/openapi-full.json`
+  (the platform's whole route document, vendored at the commit
+  `tests/openapi-full.pin.json` names, by `scripts/refresh_openapi_full.py`)
+  holds every route the SDK calls, and every route the platform documents is
+  wrapped or listed with its reason in `tests/routes-not-covered.json`.
+  `scripts/check_live_routes.py` and the daily `route-drift` workflow hold a
+  running deployment's `/openapi.json` to the same pair and open an issue on
+  drift. The two checks that needed the platform checkout beside the SDK, and
+  skipped without it, are gone.
 - `stream.final_completion()` (sync and async) and
   `ChatCompletionAccumulator.completion()`: the whole streamed answer as a
   `ChatCompletion` -- the message with its tool calls, the finish reason, the

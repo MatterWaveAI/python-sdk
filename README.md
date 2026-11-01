@@ -468,13 +468,16 @@ exported OpenAPI document, `docs/developers/openapi.json` in the app repo,
 through the snapshot in `tests/openapi.json`, so a new operation on the API
 and a new method here have to land together. That document is the `/v1`
 contract; the conversation, device-login and native routes are listed apart in
-`APP_OPERATIONS` and checked against it only where it names their paths.
-`tests/test_native_clients.py` also holds each native route in
-`APP_OPERATIONS` to the routers in `api/matterwave`, when they are beside the
-SDK. The
-conversation stream's frames are the exception: the document lists them under
-`x-sse-events`, and `frames.FRAMES_BY_EVENT` is held to that list, event by
-event and field by field.
+`APP_OPERATIONS`. The conversation stream's frames are the exception: the
+document lists them under `x-sse-events`, and `frames.FRAMES_BY_EVENT` is held
+to that list, event by event and field by field.
+
+`tests/test_route_drift.py` holds every route the SDK calls to the platform's
+whole route document, `docs/developers/openapi-full.json`, vendored as
+`tests/openapi-full.json` at the platform commit `tests/openapi-full.pin.json`
+names. It fails when a route the SDK calls moves or goes, and when the document
+gains a route that is neither wrapped here nor listed, with the reason, in
+`tests/routes-not-covered.json`.
 
 ### Refreshing the OpenAPI snapshot
 
@@ -491,3 +494,23 @@ uv run python scripts/refresh_openapi.py --check https://<host>/<path>/openapi.j
 In CI, run the `ci` workflow by hand (`workflow_dispatch`) with an
 `openapi_source` URL: it refreshes the snapshot from it before the tests, so the
 run says whether this client still matches that API.
+
+### Refreshing the route document
+
+`scripts/refresh_openapi_full.py` vendors the whole route document from a
+checkout of the platform repo, at a branch or commit (`--ref`, `HEAD` by
+default), with the routes the platform serves but leaves out of it (the
+operator console, the edge mirror, the sign-in forms) and the commit, in
+`tests/openapi-full.pin.json`. `--check` writes nothing and exits 1 when the
+vendored pair is behind that ref:
+
+```
+uv run python scripts/refresh_openapi_full.py ../matterwave-app --ref develop
+uv run python scripts/refresh_openapi_full.py ../matterwave-app --ref develop --check
+```
+
+`scripts/check_live_routes.py <deployment>/openapi.json` holds a running
+deployment to the same pair: every route the SDK calls is served, every pinned
+route is still served, and every served route is pinned or internal. The
+`route-drift` workflow runs it daily against the repository variable
+`MATTERWAVE_LIVE_OPENAPI_URL` and opens an issue with the report on drift.
