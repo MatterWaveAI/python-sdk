@@ -447,6 +447,9 @@ uv run pytest
 uv run ruff check . && uv run mypy
 ```
 
+`pre-commit install` once per clone runs gitleaks on every commit, the same
+secret scan CI runs over the whole history.
+
 `tests/test_openapi_contract.py` checks this client against the app's
 exported OpenAPI document, `docs/developers/openapi.json` in the app repo,
 through the snapshot in `tests/openapi.json`, so a new operation on the API
