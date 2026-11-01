@@ -1,4 +1,4 @@
-"""The members resource (`client.members`, with `invites` and `links`)
+"""The members resources (`client.members`, `client.invites`, `client.invite_links`)
 against the fake API: the org pane's people. Each test answers with the
 body the route in matterwave-app sends and checks the request the client
 made (method, path, body) and what it parsed out of the answer.
@@ -178,7 +178,7 @@ def test_invites_list_statuses(api, client: MatterWave) -> None:
         200, json={"data": [invite_body(), invite_body(id="inv-0002", status="accepted")]},
         headers=H,
     )
-    invites = client.members.invites.list()
+    invites = client.invites.list()
     assert [i.status for i in invites] == ["pending", "accepted"]
     assert invites.data[0].invited_by == SUBJECT
     assert route.called
@@ -188,7 +188,7 @@ def test_invite_create_mails_and_says_whether_it_went(api, client: MatterWave) -
     route = api.post("/api/org/invites").respond(
         201, json=invite_body(mail="sent"), headers=H
     )
-    sent_invite = client.members.invites.create("Bob@Example.test", role="admin")
+    sent_invite = client.invites.create("Bob@Example.test", role="admin")
     assert body_of(route) == {"email": "bob@example.test", "role": "admin"}
     assert sent_invite.mail == "sent" and sent_invite.detail is None
     # A relay failure does not undo the row; the answer says so.
@@ -200,26 +200,26 @@ def test_invite_create_mails_and_says_whether_it_went(api, client: MatterWave) -
         ),
         headers=H,
     )
-    unsent = client.members.invites.create("carol@example.test")
+    unsent = client.invites.create("carol@example.test")
     assert unsent.mail == "failed" and "resend" in (unsent.detail or "")
     with pytest.raises(ValueError, match="email"):
-        client.members.invites.create("nope")
+        client.invites.create("nope")
 
 
 def test_invite_resend_rotates_and_revokes(api, client: MatterWave) -> None:
     resend = api.post(f"/api/org/invites/{INVITE_ID}/resend").respond(
         200, json=invite_body(mail="sent"), headers=H
     )
-    assert client.members.invites.resend(INVITE_ID).mail == "sent"
+    assert client.invites.resend(INVITE_ID).mail == "sent"
     assert sent(resend).content == b""
     revoke = api.delete(f"/api/org/invites/{INVITE_ID}").respond(204)
-    assert client.members.invites.revoke(INVITE_ID) is None
+    assert client.invites.revoke(INVITE_ID) is None
     assert revoke.called
     api.delete(f"/api/org/invites/{INVITE_ID}").respond(
         404, json={"detail": "No such invite."}, headers=H
     )
     with pytest.raises(NotFoundError):
-        client.members.invites.revoke(INVITE_ID)
+        client.invites.revoke(INVITE_ID)
 
 
 def test_invite_lookup_is_anonymous_and_accept_is_keyed(
@@ -236,7 +236,7 @@ def test_invite_lookup_is_anonymous_and_accept_is_keyed(
         },
         headers=H,
     )
-    preview = client.members.invites.lookup("tok-abc")
+    preview = client.invites.lookup("tok-abc")
     request = sent(lookup)
     assert "authorization" not in request.headers
     assert body_of(lookup) == {"token": "tok-abc"}
@@ -244,7 +244,7 @@ def test_invite_lookup_is_anonymous_and_accept_is_keyed(
     accept = api.post("/api/org/invites/accept").respond(
         200, json=member_body(role="member"), headers=H
     )
-    membership = client.members.invites.accept("tok-abc")
+    membership = client.invites.accept("tok-abc")
     assert sent(accept).headers["authorization"] == f"Bearer {API_KEY}"
     assert membership.email == "ada@example.test"
 
@@ -271,7 +271,7 @@ def test_links_list_never_carries_a_token(api, client: MatterWave) -> None:
         200, json={"data": [link_body(), link_body(id="lnk-0002", status="used_up")]},
         headers=H,
     )
-    links = client.members.links.list()
+    links = client.invite_links.list()
     assert route.called
     assert [link.status for link in links] == ["active", "used_up"]
     assert all("token" not in str(link) for link in links)
@@ -285,7 +285,7 @@ def test_link_create_hands_the_token_once_and_never_for_owner(
         json={**link_body(), "token": "link-tok", "url": "https://x.test/join?link=link-tok"},
         headers=H,
     )
-    created = client.members.links.create(role="viewer", max_uses=25, expires_in_days=30)
+    created = client.invite_links.create(role="viewer", max_uses=25, expires_in_days=30)
     assert body_of(route) == {
         "role": "viewer",
         "max_uses": 25,
@@ -295,17 +295,17 @@ def test_link_create_hands_the_token_once_and_never_for_owner(
     assert "link-tok" not in repr(created)
     assert created.url.endswith("/join?link=link-tok")
     with pytest.raises(ValueError, match="owner"):
-        client.members.links.create(role="owner")
+        client.invite_links.create(role="owner")
     with pytest.raises(ValueError, match="max_uses"):
-        client.members.links.create(max_uses=501)
+        client.invite_links.create(max_uses=501)
     with pytest.raises(ValueError, match="expires_in_days"):
-        client.members.links.create(expires_in_days=31)
+        client.invite_links.create(expires_in_days=31)
     assert route.call_count == 1
 
 
 def test_link_revoke(api, client: MatterWave) -> None:
     route = api.delete(f"/api/org/invite-links/{LINK_ID}").respond(204)
-    assert client.members.links.revoke(LINK_ID) is None
+    assert client.invite_links.revoke(LINK_ID) is None
     assert route.called
 
 
@@ -403,14 +403,14 @@ async def test_async_members_makes_the_same_requests(api, async_client: AsyncMat
         assert (await c.members.set_role(SUBJECT, "admin")).role == "admin"
         assert (await c.members.transfer_ownership(SUBJECT)).role == "owner"
         assert await c.members.remove(SUBJECT) is None
-        assert len(await c.members.invites.list()) == 1
-        assert (await c.members.invites.create("bob@example.test")).mail == "sent"
-        assert (await c.members.invites.resend(INVITE_ID)).mail == "sent"
-        assert await c.members.invites.revoke(INVITE_ID) is None
-        assert (await c.members.invites.lookup("tok")).status == "pending"
-        assert (await c.members.invites.accept("tok")).state == "active"
-        assert len(await c.members.links.list()) == 1
-        assert (await c.members.links.create()).token == "t"
-        assert await c.members.links.revoke(LINK_ID) is None
+        assert len(await c.invites.list()) == 1
+        assert (await c.invites.create("bob@example.test")).mail == "sent"
+        assert (await c.invites.resend(INVITE_ID)).mail == "sent"
+        assert await c.invites.revoke(INVITE_ID) is None
+        assert (await c.invites.lookup("tok")).status == "pending"
+        assert (await c.invites.accept("tok")).state == "active"
+        assert len(await c.invite_links.list()) == 1
+        assert (await c.invite_links.create()).token == "t"
+        assert await c.invite_links.revoke(LINK_ID) is None
         assert (await c.members.join_lookup("tok")).org_name == "Acme"
         assert (await c.members.join("tok")).role == "owner"

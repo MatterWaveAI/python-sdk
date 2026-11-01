@@ -19,6 +19,7 @@ from typing import Any, Literal, TypedDict
 
 import httpx
 
+from ._version import __version__
 from .errors import (
     APIError,
     DeviceAuthError,
@@ -33,6 +34,7 @@ BASE_URL_ENV = "MATTERWAVE_BASE_URL"
 REQUEST_ID_HEADER = "x-request-id"
 IDEMPOTENCY_HEADER = "Idempotency-Key"
 API_PREFIX = "/v1"
+USER_AGENT = f"matterwave-python/{__version__}"
 SSE_DONE = "[DONE]"
 
 DEFAULT_TIMEOUT_S = 60.0
@@ -201,77 +203,81 @@ APP_OPERATIONS: dict[str, tuple[str, str]] = {
     "budget.members": ("GET", "/api/budget/members"),
     "budget.set_member_default_cap": ("PUT", "/api/budget/members"),
     "budget.set_member_cap": ("PUT", "/api/budget/members/{subject}"),
-    # --- account self-service (T-207) ------------------------------------------
-    "account.rename": ("PATCH", "/api/me"),
+    "account.update": ("PATCH", "/api/me"),
     "account.accept_terms": ("POST", "/api/me/accept-terms"),
+    "account.enforcement": ("GET", "/api/me/enforcement"),
     "account.change_password": ("POST", "/api/me/password"),
     "account.email_state": ("GET", "/api/me/email"),
     "account.start_email_change": ("POST", "/api/me/email"),
     "account.verify_email_change": ("POST", "/api/me/email/verify"),
     "account.cancel_email_change": ("POST", "/api/me/email/cancel"),
     "account.resend_email_change_code": ("POST", "/api/me/email/resend"),
-    "account.sessions": ("GET", "/api/me/sessions"),
-    "account.revoke_session": ("DELETE", "/api/me/sessions/{session_id}"),
-    "account.logout_others": ("POST", "/api/me/sessions/revoke-others"),
-    "account.preferences": ("GET", "/api/me/preferences"),
-    "account.update_preferences": ("PUT", "/api/me/preferences"),
-    "account.delete": ("DELETE", "/api/me"),
     "account.onboarding_complete": ("POST", "/api/me/onboarding/complete"),
-    # --- export and import jobs (T-208) ----------------------------------------
-    "exports.start": ("POST", "/api/me/export"),
+    "account.delete": ("DELETE", "/api/me"),
+    "preferences.get": ("GET", "/api/me/preferences"),
+    "preferences.update": ("PUT", "/api/me/preferences"),
+    "sessions.list": ("GET", "/api/me/sessions"),
+    "sessions.revoke": ("DELETE", "/api/me/sessions/{session_id}"),
+    "sessions.revoke_others": ("POST", "/api/me/sessions/revoke-others"),
+    "exports.document": ("GET", "/api/me/export"),
+    "exports.create": ("POST", "/api/me/export"),
     "exports.get": ("GET", "/api/me/export/{export_id}"),
     "exports.download": ("GET", "/api/me/export/{export_id}/download"),
-    "imports.start": ("POST", "/api/me/imports"),
+    "imports.create": ("POST", "/api/me/imports"),
     "imports.list": ("GET", "/api/me/imports"),
     "imports.get": ("GET", "/api/me/imports/{import_id}"),
-    # --- members, invites, invite links, join (T-209) ---------------------------
-    "members.list": ("GET", "/api/org/members"),
-    "members.set_role": ("PUT", "/api/org/members/{subject}/role"),
-    "members.transfer_ownership": ("POST", "/api/org/members/{subject}/transfer-ownership"),
-    "members.remove": ("DELETE", "/api/org/members/{subject}"),
-    "members.invites.list": ("GET", "/api/org/invites"),
-    "members.invites.create": ("POST", "/api/org/invites"),
-    "members.invites.resend": ("POST", "/api/org/invites/{invite_id}/resend"),
-    "members.invites.revoke": ("DELETE", "/api/org/invites/{invite_id}"),
-    "members.invites.lookup": ("POST", "/api/org/invites/lookup"),
-    "members.invites.accept": ("POST", "/api/org/invites/accept"),
-    "members.links.list": ("GET", "/api/org/invite-links"),
-    "members.links.create": ("POST", "/api/org/invite-links"),
-    "members.links.revoke": ("DELETE", "/api/org/invite-links/{link_id}"),
-    "members.join_lookup": ("POST", "/api/join/lookup"),
-    "members.join": ("POST", "/api/join"),
-    # --- org management (T-226) --------------------------------------------------
+    "speech.transcribe": ("POST", "/api/speech/transcribe"),
+    "attachments.scan": ("GET", "/api/attachments/{attachment_id}/scan"),
+    "attachments.view": ("GET", "/api/attachments/{attachment_id}/view"),
+    "billing.status": ("GET", "/api/billing/status"),
+    "plans.list": ("GET", "/api/plans"),
+    "policy.stats": ("GET", "/api/policy/stats"),
     "org.get": ("GET", "/api/org"),
     "org.rename": ("PATCH", "/api/org"),
     "org.close": ("POST", "/api/org/close"),
-    "org.models.get": ("GET", "/api/org/models"),
-    "org.models.set": ("PUT", "/api/org/models"),
-    "org.sharing.get": ("GET", "/api/org/sharing"),
-    "org.sharing.set": ("PUT", "/api/org/sharing"),
-    "org.shares.list": ("GET", "/api/org/shares"),
-    "org.shares.revoke": ("DELETE", "/api/org/shares/{share_id}"),
-    "org.sso.get": ("GET", "/api/org/sso"),
-    "org.sso.set": ("PUT", "/api/org/sso"),
-    "org.sso.recovery_code": ("POST", "/api/org/sso/recovery-code"),
+    "org.models": ("GET", "/api/org/models"),
+    "org.set_models": ("PUT", "/api/org/models"),
+    "org.sharing": ("GET", "/api/org/sharing"),
+    "org.set_sharing": ("PUT", "/api/org/sharing"),
+    "org.shares": ("GET", "/api/org/shares"),
+    "org.revoke_share": ("DELETE", "/api/org/shares/{share_id}"),
+    "org.sso": ("GET", "/api/org/sso"),
+    "org.set_sso": ("PUT", "/api/org/sso"),
+    "org.mint_recovery_code": ("POST", "/api/org/sso/recovery-code"),
+    "org.mfa": ("GET", "/api/org/mfa"),
+    "org.set_mfa": ("PUT", "/api/org/mfa"),
     "org.domains.list": ("GET", "/api/org/domains"),
     "org.domains.claim": ("POST", "/api/org/domains"),
+    "org.domains.release": ("DELETE", "/api/org/domains/{domain}"),
     "org.domains.challenge": ("GET", "/api/org/domains/{domain}/challenge"),
     "org.domains.verify": ("POST", "/api/org/domains/{domain}/verify"),
-    "org.domains.release": ("DELETE", "/api/org/domains/{domain}"),
-    "org.idp.list": ("GET", "/api/org/idp"),
-    "org.idp.attach": ("POST", "/api/org/idp"),
-    "org.idp.detach": ("DELETE", "/api/org/idp/{provider}"),
-    "org.mfa.get": ("GET", "/api/org/mfa"),
-    "org.mfa.set": ("PUT", "/api/org/mfa"),
-    # --- plans and billing (T-227) ------------------------------------------------
-    "billing.plans": ("GET", "/api/plans"),
-    "billing.switch_plan": ("PUT", "/api/plan"),
-    "billing.plan_history": ("GET", "/api/plan/history"),
+    "org.idps.list": ("GET", "/api/org/idp"),
+    "org.idps.attach": ("POST", "/api/org/idp"),
+    "org.idps.detach": ("DELETE", "/api/org/idp/{provider}"),
+    "members.list": ("GET", "/api/org/members"),
+    "members.remove": ("DELETE", "/api/org/members/{subject}"),
+    "members.set_role": ("PUT", "/api/org/members/{subject}/role"),
+    "members.transfer_ownership": ("POST", "/api/org/members/{subject}/transfer-ownership"),
+    "invites.list": ("GET", "/api/org/invites"),
+    "invites.create": ("POST", "/api/org/invites"),
+    "invites.revoke": ("DELETE", "/api/org/invites/{invite_id}"),
+    "invites.resend": ("POST", "/api/org/invites/{invite_id}/resend"),
+    "invites.lookup": ("POST", "/api/org/invites/lookup"),
+    "invites.accept": ("POST", "/api/org/invites/accept"),
+    "invite_links.list": ("GET", "/api/org/invite-links"),
+    "invite_links.create": ("POST", "/api/org/invite-links"),
+    "invite_links.revoke": ("DELETE", "/api/org/invite-links/{link_id}"),
+    "invite_links.lookup": ("POST", "/api/join/lookup"),
+    "invite_links.join": ("POST", "/api/join"),
     "billing.checkout": ("POST", "/api/billing/checkout"),
     "billing.portal": ("POST", "/api/billing/portal"),
-    "billing.status": ("GET", "/api/billing/status"),
     "billing.invoices": ("GET", "/api/billing/invoices"),
-    # --- passkeys, MFA, account switching, speech (T-228) --------------------------
+    "billing.change_plan": ("PUT", "/api/plan"),
+    "billing.plan_history": ("GET", "/api/plan/history"),
+    "auth.device.lookup": ("POST", "/api/auth/device/lookup"),
+    "auth.device.approve": ("POST", "/api/auth/device/approve"),
+    "auth.device.deny": ("POST", "/api/auth/device/deny"),
+    # --- passkeys, two-factor, account switching ----------------------------------
     "passkeys.list": ("GET", "/api/me/passkeys"),
     "passkeys.start": ("POST", "/api/me/passkeys/start"),
     "passkeys.verify": ("POST", "/api/me/passkeys/{passkey_id}/verify"),
@@ -288,8 +294,7 @@ APP_OPERATIONS: dict[str, tuple[str, str]] = {
     "accounts.switch": ("POST", "/api/accounts/switch"),
     "accounts.logout": ("POST", "/api/accounts/{slot}/logout"),
     "accounts.logout_all": ("POST", "/api/accounts/logout-all"),
-    "speech.transcribe": ("POST", "/api/speech/transcribe"),
-    # --- edge pairing and sync (T-229) -----------------------------------------------
+    # --- edge pairing and sync ----------------------------------------------------
     "sync.pairings.mint": ("POST", "/api/sync/pairings"),
     "sync.pairings.devices": ("GET", "/api/sync/devices"),
     "sync.pairings.unpair": ("DELETE", "/api/sync/devices/{key_id}"),
@@ -297,6 +302,214 @@ APP_OPERATIONS: dict[str, tuple[str, str]] = {
     "sync.status": ("GET", "/api/sync/status"),
     "sync.push": ("POST", "/api/sync/conversations"),
 }
+
+
+# The credential each operation needs, from the per-route `security` of the
+# platform's route document (tests/openapi-full.json, which the drift test
+# holds this table to):
+#
+# * "public" -- nothing; the route answers anyone.
+# * "key" -- an API key with no particular scope, or a person's token.
+# * "key:<scope>" -- an API key carrying that scope, or a person's token.
+# * "person" -- a person's token (`access_token=`), never an API key. The
+#   routes that manage the organisation gate on the caller's membership row
+#   rather than a key scope and answer a key 403 "Membership is managed by
+#   a person, not an API key."
+#
+# A scope never widens the role: a key acts as its owner, and a person as
+# themselves, so an org route still needs the org role it asks for.
+CREDENTIALS: dict[str, str] = {
+    "index": "public",
+    "models.list": "key:chat:read",
+    "models.retrieve": "key:chat:read",
+    "chat.completions.create": "key:chat:write",
+    "embeddings.create": "key:chat:write",
+    "me": "key",
+    "conversations.list": "key:chat:read",
+    "conversations.search": "key:chat:read",
+    "conversations.create": "key:chat:write",
+    "conversations.get": "key:chat:read",
+    "conversations.update": "key:chat:write",
+    "conversations.tree": "key:chat:read",
+    "conversations.set_active_leaf": "key:chat:write",
+    "conversations.send": "key:chat:write",
+    "conversations.edit": "key:chat:write",
+    "conversations.regenerate": "key:chat:write",
+    "conversations.fork": "key:chat:write",
+    "conversations.context": "key:chat:read",
+    "conversations.compact": "key:chat:write",
+    "conversations.delete": "key:chat:write",
+    "conversations.pin": "key:chat:write",
+    "conversations.unpin": "key:chat:write",
+    "conversations.archive": "key:chat:write",
+    "conversations.unarchive": "key:chat:write",
+    "conversations.update_instructions": "key:chat:write",
+    "conversations.report": "key:chat:write",
+    "instructions.user": "key",
+    "instructions.update_user": "key",
+    "instructions.org": "person",
+    "instructions.update_org": "person",
+    "notifications.list": "key",
+    "notifications.read_all": "key",
+    "notifications.read": "key",
+    "announcements.list": "key",
+    "admin.announcements.list": "person",
+    "admin.announcements.create": "person",
+    "admin.announcements.update": "person",
+    "admin.announcements.delete": "person",
+    "entitlements.get": "key",
+    "messages.set_feedback": "key",
+    "messages.delete_feedback": "key",
+    "messages.list_feedback": "key:chat:read",
+    "app_models": "key",
+    "auth.device.start": "public",
+    "auth.device.poll": "public",
+    "keys.list": "key",
+    "keys.create": "key:keys:manage",
+    "keys.update": "key:keys:manage",
+    "keys.rotate": "key:keys:manage",
+    "keys.revoke": "key:keys:manage",
+    "usage.get": "key",
+    "usage.org": "key:usage:read",
+    "usage.export_csv": "key:usage:read",
+    "audit.list": "person",
+    "audit.export_csv": "person",
+    "webhooks.list": "key:webhooks:manage",
+    "webhooks.create": "key:webhooks:manage",
+    "webhooks.get": "key:webhooks:manage",
+    "webhooks.update": "key:webhooks:manage",
+    "webhooks.delete": "key:webhooks:manage",
+    "webhooks.rotate_secret": "key:webhooks:manage",
+    "webhooks.test": "key:webhooks:manage",
+    "webhooks.deliveries": "key:webhooks:manage",
+    "webhooks.redeliver": "key:webhooks:manage",
+    "attachments.upload": "key",
+    "attachments.get": "key",
+    "attachments.delete": "key",
+    "attachments.download": "key",
+    "attachments.limits": "key",
+    "library.get": "key",
+    "library.search": "key",
+    "library.create_folder": "key",
+    "library.update_folder": "key",
+    "library.delete_folder": "key",
+    "library.move": "key",
+    "library.create_tag": "key",
+    "library.delete_tag": "key",
+    "library.set_tags": "key",
+    "shares.create": "key:chat:write",
+    "shares.list": "key:chat:read",
+    "shares.list_mine": "key",
+    "shares.revoke": "key",
+    "shares.view": "public",
+    "budget.get": "key",
+    "budget.set_overage_cap": "person",
+    "budget.members": "person",
+    "budget.set_member_default_cap": "person",
+    "budget.set_member_cap": "person",
+    "account.update": "key",
+    "account.accept_terms": "key",
+    "account.enforcement": "key",
+    "account.change_password": "person",
+    "account.email_state": "person",
+    "account.start_email_change": "person",
+    "account.verify_email_change": "person",
+    "account.cancel_email_change": "person",
+    "account.resend_email_change_code": "person",
+    "account.onboarding_complete": "key",
+    "account.delete": "person",
+    "preferences.get": "key",
+    "preferences.update": "key",
+    "sessions.list": "key",
+    "sessions.revoke": "key",
+    "sessions.revoke_others": "key",
+    "exports.document": "key:chat:read",
+    "exports.create": "key:chat:read",
+    "exports.get": "key:chat:read",
+    "exports.download": "key:chat:read",
+    "imports.create": "key:chat:write",
+    "imports.list": "key:chat:write",
+    "imports.get": "key:chat:write",
+    "speech.transcribe": "key",
+    "attachments.scan": "key",
+    "attachments.view": "key",
+    "billing.status": "key",
+    "plans.list": "public",
+    "policy.stats": "public",
+    "org.get": "person",
+    "org.rename": "person",
+    "org.close": "person",
+    "org.models": "person",
+    "org.set_models": "person",
+    "org.sharing": "person",
+    "org.set_sharing": "person",
+    "org.shares": "person",
+    "org.revoke_share": "person",
+    "org.sso": "person",
+    "org.set_sso": "person",
+    "org.mint_recovery_code": "person",
+    "org.mfa": "person",
+    "org.set_mfa": "person",
+    "org.domains.list": "person",
+    "org.domains.claim": "person",
+    "org.domains.release": "person",
+    "org.domains.challenge": "person",
+    "org.domains.verify": "person",
+    "org.idps.list": "person",
+    "org.idps.attach": "person",
+    "org.idps.detach": "person",
+    "members.list": "person",
+    "members.remove": "person",
+    "members.set_role": "person",
+    "members.transfer_ownership": "person",
+    "invites.list": "person",
+    "invites.create": "person",
+    "invites.revoke": "person",
+    "invites.resend": "person",
+    "invites.lookup": "public",
+    "invites.accept": "person",
+    "invite_links.list": "person",
+    "invite_links.create": "person",
+    "invite_links.revoke": "person",
+    "invite_links.lookup": "public",
+    "invite_links.join": "person",
+    "billing.checkout": "person",
+    "billing.portal": "person",
+    "billing.invoices": "person",
+    "billing.change_plan": "person",
+    "billing.plan_history": "person",
+    "auth.device.lookup": "person",
+    "auth.device.approve": "person",
+    "auth.device.deny": "person",
+    "passkeys.list": "person",
+    "passkeys.start": "person",
+    "passkeys.verify": "person",
+    "passkeys.rename": "person",
+    "passkeys.remove": "person",
+    "passkeys.login_start": "public",
+    "passkeys.login_finish": "public",
+    "mfa.state": "person",
+    "mfa.totp_start": "person",
+    "mfa.totp_confirm": "person",
+    "mfa.totp_remove": "person",
+    "mfa.recovery_reissue": "person",
+    "accounts.list": "public",
+    "accounts.switch": "public",
+    "accounts.logout": "public",
+    "accounts.logout_all": "public",
+    # The edge box's routes: an owner or admin, signed in, mints the pairing
+    # code; the box redeems it with nothing else, and pushes with the device
+    # key it got back, which carries `conversations:import` and no more.
+    "sync.pairings.mint": "person",
+    "sync.pairings.devices": "person",
+    "sync.pairings.unpair": "person",
+    "sync.pair": "public",
+    "sync.status": "key",
+    "sync.push": "key:conversations:import",
+}
+
+# What the platform answers an API key on a "person" route.
+PERSON_ONLY_DETAIL = "Membership is managed by a person, not an API key."
 
 
 Role = Literal["system", "user", "assistant", "tool"]
@@ -374,15 +587,18 @@ class Request:
     # A multipart upload: field name -> (filename, bytes, content type). The
     # bytes are held whole so a retried upload sends the same file again.
     files: Mapping[str, tuple[str, bytes, str]] | None = None
-    # Form fields beside a multipart upload (speech's language hint), as
-    # httpx takes them.
-    data: Mapping[str, str] | None = None
+    # Form fields sent beside `files` in the same multipart body (speech's
+    # language hint).
+    form: Mapping[str, str] | None = None
     # This request's timeout, where the client's default is wrong for it:
     # an MCP tool that runs a whole model turn takes minutes, not seconds.
     timeout: float | None = None
     # Whether sending it twice is harmless. None reads it off the method;
     # a POST that only reads (an MCP `tools/list`) says True.
     idempotent: bool | None = None
+    # Follow a redirect to the same origin, credential and all: a route that
+    # answers with a signed link to the bytes, rather than the bytes.
+    follow_redirects: bool = False
 
     @property
     def safe_to_repeat(self) -> bool:
@@ -898,6 +1114,8 @@ def headers_for(
     defaults (`Accept`, `User-Agent`), then the caller's `default_headers`,
     which may replace them (a client built on this one names itself), then
     what the operation itself needs, such as `Last-Event-ID` on a resume.
+    `api_key` is the bearer a keyed request carries: an API key or a
+    person's access token, which the API reads from the same header.
     `idempotency_key` goes on unless one of those already set the header."""
     headers = {"Accept": "application/json", "User-Agent": user_agent}
     if request.stream:
@@ -911,8 +1129,8 @@ def headers_for(
     if request.keyed:
         if api_key is None:
             raise MissingAPIKeyError(
-                f"{request.method} {request.path} needs an API key: pass api_key= or set "
-                f"{API_KEY_ENV}."
+                f"{request.method} {request.path} needs a credential: pass api_key= (or set "
+                f"{API_KEY_ENV}), or a person's access_token=."
             )
         headers["Authorization"] = f"Bearer {api_key}"
     return headers

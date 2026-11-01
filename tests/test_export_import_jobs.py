@@ -149,9 +149,9 @@ def test_export_download_sends_the_signature_and_the_callers_own_key(
         },
     )
     job = export_body(status="ready", download_url=READY_URL)
-    from matterwave_sdk import ExportJob
+    from matterwave_sdk import AccountExport
 
-    data = client.exports.download(ExportJob.from_dict(job))
+    data = client.exports.download(AccountExport.from_dict(job))
     request = sent(route)
     assert request.headers["authorization"] == f"Bearer {API_KEY}"
     assert request.url.params["expires"] == "1799000000"
@@ -160,7 +160,7 @@ def test_export_download_sends_the_signature_and_the_callers_own_key(
     # A bare URL works too.
     assert client.exports.download(READY_URL) == payload
     with pytest.raises(ValueError, match="download_url"):
-        client.exports.download(ExportJob.from_dict(export_body()))
+        client.exports.download(AccountExport.from_dict(export_body()))
     with pytest.raises(ValueError, match="not an export download URL"):
         client.exports.download("/api/attachments/att-1/content?sig=x")
 

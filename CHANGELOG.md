@@ -9,6 +9,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Examples, each run by `tests/test_examples.py` against a fake API: `chat`,
+  `streaming`, `structured_output`, `webhook_receiver`, `device_sign_in`
+  (an API key or a person's token) and `pagination`.
+- A generated API reference: the `docs` workflow builds it with pdoc,
+  checks every public name has its page (`scripts/check_reference.py`) and
+  uploads it as the `api-reference` artifact.
+- A person's token in place of an API key: `access_token=` on `MatterWave`
+  and `AsyncMatterWave`, the token itself or a callable asked for it before
+  each call (a coroutine function on the async client). The routes that
+  manage the organisation, which refuse every key, take it.
+- `client.auth.person`: the device authorization grant against the identity
+  provider's native client that `/api/auth-config` names (`login`, `start`,
+  `poll`, `refresh`, `config`), returning a `PersonToken` with a refresh
+  token (`offline_access`), and `session(token, on_refresh=)`, the
+  `access_token=` callable that refreshes a minute before expiry.
+- `CREDENTIALS`: the credential each operation needs (`public`, `key`,
+  `key:<scope>`, `person`), held by the drift test to the per-route
+  `security` of the platform's route document; the README tabulates it.
+  The missing-credential error now names both ways to give one.
+- Route drift tests that run in every checkout: `tests/openapi-full.json`
+  (the platform's whole route document, vendored at the commit
+  `tests/openapi-full.pin.json` names, by `scripts/refresh_openapi_full.py`)
+  holds every route the SDK calls, and every route the platform documents is
+  wrapped or listed with its reason in `tests/routes-not-covered.json`.
+  `scripts/check_live_routes.py` and the daily `route-drift` workflow hold a
+  running deployment's `/openapi.json` to the same pair and open an issue on
+  drift. The two checks that needed the platform checkout beside the SDK, and
+  skipped without it, are gone.
+- `stream.final_completion()` (sync and async) and
+  `ChatCompletionAccumulator.completion()`: the whole streamed answer as a
+  `ChatCompletion` -- the message with its tool calls, the finish reason, the
+  usage, the id and model. A stream that ended without a finish reason raises
+  `MatterWaveError` rather than pass for a whole answer.
+- Standard Webhooks verification: `webhooks.verify_standard_signature`
+  checks `webhook-id`, `webhook-timestamp` and `webhook-signature` (`v1,` and
+  base64, keyed by the base64 after `whsec_`), and `webhooks.unwrap` accepts a
+  delivery whose MatterWave or Standard Webhooks signature verifies.
+  `webhooks.sign_standard` and `webhooks.secret_key_bytes` write and key them.
+- Page and item iterators for every cursor-paged list: `audit.pages()` /
+  `audit.items()` (the same filters as `audit.list`) and
+  `library.search_pages(q)` / `library.search_items(q)`, sync and async.
+  `pages_of(fetch)` / `items_of(pages)` and their async twins are the walk
+  they share, exported for any list answering `{"data", "next_cursor"}`;
+  `conversations.pages()` / `items()` now use it too.
 - `frequency_penalty` and `presence_penalty` on `chat.completions.create`
   (sync and async), relayed to the model as OpenAI defines them (-2 to 2);
   `None` leaves them out of the body.
@@ -94,6 +138,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Every action in the workflows is pinned to a commit, and the workflow
   token is read-only unless a job needs more.
 - The source and tests are formatted with `ruff format`.
+- The methods whose routes refuse every API key -- `audit.list` /
+  `export_csv`, `instructions.org` / `update_org` and `budget.members` /
+  `set_overage_cap` / `set_member_default_cap` / `set_member_cap` -- say so:
+  each needs a person's token, and its docs quote the 403 a key gets
+  ("Membership is managed by a person, not an API key."). They were
+  documented as working with a key, which the platform never allowed.
 - `tests/openapi.json` refreshed from the app's export: the two penalty
   fields on `ChatCompletionRequest` and the `compacting` stream event.
 - CI runs `mypy` beside `ruff` and `pytest`, and checks the TypeScript
@@ -156,74 +206,97 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `actor` (the writer's subject), `actor_email` where one is resolved,
   `action`, `target` and the writer's `detail`.
 
-### Added in the account families (T-207 to T-229)
+### Added in the account families
 
-- `client.account` (T-207) -- the Account and Preferences panes:
-  `rename`, `accept_terms`, `change_password` (session only; every other
-  session is ended and counted), the email-change cycle
-  (`start_email_change` / `verify_email_change` / `cancel_email_change` /
-  `resend_email_change_code` / `email_state`), `sessions`,
-  `revoke_session`, `logout_others`, `preferences` /
-  `update_preferences` (the route replaces the whole shape), and
-  `onboarding_complete`. `delete()` is `DELETE /api/me`: typed
+- `client.account` -- the Account pane: `update` (the display name),
+  `accept_terms`, `enforcement` (the moderation banner's state),
+  `change_password` (every other session is ended and counted), the
+  email-change cycle (`start_email_change` / `verify_email_change` /
+  `cancel_email_change` / `resend_email_change_code` / `email_state`),
+  `onboarding_complete`, and `delete()`: `DELETE /api/me`, typed
   `DeletedAccount`, the `"delete my account"` phrase checked here as well
-  as in the route, and documented as irreversible and session-only.
-- `client.exports` and `client.imports` (T-208) -- the Data pane's jobs:
-  export `start` / `get` / `download` (the bytes behind the signed link
-  *and* the caller's own key), import `start` / `list` / `get` over a
-  ChatGPT or Claude export file, with `ExportJob` and `ImportJob`
-  carrying the worker's counts.
-- `client.members` (T-209) -- `list` (with the caller's role and the
-  plan's `seats`), `set_role`, `transfer_ownership`, `remove`, and the
-  `invites` and `links` namespaces (`invites.lookup` is anonymous, the
-  token is the credential) plus `join_lookup` and `join`.
-- `client.org` (T-226) -- `get` / `rename` / `close` (owner; each side
-  effect reported, idempotent), `models.get` / `models.set` (the
-  allow-list; null lifts it), `sharing.get` / `sharing.set`, the org-wide
-  `shares.list` / `shares.revoke`, `sso.get` / `sso.set` (enforcing hands
-  back the break-glass code once) / `sso.recovery_code`, `domains`
-  (claim / challenge / verify / release), `idp` (list / attach / detach)
-  and `mfa.get` / `mfa.set`. Owner or admin by membership row, never a
-  token claim -- documented on each class; the audit trail remains
-  `client.audit`.
-- `client.billing` (T-227) -- `plans` (the public catalog with the price
-  table), `switch_plan` (the move to Free; a paid code is a 402 pointing
-  at checkout), `plan_history`, `checkout`, `portal`, `status` (any
-  member; `billing_enabled` and the dunning schedule included) and
-  `invoices`.
-- `client.passkeys`, `client.mfa`, `client.accounts` and
-  `client.speech` (T-228) -- WebAuthn registration and the login
-  ceremony's two halves, TOTP enrolment with the recovery codes shown
-  once and proof-of-factor removal and reissue, the browser account
-  switcher (`list` / `switch` / `logout` / `logout_all`; cookies are the
-  credential, so no key is sent), and transcription (multipart clip,
-  optional BCP 47 `language` hint).
-- `client.sync` (T-229) -- edge pairing and the mirror it buys:
+  as in the route, documented as irreversible. The password, email and
+  deletion routes refuse an API key and take a person's token or a session.
+- `client.preferences` (`get`, `update`: read, merge the changes, write the
+  whole object back, since the route replaces it) and `client.sessions`
+  (`list`, `revoke`, `revoke_others`; session ids kept out of `repr`).
+  `client.account` carries the same routes as `sessions`, `revoke_session`,
+  `logout_others`, `preferences` and `update_preferences` (which sends
+  exactly the groups passed, the rest going back to their defaults), and
+  `rename`, which collapses and bounds the name before sending it.
+- `client.exports` and `client.imports` -- the Data pane's jobs: export
+  `create` / `get` / `wait` / `download` (the bytes behind the signed link
+  *and* the caller's own credential) / `create_and_download`, and
+  `document` (the export built inside the request); import `create` /
+  `list` / `get` / `wait` over a ChatGPT or Claude export file. `start` is
+  `create` under the name the Data pane uses.
+- `client.speech.transcribe` -- one clip, multipart, its type named from
+  the file's extension or `content_type` and checked against the route's
+  list, with an optional BCP 47 `language` hint.
+- `client.attachments.scan` / `view` -- an attachment's scan verdict, and
+  its bytes through the route's same-origin signed redirect.
+- `client.billing` -- `status` (any member; `billing_enabled` and the
+  dunning schedule included), and for an owner or admin `checkout`,
+  `portal`, `invoices`, `change_plan` (the move to Free; a paid code is a
+  402 pointing at checkout; `switch_plan` too) and `plan_history`.
+  `client.plans.list` (the catalog with the price table; `billing.plans`
+  too) and `client.policy.stats` are public and send no credential.
+- `client.org` -- `get` / `rename` / `close` (owner, confirmed by the
+  org's name), `models` / `set_models` (the allow-list; None lifts it),
+  `sharing` / `set_sharing`, `shares` / `revoke_share`, `sso` / `set_sso`
+  (enforcing hands back the break-glass code once) / `mint_recovery_code`,
+  `mfa` / `set_mfa`, `org.domains` (claim / challenge / verify / release)
+  and `org.idps` (list / attach / detach).
+- `client.members` (`list` with the caller's role and the plan's `seats`,
+  `set_role`, `transfer_ownership`, `remove`), `client.invites` (`list`,
+  `create`, `resend`, `revoke`, the anonymous `lookup`, and `accept`) and
+  `client.invite_links` (`list`, `create` -- the token and url shown once --
+  `revoke`, the anonymous `lookup`, and `join`; `members.join_lookup` and
+  `members.join` too).
+- `client.auth.device.lookup` / `approve` / `deny` -- the other side of
+  device login, deciding a code a device shows.
+- The organisation, member, invite and billing-administration routes gate
+  on the caller's membership row: they refuse every API key and take a
+  person's token. One-time secrets (an invite link's token and url, an SSO
+  recovery code) are kept out of `repr`.
+- `client.passkeys`, `client.mfa` and `client.accounts` -- WebAuthn
+  registration and the login ceremony's two halves, TOTP enrolment with
+  the recovery codes shown once and proof-of-factor removal and reissue,
+  and the browser account switcher (`list` / `switch` / `logout` /
+  `logout_all`; cookies are the credential, so no key is sent).
+- `client.sync` -- edge pairing and the mirror it buys:
   `pairings.mint` / `pairings.devices` / `pairings.unpair` (owner or
-  admin by session), `pair` (anonymous redemption of a code for the
+  admin, signed in), `pair` (anonymous redemption of a code for the
   device key), `status`, and `push` (one export-shaped conversation,
   upserted by id, with per-message `rejected`). The box is its own
   client: build a `MatterWave` with the paired key and push.
-- `Request.data` for form fields beside a multipart upload (speech's
-  language hint), carried through `_Config.build`.
-- `ORG_ROLES` and the models for every new answer: `SessionInfo`,
-  `SessionList`, `SessionRevoked`, `SessionsLoggedOut`, `Preferences`,
-  `EmailPreferences`, `NotificationPreferences`, `NameUpdated`,
-  `TermsAccepted`, `PasswordChanged`, `EmailChangeStarted`,
-  `EmailChangeState`, `EmailChanged`, `EmailChangeCancelled`,
-  `OnboardingCompleted`, `DeletedAccount`, `ExportJob`, `ImportJob`,
-  `ImportJobList`, `Membership`, `MemberList`, `Seats`, `Invite`,
-  `SentInvite`, `InvitePreview`, `InviteLink`, `CreatedInviteLink`,
-  `LinkPreview`, `OrgInfo`, `OrgClosed`, `ModelPolicy`, `SharingPolicy`,
-  `OrgShare`, `RevokedOrgShare`, `SsoSettings`, `SsoPolicySet`,
-  `RecoveryCode`, `DnsRecord`, `DomainChallenge`, `DomainClaim`,
-  `DomainVerification`, `IdpConfig`, `MfaPolicy`, `Plan`, `PlanCatalog`,
-  `PlanHistory`, `CheckoutLink`, `BillingStatus`, `Invoice`,
-  `Passkey`, `PasskeyList`, `PasskeyStart`, `PasskeyLoginStart`,
-  `PasskeyLoginFinish`, `MfaState`, `TotpEnrolment`, `TotpConfirmed`,
-  `TotpRemoved`, `BrowserAccount`, `AccountSwitched`, `LoggedOut`,
-  `Transcription`, `PairingCode`, `EdgeDevice`, `PairedKey`,
-  `EdgeSyncStatus` and `SyncOutcome`.
+- `Request.form` for form fields beside a multipart upload (speech's
+  language hint), and `Request.follow_redirects` for a route that answers
+  with a signed link to the bytes.
+- `ORG_ROLES` and the models for every new answer: `UpdatedName`,
+  `TermsAcceptance`, `Enforcement`, `EnforcementLimit`, `PasswordChanged`,
+  `EmailChangeStarted`, `EmailChangeState`, `EmailChanged`,
+  `EmailChangeCancelled`, `OnboardingCompleted`, `DeletedAccount`,
+  `Preferences`, `EmailPreferences`, `NotificationPreferences`, `Session`,
+  `SessionList`, `RevokedSession`, `RevokedSessions`, `AccountExport`,
+  `ImportJob`, `ImportJobList`, `Transcription`, `AttachmentScan`,
+  `BillingStatus`, `Dunning`, `DunningSchedule`, `DunningStep`,
+  `DunningLimits`, `Plan`, `ModelPrice`, `PlanCatalog`, `PolicyStats`,
+  `Org`, `ClosedOrg`, `Member`, `Seats`, `MemberList`, `Invite`,
+  `InviteList`, `InviteLookup`, `InviteLink`, `InviteLinkList`,
+  `LinkLookup`, `ModelPolicy`, `ModelPolicyEntry`, `SharingPolicy`,
+  `OrgShare`, `OrgShareList`, `RevokedOrgShare`, `RecoveryCode`,
+  `SsoSettings`, `MintedRecoveryCode`, `MfaSettings`, `Domain`,
+  `DomainList`, `DnsRecord`, `DomainChallenge`, `DomainVerification`,
+  `IdentityProvider`, `IdentityProviderList`, `BillingLink`, `Invoice`,
+  `InvoiceList`, `PlanChange`, `PlanHistory`, `DeviceLookup`,
+  `DeviceDecision`, `Passkey`, `PasskeyList`, `PasskeyStart`,
+  `PasskeyLoginStart`, `PasskeyLoginFinish`, `MfaState`, `TotpEnrolment`,
+  `TotpConfirmed`, `TotpRemoved`, `BrowserAccount`, `BrowserAccountList`,
+  `AccountSwitched`, `LoggedOut`, `PairingCode`, `EdgeDevice`,
+  `EdgeDeviceList`, `PairedKey`, `EdgeSyncStatus` and `SyncOutcome`. The
+  account and organisation answers read their fields through one shared
+  `from_dict` (`_wire.Wire`), with the rules the other models follow.
 
 ### Documentation
 

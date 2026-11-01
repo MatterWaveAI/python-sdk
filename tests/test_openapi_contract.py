@@ -10,8 +10,8 @@ request schema the same way.
 The document is read from the platform checkout when this repo sits inside
 it; a standalone checkout reads the snapshot in tests/openapi.json, copied
 from the export. The /api routes are not in the export (it is the `/v1`
-contract), so they are held to the API by the mocked-transport tests
-instead.
+contract); test_route_drift.py holds them to the platform's whole route
+document, and the mocked-transport tests hold their bodies.
 """
 
 from __future__ import annotations
@@ -61,19 +61,6 @@ def test_every_client_operation_is_in_the_export_and_vice_versa(document: dict) 
     exported = _exported_operations(document)
     exposed = {op["operation_id"]: (op["method"], op["path"]) for op in OPERATIONS.values()}
     assert exposed == exported
-
-
-def test_the_app_routes_match_the_export_where_it_names_them(document: dict) -> None:
-    """The conversation, `/api/me` and device-login routes are the app's,
-    not the `/v1` contract, so the export does not carry them yet. Where it
-    does name one of their paths, the method must agree; until it names any,
-    there is nothing to compare and the check says so rather than passing."""
-    paths = document["paths"]
-    named = {key: (m, p) for key, (m, p) in APP_OPERATIONS.items() if p in paths}
-    if not named:
-        pytest.skip("openapi.json names none of the /api routes yet")
-    for key, (method, path) in named.items():
-        assert method.lower() in paths[path], f"{key}: {method} {path} is not in the export"
 
 
 def test_the_client_methods_named_in_operations_exist() -> None:

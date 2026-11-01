@@ -17,17 +17,29 @@ dict is returned, and anything else -- a missing, stale or wrong signature,
 a body that is not JSON, a body that is not an object -- raises
 `WebhookVerificationError`.
 
-`sign` is here too, for tests and for replaying a delivery to a second
-receiver: it is the exact function the platform's sender runs, and the
-pair is kept beside each other so a change to the scheme changes both.
+Every delivery also carries the Standard Webhooks headers
+(standardwebhooks.com): `webhook-id` (the event id), `webhook-timestamp`
+and `webhook-signature: v1,<base64>`, the HMAC-SHA256 of
+`<id>.<timestamp>.<body>` keyed by the base64 after the secret's `whsec_`
+marker, one space-separated signature per secret in force.
+`verify_standard_signature` checks those; `unwrap` accepts a delivery when
+either scheme's signature verifies, so a receiver behind a proxy that keeps
+only one set of headers still unwraps it.
+
+`sign` and `sign_standard` are here too, for tests and for replaying a
+delivery to a second receiver: they are the exact functions the platform's
+sender runs, and each is kept beside its check so a change to the scheme
+changes both.
 """
 
 from __future__ import annotations
 
+import binascii
 import hashlib
 import hmac
 import json
 import time
+from base64 import b64decode, b64encode, urlsafe_b64decode
 from collections.abc import Mapping
 from typing import Any
 
@@ -42,6 +54,12 @@ EVENT_TYPE_HEADER = "MatterWave-Event-Type"
 #: the delivery is refused as a replay. The platform signs with the same
 #: number and its docs show the same check.
 SIGNATURE_TOLERANCE_S = 300
+#: The Standard Webhooks headers, sent beside the MatterWave ones.
+STANDARD_ID_HEADER = "webhook-id"
+STANDARD_TIMESTAMP_HEADER = "webhook-timestamp"
+STANDARD_SIGNATURE_HEADER = "webhook-signature"
+#: The marker in front of every signing secret the platform mints.
+SECRET_PREFIX = "whsec_"  # noqa: S105 - a marker in front of the secret, not one
 
 
 def signed_content(timestamp: int, body: bytes) -> bytes:
@@ -58,13 +76,73 @@ def sign(secret: str, timestamp: int, body: bytes) -> str:
     return f"t={timestamp},v1={mac.hexdigest()}"
 
 
+def _header(headers: Mapping[str, str], wanted: str) -> str | None:
+    for name, value in headers.items():
+        if name.lower() == wanted.lower():
+            return value
+    return None
+
+
 def signature_header_of(headers: Mapping[str, str]) -> str | None:
     """The signature header's value, whichever letter case the framework
     handed the headers over in."""
-    for name, value in headers.items():
-        if name.lower() == SIGNATURE_HEADER.lower():
-            return value
-    return None
+    return _header(headers, SIGNATURE_HEADER)
+
+
+def secret_key_bytes(secret: str) -> bytes:
+    """The HMAC key the Standard Webhooks signature uses: the base64 after
+    `whsec_`. Secrets minted before the platform switched to standard
+    base64 are URL-safe base64, decoded the same way the platform does."""
+    body = secret.removeprefix(SECRET_PREFIX)
+    padded = body + "=" * (-len(body) % 4)
+    try:
+        return b64decode(padded, validate=True)
+    except binascii.Error:
+        return urlsafe_b64decode(padded)
+
+
+def sign_standard(secret: str, msg_id: str, timestamp: int, body: bytes) -> str:
+    """One `webhook-signature` element, exactly as the platform's sender
+    writes it: `v1,<base64 HMAC-SHA256 of "<id>.<timestamp>.<body>">`."""
+    content = f"{msg_id}.{timestamp}.".encode() + body
+    mac = hmac.new(secret_key_bytes(secret), content, hashlib.sha256).digest()
+    return "v1," + b64encode(mac).decode("ascii")
+
+
+def verify_standard_signature(
+    secret: str,
+    headers: Mapping[str, str],
+    payload: bytes,
+    *,
+    now: float | None = None,
+    tolerance_s: int = SIGNATURE_TOLERANCE_S,
+) -> bool:
+    """True when `payload` carries a fresh, correct Standard Webhooks
+    signature under `secret`: `webhook-id`, `webhook-timestamp` and
+    `webhook-signature` all present, the timestamp within `tolerance_s` of
+    the clock, and any `v1,` element of the signature matching in constant
+    time (one per secret in force during a rotation). What a Standard
+    Webhooks library does with the three headers."""
+    msg_id = _header(headers, STANDARD_ID_HEADER)
+    raw_timestamp = _header(headers, STANDARD_TIMESTAMP_HEADER)
+    header = _header(headers, STANDARD_SIGNATURE_HEADER)
+    if not msg_id or not raw_timestamp or not header:
+        return False
+    try:
+        timestamp = int(raw_timestamp)
+    except ValueError:
+        return False
+    if abs((now if now is not None else time.time()) - timestamp) > tolerance_s:
+        return False
+    try:
+        expected = sign_standard(secret, msg_id, timestamp, payload).split(",", 1)[1]
+    except binascii.Error:
+        return False
+    for element in header.split(" "):
+        version, sep, value = element.partition(",")
+        if sep and version == "v1" and hmac.compare_digest(expected, value):
+            return True
+    return False
 
 
 def verify_signature(
@@ -116,12 +194,17 @@ def unwrap(
 ) -> dict[str, Any]:
     """Verify the delivery, then decode it: the event as a dict.
 
-    `WebhookVerificationError` for a missing, malformed, stale or wrong
-    signature -- the reason is the message -- and for a body that is not a
-    JSON object. The signature is checked before the body is parsed, so a
-    forged delivery is never handed to the caller's code.
+    The delivery is accepted when its `MatterWave-Signature` or its
+    Standard Webhooks signature verifies under `secret`; the platform sends
+    both. `WebhookVerificationError` for a missing, malformed, stale or
+    wrong signature -- the reason is the message -- and for a body that is
+    not a JSON object. The signature is checked before the body is parsed,
+    so a forged delivery is never handed to the caller's code.
     """
-    if not verify_signature(secret, headers, payload, now=now, tolerance_s=tolerance_s):
+    if not (
+        verify_signature(secret, headers, payload, now=now, tolerance_s=tolerance_s)
+        or verify_standard_signature(secret, headers, payload, now=now, tolerance_s=tolerance_s)
+    ):
         raise WebhookVerificationError(
             "The webhook signature is missing, stale or wrong; the delivery is refused."
         )

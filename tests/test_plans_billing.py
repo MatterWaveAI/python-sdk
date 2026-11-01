@@ -120,7 +120,7 @@ CATALOG = {
         ),
     ],
     "models": [
-        {"model": "grt-nano", "label": "GRT Nano", "multiplier": 1,
+        {"id": "grt-nano", "label": "GRT Nano", "multiplier": 1,
          "input_usd_per_m": 0.5, "output_usd_per_m": 1.5},
     ],
     "default_model": "grt-nano",
@@ -138,7 +138,7 @@ def test_plans_catalog_is_cheapest_first_with_the_price_table(
     assert team.per_seat and team.included_tokens_per_seat == 5_000_000
     assert team.trial_days == 14
     assert team.limits == {}
-    assert catalog.models[0]["label"] == "GRT Nano"
+    assert catalog.models[0].label == "GRT Nano" and catalog.models[0].id == "grt-nano"
     assert route.called
 
 
@@ -284,7 +284,7 @@ def test_status_is_readable_by_any_member_and_keeps_the_plan_facts(
     assert status.billing_enabled is True
     assert status.collection_method == "charge_automatically"
     assert status.days_until_due == 3
-    assert status.dunning is not None and status.dunning["stage"] == "reminder"
+    assert status.dunning is not None and status.dunning.stage == "reminder"
 
 
 def test_invoices_are_newest_first_with_their_links(api, client: MatterWave) -> None:

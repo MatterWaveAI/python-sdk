@@ -36,57 +36,76 @@ from typing import Any, Literal, TypeVar, cast, overload
 import httpx
 
 from . import _base, _log
+from . import _org_requests as org_req
+from ._account import (
+    Account,
+    AsyncAccount,
+    AsyncBilling,
+    AsyncExports,
+    AsyncImports,
+    AsyncPlans,
+    AsyncPolicy,
+    AsyncPreferencesClient,
+    AsyncSessions,
+    AsyncSpeech,
+    Billing,
+    Exports,
+    Imports,
+    Plans,
+    Policy,
+    PreferencesClient,
+    Sessions,
+    Speech,
+)
 from ._base import EmbeddingInput, Message, Request, Tool, ToolChoice
 from ._mcp import AsyncMcp, Mcp
+from ._org import (
+    AsyncInviteLinks,
+    AsyncInvites,
+    AsyncMembers,
+    AsyncOrgClient,
+    InviteLinks,
+    Invites,
+    Members,
+    OrgClient,
+)
+from ._org_models import DeviceDecision, DeviceLookup
+from ._pagination import async_items_of, async_pages_of, items_of, pages_of
 from ._resources import (
-    Account,
     Admin,
     Announcements,
-    AsyncAccount,
     AsyncAdmin,
     AsyncAnnouncements,
     AsyncAttachments,
     AsyncAudit,
-    AsyncBilling,
     AsyncBrowserAccounts,
     AsyncBudgetClient,
     AsyncEntitlementsClient,
-    AsyncExports,
-    AsyncImports,
     AsyncKeys,
     AsyncLibraryClient,
-    AsyncMembers,
     AsyncMfa,
     AsyncNotifications,
-    AsyncOrg,
     AsyncPasskeys,
     AsyncShares,
-    AsyncSpeech,
     AsyncSync,
     AsyncUsageClient,
     AsyncWebhooks,
     Attachments,
     Audit,
-    Billing,
     BrowserAccounts,
     BudgetClient,
     EntitlementsClient,
-    Exports,
-    Imports,
     Keys,
     LibraryClient,
-    Members,
     Mfa,
     Notifications,
-    Org,
     Passkeys,
     Shares,
-    Speech,
     Sync,
     UsageClient,
     Webhooks,
 )
-from ._version import __version__
+from ._signin import AsyncPersonAuth, PersonAuth
 from .errors import (
     APIConnectionError,
     APIError,
@@ -127,7 +146,13 @@ from .models import (
     UserInstructions,
 )
 
-USER_AGENT = f"matterwave-python/{__version__}"
+USER_AGENT = _base.USER_AGENT
+
+# A person's access token, as `access_token=` takes it: the token itself, or
+# a callable asked for it before each call (a `PersonSession`, or the
+# caller's own refresher). The async client's may be a coroutine function.
+AccessToken = str | Callable[[], str]
+AsyncAccessToken = str | Callable[[], str | Awaitable[str]]
 
 
 class _Config:
@@ -139,12 +164,22 @@ class _Config:
         max_retries: int,
         default_headers: Mapping[str, str] | None,
         max_retry_wait: float = _base.DEFAULT_MAX_RETRY_WAIT_S,
+        access_token: AsyncAccessToken | None = None,
     ) -> None:
         if max_retries < 0:
             raise MatterWaveConfigError("max_retries must be 0 or more")
         if not max_retry_wait >= 0:
             raise MatterWaveConfigError("max_retry_wait must be 0 or more")
-        self.api_key = _base.resolve_api_key(api_key)
+        if api_key is not None and access_token is not None:
+            raise MatterWaveConfigError(
+                "pass api_key or access_token, not both: each is the whole bearer"
+            )
+        if access_token is not None and not (isinstance(access_token, str) or callable(access_token)):
+            raise TypeError("access_token must be a token or a callable that returns one")
+        # A person's token replaces the key outright, so MATTERWAVE_API_KEY
+        # is not read beside one.
+        self.access_token = access_token
+        self.api_key = None if access_token is not None else _base.resolve_api_key(api_key)
         self.base_url = _base.resolve_base_url(base_url)
         self.timeout = _base.DEFAULT_TIMEOUT_S if timeout is None else timeout
         self.max_retries = max_retries
@@ -191,15 +226,39 @@ class _Config:
             return None
         return self.idempotency_key or _base.new_idempotency_key()
 
+    def bearer(self, request: Request) -> str | None:
+        """The credential a request carries: none for a public route (so a
+        token callback is not asked for one it would not send), else the
+        key or the person's token, a callback's answered now."""
+        if not request.keyed or self.access_token is None:
+            return self.api_key if request.keyed else None
+        if isinstance(self.access_token, str):
+            return self.access_token
+        token = self.access_token()
+        if inspect.isawaitable(token):
+            if inspect.iscoroutine(token):
+                token.close()
+            raise TypeError("access_token returned an awaitable; use AsyncMatterWave for that")
+        return _token_text(token)
+
+    async def async_bearer(self, request: Request) -> str | None:
+        if not request.keyed or self.access_token is None or isinstance(self.access_token, str):
+            return self.bearer(request)
+        token = self.access_token()
+        if inspect.isawaitable(token):
+            token = await token
+        return _token_text(token)
+
     def build(
         self,
         request: Request,
         client: httpx.Client | httpx.AsyncClient,
         timeout: float | httpx.Timeout | None = None,
         idempotency_key: str | None = None,
+        bearer: str | None = None,
     ) -> httpx.Request:
         headers = _base.headers_for(
-            request, self.api_key, USER_AGENT, self.default_headers, idempotency_key
+            request, bearer, USER_AGENT, self.default_headers, idempotency_key
         )
         # Most specific first: the call's own timeout, then the operation's
         # (an MCP tool that runs a whole model turn), then the client's.
@@ -208,12 +267,18 @@ class _Config:
             request.method,
             self.base_url + request.path,
             json=request.json,
-            data=dict(request.data) if request.data else None,
             files=dict(request.files) if request.files else None,
+            data=dict(request.form) if request.form else None,
             params=dict(request.params) or None,
             headers=headers,
             timeout=effective if effective is not None else self.timeout,
         )
+
+
+def _token_text(token: object) -> str:
+    if not isinstance(token, str) or not token:
+        raise TypeError("access_token's callable must return the token, a non-empty str")
+    return token
 
 
 def _connection_error(exc: httpx.HTTPError, request: Request) -> APIConnectionError:
@@ -261,12 +326,22 @@ class Stream:
         """Drain the stream and return the assistant message it spelled out:
         the text, and each tool call reassembled from its fragments, ready
         to run. `final_message().to_message()` is what the next request's
-        `messages` takes. For the finish reason and usage as well, feed the
-        chunks to a `ChatCompletionAccumulator` yourself."""
+        `messages` takes. `final_completion()` has the finish reason and
+        usage as well."""
         accumulator = ChatCompletionAccumulator()
         for chunk in self:
             accumulator.add(chunk)
         return accumulator.message()
+
+    def final_completion(self) -> ChatCompletion:
+        """Drain the stream and return the whole answer as the non-streamed
+        call would have: the message with its tool calls reassembled, the
+        finish reason, the usage (all zeros unless the call passed
+        `include_usage=True`), the id and the model."""
+        accumulator = ChatCompletionAccumulator()
+        for chunk in self:
+            accumulator.add(chunk)
+        return accumulator.completion()
 
     def close(self) -> None:
         self._response.close()
@@ -314,6 +389,14 @@ class AsyncStream:
         async for chunk in self:
             accumulator.add(chunk)
         return accumulator.message()
+
+    async def final_completion(self) -> ChatCompletion:
+        """As `Stream.final_completion`: drain the stream, return the whole
+        answer with its finish reason and usage."""
+        accumulator = ChatCompletionAccumulator()
+        async for chunk in self:
+            accumulator.add(chunk)
+        return accumulator.completion()
 
     async def close(self) -> None:
         await self._response.aclose()
@@ -818,13 +901,7 @@ class Conversations:
     ) -> Iterator[ConversationList]:
         """Every page of `list`, first to last, each fetched as the previous
         one is consumed."""
-        cursor: str | None = None
-        while True:
-            page = self.list(filter=filter, limit=limit, cursor=cursor)
-            yield page
-            cursor = page.next_cursor
-            if cursor is None:
-                return
+        return pages_of(lambda cursor: self.list(filter=filter, limit=limit, cursor=cursor))
 
     def items(
         self, *, filter: str | None = None, limit: int | None = None
@@ -832,8 +909,7 @@ class Conversations:
         """Every conversation of every page, one at a time -- the item-level
         paginator, walking `pages` so each page is fetched only as the
         previous one runs dry."""
-        for page in self.pages(filter=filter, limit=limit):
-            yield from page
+        return items_of(self.pages(filter=filter, limit=limit))
 
     def search(self, q: str, *, limit: int | None = None) -> SearchResults:
         """`GET /api/conversations/search`: full text over the caller's own messages."""
@@ -1111,7 +1187,7 @@ class Instructions:
     level is additive policy every member is subject to; the conversation
     level replaces the user's for that thread (`conversations.update_
     instructions` is the same idea, one thread at a time). Reads of the org
-    level are admin-only, as are writes."""
+    level are admin-only, as are writes, and both need a person's token."""
 
     def __init__(self, client: MatterWave) -> None:
         self._client = client
@@ -1137,13 +1213,19 @@ class Instructions:
 
     def org(self) -> OrgInstructions:
         """`GET /api/org/instructions`: the org's policy text.
-        `PermissionDeniedError` for anyone but an owner or admin."""
+        `PermissionDeniedError` for anyone but an owner or admin.
+
+        An API key is refused 403 "Membership is managed by a person, not an
+        API key."; this needs a person's token (`access_token=`)."""
         body, rid = self._object(_base.org_instructions_get_request())
         return OrgInstructions.from_dict(body, request_id=rid)
 
     def update_org(self, text: str) -> OrgInstructions:
         """`PUT /api/org/instructions`: set (or with "", clear) the policy
-        every member's turns are prefixed with. Owner or admin only."""
+        every member's turns are prefixed with. Owner or admin only.
+
+        An API key is refused 403 "Membership is managed by a person, not an
+        API key."; this needs a person's token (`access_token=`)."""
         body, rid = self._object(_base.org_instructions_request(text))
         return OrgInstructions.from_dict(body, request_id=rid)
 
@@ -1167,7 +1249,11 @@ def _login_expired(timed_out: bool, timeout: float | None) -> MatterWaveError:
 class DeviceAuth:
     """Sign a person in from a device with no browser of its own (RFC 8628):
     show them a code, they approve it in any browser, and the poll returns
-    an API key that acts as them. Nothing is written to disk here."""
+    an API key that acts as them. Nothing is written to disk here.
+
+    `lookup`, `approve` and `deny` are the other side, deciding a code a
+    device shows: they need a signed-in person's token (`access_token=`),
+    and an API key is refused."""
 
     def __init__(self, client: MatterWave) -> None:
         self._client = client
@@ -1221,10 +1307,41 @@ class DeviceAuth:
                 elif err.code != "authorization_pending":
                     raise
 
+    def lookup(self, user_code: str) -> DeviceLookup:
+        """`POST /api/auth/device/lookup`: which client is asking with the
+        code a device shows, before the person decides. An API key is
+        refused here: a key that could mint keys would outlive its own
+        revocation."""
+        response = self._client._send(org_req.device_lookup_request(user_code))
+        return DeviceLookup.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    def approve(self, user_code: str, *, name: str | None = None) -> DeviceDecision:
+        """`POST /api/auth/device/approve`: let the device sign in as the
+        caller; it gets an API key (named after `name`, or the client) on
+        its next poll. `ConflictError` once the code was decided."""
+        response = self._client._send(org_req.device_approve_request(user_code, name))
+        return DeviceDecision.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    def deny(self, user_code: str) -> DeviceDecision:
+        """`POST /api/auth/device/deny`: refuse the device; its poll ends in `access_denied`."""
+        response = self._client._send(org_req.device_deny_request(user_code))
+        return DeviceDecision.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
 
 class Auth:
+    """`device` signs a person in through the API and ends in an API key;
+    `person` signs them in at the identity provider and ends in their own
+    token, which the routes that manage the organisation require."""
+
     def __init__(self, client: MatterWave) -> None:
         self.device = DeviceAuth(client)
+        self.person = PersonAuth(client)
 
 
 class MatterWave:
@@ -1232,12 +1349,19 @@ class MatterWave:
     `base_url` to `MATTERWAVE_BASE_URL` (the origin, with or without `/v1`).
     `max_retry_wait` is the longest one retry may wait, in seconds: a
     `Retry-After` beyond it raises the error at once, `retry_after` set.
-    Pass `http_client` to share a connection pool or a mock transport."""
+    Pass `http_client` to share a connection pool or a mock transport.
+
+    `access_token` is a person's token from the identity provider, in place
+    of a key: the token itself, or a callable asked for it before each call
+    (`client.auth.person.session(token)` is one that refreshes). The routes
+    that manage the organisation (`CREDENTIALS` marks them `person`) take
+    nothing else; every other route takes either."""
 
     def __init__(
         self,
         *,
         api_key: str | None = None,
+        access_token: AccessToken | None = None,
         base_url: str | None = None,
         timeout: float | httpx.Timeout | None = None,
         max_retries: int = _base.DEFAULT_MAX_RETRIES,
@@ -1248,7 +1372,13 @@ class MatterWave:
         on_response: Callable[[_base.RawResponse], object] | None = None,
     ) -> None:
         self._config = _Config(
-            api_key, base_url, timeout, max_retries, default_headers, max_retry_wait
+            api_key,
+            base_url,
+            timeout,
+            max_retries,
+            default_headers,
+            max_retry_wait=max_retry_wait,
+            access_token=access_token,
         )
         _log.configure_from_env()
         self._owns_http = http_client is None
@@ -1278,18 +1408,24 @@ class MatterWave:
         self.announcements = Announcements(self)
         self.entitlements = EntitlementsClient(self)
         self.admin = Admin(self)
+        self.mcp = Mcp(self)
         self.account = Account(self)
+        self.preferences = PreferencesClient(self)
+        self.sessions = Sessions(self)
         self.exports = Exports(self)
         self.imports = Imports(self)
-        self.members = Members(self)
-        self.org = Org(self)
+        self.speech = Speech(self)
         self.billing = Billing(self)
+        self.plans = Plans(self)
+        self.policy = Policy(self)
+        self.org = OrgClient(self)
+        self.members = Members(self)
+        self.invites = Invites(self)
+        self.invite_links = InviteLinks(self)
         self.passkeys = Passkeys(self)
         self.mfa = Mfa(self)
         self.accounts = BrowserAccounts(self)
-        self.speech = Speech(self)
         self.sync = Sync(self)
-        self.mcp = Mcp(self)
 
     @property
     def base_url(self) -> str:
@@ -1349,7 +1485,7 @@ class MatterWave:
         )
 
     def me(self) -> Me:
-        """`GET /api/me`: who the key (or device-login token) acts as."""
+        """`GET /api/me`: who the key or the person's token acts as."""
         response = self._send(_base.me_request())
         return Me.from_dict(
             _base.parse_json_object(response), request_id=_base.request_id_of(response)
@@ -1402,6 +1538,7 @@ class MatterWave:
         attempt_limit = self._config.max_retries if max_retries is None else max_retries
         idempotency_key = self._config.idempotency_key_for(request)
         attempt = 0
+        bearer = self._config.bearer(request)
         while True:
             if self._closed or self._root._closed:
                 raise MatterWaveError(
@@ -1410,12 +1547,18 @@ class MatterWave:
             if self._on_request is not None:
                 self._on_request(request)
             http_request = self._config.build(
-                request, self._http, timeout=timeout, idempotency_key=idempotency_key
+                request,
+                self._http,
+                timeout=timeout,
+                idempotency_key=idempotency_key,
+                bearer=bearer,
             )
             _log.attempt(request, attempt)
             since = _log.started()
             try:
-                response = self._http.send(http_request, stream=request.stream)
+                response = self._http.send(
+                    http_request, stream=request.stream, follow_redirects=request.follow_redirects
+                )
             except httpx.HTTPError as exc:
                 _log.failure(request, exc, since)
                 if attempt >= attempt_limit or not _base.retry_after_failure(exc, request):
@@ -1665,24 +1808,16 @@ class AsyncConversations:
         body, rid = await self._object(_base.list_conversations_request(filter, limit, cursor))
         return ConversationList.from_dict(body, request_id=rid)
 
-    async def pages(
+    def pages(
         self, *, filter: str | None = None, limit: int | None = None
     ) -> AsyncIterator[ConversationList]:
-        cursor: str | None = None
-        while True:
-            page = await self.list(filter=filter, limit=limit, cursor=cursor)
-            yield page
-            cursor = page.next_cursor
-            if cursor is None:
-                return
+        return async_pages_of(lambda cursor: self.list(filter=filter, limit=limit, cursor=cursor))
 
-    async def items(
+    def items(
         self, *, filter: str | None = None, limit: int | None = None
     ) -> AsyncIterator[Conversation]:
         """As `Conversations.items`: every conversation of every page."""
-        async for page in self.pages(filter=filter, limit=limit):
-            for conversation in page:
-                yield conversation
+        return async_items_of(self.pages(filter=filter, limit=limit))
 
     async def search(self, q: str, *, limit: int | None = None) -> SearchResults:
         body, rid = await self._object(_base.search_conversations_request(q, limit))
@@ -1967,20 +2102,41 @@ class AsyncDeviceAuth:
                 elif err.code != "authorization_pending":
                     raise
 
+    async def lookup(self, user_code: str) -> DeviceLookup:
+        response = await self._client._send(org_req.device_lookup_request(user_code))
+        return DeviceLookup.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    async def approve(self, user_code: str, *, name: str | None = None) -> DeviceDecision:
+        response = await self._client._send(org_req.device_approve_request(user_code, name))
+        return DeviceDecision.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    async def deny(self, user_code: str) -> DeviceDecision:
+        response = await self._client._send(org_req.device_deny_request(user_code))
+        return DeviceDecision.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
 
 class AsyncAuth:
     def __init__(self, client: AsyncMatterWave) -> None:
         self.device = AsyncDeviceAuth(client)
+        self.person = AsyncPersonAuth(client)
 
 
 class AsyncMatterWave:
     """The awaitable client; the same surface as `MatterWave`, every
-    operation a coroutine and the stream an async iterator."""
+    operation a coroutine and the stream an async iterator. Its
+    `access_token` callable may be a coroutine function."""
 
     def __init__(
         self,
         *,
         api_key: str | None = None,
+        access_token: AsyncAccessToken | None = None,
         base_url: str | None = None,
         timeout: float | httpx.Timeout | None = None,
         max_retries: int = _base.DEFAULT_MAX_RETRIES,
@@ -1991,7 +2147,13 @@ class AsyncMatterWave:
         on_response: Callable[[_base.RawResponse], object] | None = None,
     ) -> None:
         self._config = _Config(
-            api_key, base_url, timeout, max_retries, default_headers, max_retry_wait
+            api_key,
+            base_url,
+            timeout,
+            max_retries,
+            default_headers,
+            max_retry_wait=max_retry_wait,
+            access_token=access_token,
         )
         _log.configure_from_env()
         self._owns_http = http_client is None
@@ -2020,18 +2182,24 @@ class AsyncMatterWave:
         self.announcements = AsyncAnnouncements(self)
         self.entitlements = AsyncEntitlementsClient(self)
         self.admin = AsyncAdmin(self)
+        self.mcp = AsyncMcp(self)
         self.account = AsyncAccount(self)
+        self.preferences = AsyncPreferencesClient(self)
+        self.sessions = AsyncSessions(self)
         self.exports = AsyncExports(self)
         self.imports = AsyncImports(self)
-        self.members = AsyncMembers(self)
-        self.org = AsyncOrg(self)
+        self.speech = AsyncSpeech(self)
         self.billing = AsyncBilling(self)
+        self.plans = AsyncPlans(self)
+        self.policy = AsyncPolicy(self)
+        self.org = AsyncOrgClient(self)
+        self.members = AsyncMembers(self)
+        self.invites = AsyncInvites(self)
+        self.invite_links = AsyncInviteLinks(self)
         self.passkeys = AsyncPasskeys(self)
         self.mfa = AsyncMfa(self)
         self.accounts = AsyncBrowserAccounts(self)
-        self.speech = AsyncSpeech(self)
         self.sync = AsyncSync(self)
-        self.mcp = AsyncMcp(self)
 
     @property
     def base_url(self) -> str:
@@ -2119,6 +2287,7 @@ class AsyncMatterWave:
         attempt_limit = self._config.max_retries if max_retries is None else max_retries
         idempotency_key = self._config.idempotency_key_for(request)
         attempt = 0
+        bearer = await self._config.async_bearer(request)
         while True:
             if self._closed or self._root._closed:
                 raise MatterWaveError(
@@ -2127,12 +2296,18 @@ class AsyncMatterWave:
             if self._on_request is not None:
                 self._on_request(request)
             http_request = self._config.build(
-                request, self._http, timeout=timeout, idempotency_key=idempotency_key
+                request,
+                self._http,
+                timeout=timeout,
+                idempotency_key=idempotency_key,
+                bearer=bearer,
             )
             _log.attempt(request, attempt)
             since = _log.started()
             try:
-                response = await self._http.send(http_request, stream=request.stream)
+                response = await self._http.send(
+                    http_request, stream=request.stream, follow_redirects=request.follow_redirects
+                )
             except httpx.HTTPError as exc:
                 _log.failure(request, exc, since)
                 if attempt >= attempt_limit or not _base.retry_after_failure(exc, request):

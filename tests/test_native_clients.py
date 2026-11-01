@@ -7,9 +7,7 @@ the route in api/matterwave sends and checks the request the client made
 from __future__ import annotations
 
 import json
-import re
 from datetime import datetime, timezone
-from pathlib import Path
 
 import httpx
 import pytest
@@ -24,7 +22,6 @@ from matterwave_sdk import (
     PermissionDeniedError,
 )
 
-ROUTES = Path(__file__).resolve().parents[3] / "api" / "matterwave"
 NATIVE = ("keys", "usage", "audit", "webhooks", "attachments", "library", "shares", "budget")
 
 KEY_ID = "key-0001"
@@ -63,26 +60,7 @@ def test_every_native_operation_names_a_method_on_both_clients() -> None:
             assert callable(target)
 
 
-def _api_routes() -> set[tuple[str, str]]:
-    """Every (method, path) the app's routers declare, read from the source
-    so the check needs none of the app's dependencies."""
-    found: set[tuple[str, str]] = set()
-    for source in ROUTES.glob("routes_*.py"):
-        text = source.read_text(encoding="utf-8")
-        prefixes = dict(re.findall(r'(\w+)\s*=\s*APIRouter\([^)]*prefix="([^"]*)"', text))
-        for router, method, path in re.findall(
-            r'@(\w+)\.(get|post|put|patch|delete)\(\s*"([^"]*)"', text
-        ):
-            found.add((method.upper(), prefixes.get(router, "") + path))
-    return found
-
-
-def test_every_native_operation_is_a_route_the_api_declares() -> None:
-    if not ROUTES.is_dir():
-        pytest.skip("api/matterwave is not beside the SDK in this checkout")
-    routes = _api_routes()
-    for key, (method, path) in _native_operations().items():
-        assert (method, path) in routes, f"{key}: {method} {path} is not an API route"
+# Each route is held to the platform's route document in test_route_drift.py.
 
 
 # --- keys ---------------------------------------------------------------------
