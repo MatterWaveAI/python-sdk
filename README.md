@@ -515,6 +515,32 @@ The suite runs the check whenever the TypeScript SDK sits beside this checkout
 (or `MATTERWAVE_TS_SDK` names one), and CI clones it to run the check on every
 push.
 
+## Examples and reference
+
+Each file in `examples/` runs as a script (`uv run examples/<name>.py`, which
+installs the SDK from its PEP 723 header) and reads `MATTERWAVE_BASE_URL` and
+`MATTERWAVE_API_KEY`; `tests/test_examples.py` runs every one against a fake
+API.
+
+| File | Shows |
+| --- | --- |
+| `chat.py` | one completion and its token count |
+| `streaming.py` | text as it arrives, then the finish reason and usage |
+| `structured_output.py` | `chat.completions.parse` with a validating model |
+| `webhook_receiver.py` | a server that verifies each delivery with `webhooks.unwrap` |
+| `device_sign_in.py` | device sign-in, for an API key or for a person's own token |
+| `pagination.py` | `items()`, `search_items()` and `pages_of` / `items_of` |
+| `mcp_via_sdk.py` | the `/mcp` endpoint through `client.mcp` |
+
+The API reference is generated with pdoc; the `docs` workflow builds it on
+every push and uploads it as the `api-reference` artifact. To build and check
+it locally:
+
+```
+uv run --with pdoc==15.0.4 pdoc -o reference matterwave_sdk
+uv run python scripts/check_reference.py reference
+```
+
 ## Development
 
 ```

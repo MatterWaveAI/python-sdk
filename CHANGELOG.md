@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Examples, each run by `tests/test_examples.py` against a fake API: `chat`,
+  `streaming`, `structured_output`, `webhook_receiver`, `device_sign_in`
+  (an API key or a person's token) and `pagination`.
+- A generated API reference: the `docs` workflow builds it with pdoc,
+  checks every public name has its page (`scripts/check_reference.py`) and
+  uploads it as the `api-reference` artifact.
 - A person's token in place of an API key: `access_token=` on `MatterWave`
   and `AsyncMatterWave`, the token itself or a callable asked for it before
   each call (a coroutine function on the async client). The routes that
