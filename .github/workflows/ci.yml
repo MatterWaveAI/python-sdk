@@ -34,6 +34,8 @@ jobs:
           uv run python scripts/refresh_openapi.py "$OPENAPI_SOURCE"
           git diff --stat tests/openapi.json
       - run: uv run ruff check
+      - name: No private ticket ids in tracked files
+        run: sh scripts/check-ticket-ids.sh
       - run: uv run mypy
       # The agent contract's one source is here; the TypeScript SDK carries a
       # generated copy. Check it out beside this repo (the same branch when

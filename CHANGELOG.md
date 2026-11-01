@@ -72,31 +72,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   changeover, and the timestamp must sit within 300 seconds (the platform's
   window) of the receiver's clock. `WebhookVerificationError` for a
   missing, stale or wrong signature, or a body that is not a JSON object;
-  `sign` ships beside it, the platform sender's exact function (T-201).
+  `sign` ships beside it, the platform sender's exact function.
 - Per-call `timeout=` and `max_retries=` on `chat.completions.create`,
   `embeddings.create` and the conversation `send` / `edit` / `regenerate`
   turns, overriding the client's settings for that one call — a single
   long generation need not be cut by the 60s default, nor hold the whole
-  client at its pace (T-202).
+  client at its pace.
 - `client.last_response` — the last HTTP response received, success or
   refusal: status, headers, the request id, `Retry-After` and the
-  `X-RateLimit-*` window the parsed models leave behind (T-203).
+  `X-RateLimit-*` window the parsed models leave behind.
 - `client.chat.completions.parse(response_model=Model)` — `create` plus
   validation: the answer's text read as JSON and handed to the caller's
   pydantic model (`model_validate`, or v1's `parse_obj`), whose instance
   comes back. A non-JSON answer is a `ParseError`; a schema failure raises
-  the model's own error (T-204).
+  the model's own error.
 - `stream.final_text()` on every stream — the whole answer, accumulated:
-  iterate for the pieces, call this for the whole (T-205).
+  iterate for the pieces, call this for the whole.
 - `client.conversations.items()` — every conversation of every page, one
-  at a time, the item-level paginator over `pages()` (T-205).
+  at a time, the item-level paginator over `pages()`.
 - `on_request` / `on_response` client hooks — the request about to go out
-  and the response that came back, once per attempt, for logging (T-205).
+  and the response that came back, once per attempt, for logging.
 - `close()` now refuses anything further: a request sent after close
   raises `MatterWaveError`, and an in-flight conversation turn is refused
-  at its resume rather than retried against a dead client (T-206).
+  at its resume rather than retried against a dead client.
 - `UnprocessableEntityError` — the 422 validation refusal as its own
-  class, the per-field messages joined onto the error (T-206).
+  class, the per-field messages joined onto the error.
 - `client.audit.list()` and `client.audit.export_csv()` — the org's audit
   trail (`GET /api/org/audit`, `GET /api/org/audit.csv`), the reads the org
   pane's audit tab makes: one page of `audit_events` newest first (`data`,
