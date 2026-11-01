@@ -1,8 +1,11 @@
 """429 and 5xx are retried with backoff; Retry-After wins; the budget 429
-and every 4xx are not retried; the retry count is a ceiling."""
+and every 4xx are not retried; the retry count is a ceiling. A write (POST,
+PATCH) is retried on a 429 and on a connection that was never made, but not
+on a 5xx or a failure after it was sent: the first copy may have landed."""
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
 
@@ -26,6 +29,9 @@ BUDGET = error_body("Budget used up.", "insufficient_quota", "insufficient_quota
 UPSTREAM = error_body("gateway failed", "server_error", "upstream_error")
 
 
+ME = {"subject": "u-1", "kind": "key", "roles": [], "org_id": "o-1"}
+
+
 def _ask(client: MatterWave):
     return client.chat.completions.create(messages=[{"role": "user", "content": "hi"}])
 
@@ -45,14 +51,14 @@ def test_a_429_with_retry_after_waits_exactly_that_long_then_succeeds(
 
 
 def test_a_5xx_is_retried_with_exponential_backoff(api, client, sleeps) -> None:
-    route = api.post("/v1/chat/completions").mock(
+    route = api.get("/api/me").mock(
         side_effect=[
             httpx.Response(502, json=UPSTREAM),
             httpx.Response(503, text="bad gateway"),
-            httpx.Response(200, json=completion_body()),
+            httpx.Response(200, json=ME),
         ]
     )
-    _ask(client)
+    client.me()
     assert route.call_count == 3
     # Jittered: between half and all of 0.5s, then of 1s.
     assert 0.25 <= sleeps[0] <= 0.5
@@ -60,11 +66,11 @@ def test_a_5xx_is_retried_with_exponential_backoff(api, client, sleeps) -> None:
 
 
 def test_retries_stop_at_max_retries_and_raise_the_last_answer(api, client, sleeps) -> None:
-    route = api.post("/v1/chat/completions").mock(
+    route = api.get("/api/me").mock(
         return_value=httpx.Response(502, json=UPSTREAM, headers={"X-Request-Id": REQUEST_ID})
     )
     with pytest.raises(ServerError) as caught:
-        _ask(client)
+        client.me()
     assert route.call_count == 3  # the call plus max_retries=2
     assert len(sleeps) == 2
     assert caught.value.request_id == REQUEST_ID
@@ -93,9 +99,9 @@ def test_a_4xx_is_not_retried(api, client, sleeps) -> None:
 
 def test_max_retries_zero_sends_once(api, sleeps) -> None:
     client = MatterWave(api_key="k", base_url=BASE_URL, max_retries=0)
-    route = api.post("/v1/chat/completions").mock(return_value=httpx.Response(502, json=UPSTREAM))
+    route = api.get("/api/me").mock(return_value=httpx.Response(502, json=UPSTREAM))
     with pytest.raises(ServerError):
-        _ask(client)
+        client.me()
     assert route.call_count == 1
     assert sleeps == []
 
@@ -139,17 +145,15 @@ def test_a_streamed_429_is_retried_before_the_stream_starts(api, client, sleeps)
 async def test_the_async_client_retries_the_same_way(
     api, async_client: AsyncMatterWave, sleeps
 ) -> None:
-    route = api.post("/v1/chat/completions").mock(
+    route = api.get("/api/me").mock(
         side_effect=[
             httpx.Response(429, json=RATE_LIMITED, headers={"Retry-After": "2"}),
             httpx.Response(502, json=UPSTREAM),
-            httpx.Response(200, json=completion_body()),
+            httpx.Response(200, json=ME),
         ]
     )
-    completion = await async_client.chat.completions.create(
-        messages=[{"role": "user", "content": "hi"}]
-    )
-    assert completion.content == "Hello there, friend of mine."
+    me = await async_client.me()
+    assert me.subject == "u-1"
     assert route.call_count == 3
     assert sleeps[0] == 2.0
     assert 0.5 <= sleeps[1] <= 1.0
@@ -167,3 +171,146 @@ def test_retry_after_as_an_http_date_is_converted_to_seconds() -> None:
     seconds = retry_after_of(response)
     assert seconds is not None
     assert 25 <= seconds <= 30
+
+
+# --- writes ------------------------------------------------------------------
+
+
+def test_a_5xx_on_a_post_is_raised_without_sending_it_again(api, client, sleeps) -> None:
+    route = api.post("/v1/chat/completions").mock(
+        return_value=httpx.Response(502, json=UPSTREAM, headers={"X-Request-Id": REQUEST_ID})
+    )
+    with pytest.raises(ServerError) as caught:
+        _ask(client)
+    assert route.call_count == 1
+    assert sleeps == []
+    assert caught.value.request_id == REQUEST_ID
+
+
+def test_a_5xx_on_a_patch_is_not_retried(api, client, sleeps) -> None:
+    route = api.patch("/api/keys/k-1").mock(return_value=httpx.Response(503, json=UPSTREAM))
+    with pytest.raises(ServerError):
+        client.keys.update("k-1", name="renamed")
+    assert route.call_count == 1
+
+
+@pytest.mark.parametrize(
+    "error",
+    [httpx.ConnectError("refused"), httpx.ConnectTimeout("no answer"), httpx.PoolTimeout("busy")],
+    ids=["connect", "connect-timeout", "pool-timeout"],
+)
+def test_a_post_that_never_left_the_client_is_retried(api, client, sleeps, error) -> None:
+    route = api.post("/api/conversations/c-1/report").mock(
+        side_effect=[error, httpx.Response(201, json={"id": "r-1", "status": "filed"})]
+    )
+    client.conversations.report("c-1", "unhelpful")
+    assert route.call_count == 2
+    assert len(sleeps) == 1
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        httpx.ReadTimeout("slow"),
+        httpx.ReadError("reset"),
+        httpx.WriteError("broken pipe"),
+        httpx.RemoteProtocolError("closed mid-reply"),
+    ],
+    ids=["read-timeout", "read-error", "write-error", "protocol-error"],
+)
+def test_a_post_that_may_have_landed_is_not_sent_again(api, client, sleeps, error) -> None:
+    route = api.post("/api/keys").mock(side_effect=error)
+    with pytest.raises(APIConnectionError):
+        client.keys.create("ci")
+    assert route.call_count == 1
+    assert sleeps == []
+
+
+def test_a_read_after_a_dropped_reply_is_retried(api, client, sleeps) -> None:
+    route = api.get("/api/me").mock(
+        side_effect=[httpx.ReadError("reset"), httpx.Response(200, json=ME)]
+    )
+    client.me()
+    assert route.call_count == 2
+
+
+def test_a_put_and_a_delete_are_retried_on_a_5xx(api, client, sleeps) -> None:
+    conversation = {"id": "c-1", "title": "t", "messages": []}
+    pin = api.put("/api/conversations/c-1/pin").mock(
+        side_effect=[httpx.Response(502, json=UPSTREAM), httpx.Response(200, json=conversation)]
+    )
+    revoke = api.delete("/api/keys/k-1").mock(
+        side_effect=[httpx.Response(503, json=UPSTREAM), httpx.Response(204)]
+    )
+    client.conversations.pin("c-1")
+    client.keys.revoke("k-1")
+    assert pin.call_count == 2
+    assert revoke.call_count == 2
+
+
+def test_a_conversation_send_is_not_resent_after_a_5xx(api, client, sleeps) -> None:
+    route = api.post("/api/conversations/c-1/messages").mock(
+        return_value=httpx.Response(502, json={"detail": "bad gateway"})
+    )
+    with pytest.raises(ServerError):
+        client.conversations.send("c-1", "Hi")
+    assert route.call_count == 1
+
+
+def test_an_upload_is_not_resent_after_a_5xx(api, client, sleeps) -> None:
+    import io
+
+    route = api.post("/api/attachments").mock(
+        return_value=httpx.Response(503, json={"detail": "busy"})
+    )
+    with pytest.raises(ServerError):
+        client.attachments.upload(io.BytesIO(b"hello"), "notes.txt")
+    assert route.call_count == 1
+
+
+def _rpc(answers: dict[str, list[int]]):
+    """A `/mcp` stand-in: each JSON-RPC method answers with the statuses
+    queued for it, in order, and the methods sent are recorded."""
+    sent: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        sent.append(body["method"])
+        status = answers[body["method"]].pop(0)
+        if status != 200:
+            return httpx.Response(status, json=UPSTREAM)
+        result = {"tools": []} if body["method"] == "tools/list" else {}
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "result": result})
+
+    return handler, sent
+
+
+def test_a_read_only_mcp_call_retries_like_a_read(api, client, sleeps) -> None:
+    handler, sent = _rpc({"initialize": [502, 200], "tools/list": [503, 200]})
+    api.post("/mcp").mock(side_effect=handler)
+    client.mcp.list_tools()
+    assert sent == ["initialize", "initialize", "tools/list", "tools/list"]
+
+
+def test_an_mcp_tool_call_is_not_resent_after_a_5xx(api, client, sleeps) -> None:
+    handler, sent = _rpc({"initialize": [200], "tools/call": [502, 200]})
+    api.post("/mcp").mock(side_effect=handler)
+    with pytest.raises(ServerError):
+        client.mcp.call_tool("send_message", {"conversation_id": "c-1", "content": "hi"})
+    assert sent == ["initialize", "tools/call"]
+
+
+@pytest.mark.asyncio
+async def test_the_async_client_holds_writes_back_the_same_way(
+    api, async_client: AsyncMatterWave, sleeps
+) -> None:
+    post = api.post("/v1/chat/completions").mock(return_value=httpx.Response(502, json=UPSTREAM))
+    keys = api.post("/api/keys").mock(
+        side_effect=[httpx.ConnectError("refused"), httpx.ReadError("reset")]
+    )
+    with pytest.raises(ServerError):
+        await async_client.chat.completions.create(messages=[{"role": "user", "content": "hi"}])
+    with pytest.raises(APIConnectionError):
+        await async_client.keys.create("ci")
+    assert post.call_count == 1
+    assert keys.call_count == 2

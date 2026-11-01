@@ -43,6 +43,22 @@ BACKOFF_CAP_S = 8.0
 # Waiting does not refill a budget; retrying it only delays the real answer.
 NON_RETRYABLE_429_CODES = frozenset({"insufficient_quota"})
 
+# Methods a second copy of cannot add anything the first did not: reads, and
+# the PUT and DELETE routes, which set a state rather than append one. A POST
+# or a PATCH that failed after reaching the server may have taken effect --
+# a message stored and billed, a key minted -- so it is only sent again when
+# the failure proves the server never acted on it.
+IDEMPOTENT_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "PUT", "DELETE"})
+
+# Transport failures that happen before a byte of the request is written:
+# no connection was made, or none was free in the pool. Anything later (a
+# reset, a read timeout) leaves open whether the server acted.
+UNSENT_ERRORS: tuple[type[httpx.HTTPError], ...] = (
+    httpx.ConnectError,
+    httpx.ConnectTimeout,
+    httpx.PoolTimeout,
+)
+
 
 class Operation(TypedDict):
     """One method on the client, named the way the OpenAPI document names it.
@@ -255,6 +271,15 @@ class Request:
     # This request's timeout, where the client's default is wrong for it:
     # an MCP tool that runs a whole model turn takes minutes, not seconds.
     timeout: float | None = None
+    # Whether sending it twice is harmless. None reads it off the method;
+    # a POST that only reads (an MCP `tools/list`) says True.
+    idempotent: bool | None = None
+
+    @property
+    def safe_to_repeat(self) -> bool:
+        if self.idempotent is not None:
+            return self.idempotent
+        return self.method in IDEMPOTENT_METHODS
 
 
 def index_request() -> Request:
@@ -924,11 +949,17 @@ def parse_json_object(response: httpx.Response) -> dict[str, Any]:
 # --- retries -----------------------------------------------------------------
 
 
-def should_retry(response: httpx.Response, body: bytes | None = None) -> bool:
-    """429 and 5xx, except the 429 that means the budget is spent."""
+def should_retry(
+    response: httpx.Response, body: bytes | None = None, *, safe_to_repeat: bool = True
+) -> bool:
+    """429, except the one that means the budget is spent, and 5xx for a
+    request that is safe to repeat. A 429 is the server declining before
+    the route runs, so it is retried whatever the method; a 5xx may come
+    after a write took effect (a gateway timing out on a reply the app was
+    still sending), so a POST is not sent again on one."""
     status = response.status_code
     if status >= 500:
-        return True
+        return safe_to_repeat
     if status != 429:
         return False
     raw = body if body is not None else response.content
@@ -939,6 +970,12 @@ def should_retry(response: httpx.Response, body: bytes | None = None) -> bool:
     error = payload.get("error") if isinstance(payload, dict) else None
     code = error.get("code") if isinstance(error, dict) else None
     return code not in NON_RETRYABLE_429_CODES
+
+
+def retry_after_failure(exc: httpx.HTTPError, request: Request) -> bool:
+    """Whether a request whose send raised may go again: any request that is
+    safe to repeat, and any other only when it never left the client."""
+    return request.safe_to_repeat or isinstance(exc, UNSENT_ERRORS)
 
 
 def backoff_s(attempt: int, retry_after: float | None, *, rand: random.Random | None = None) -> float:

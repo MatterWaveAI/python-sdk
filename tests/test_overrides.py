@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import httpx
 import pytest
-from conftest import completion_body
+from conftest import completion_body, error_body
 
 from matterwave_sdk import AsyncMatterWave, MatterWave, ServerError
+
+RATE_LIMITED = error_body("Rate limit exceeded.", "rate_limit_error", "rate_limit_exceeded")
 
 
 def timeout_sent(route_call: object) -> dict:
@@ -60,8 +62,8 @@ def test_a_per_call_max_retries_retries_where_the_client_would_not(
 ) -> None:
     route = api.post("/v1/chat/completions").mock(
         side_effect=[
-            httpx.Response(500, json={"error": {"message": "boom"}}),
-            httpx.Response(500, json={"error": {"message": "boom"}}),
+            httpx.Response(429, json=RATE_LIMITED),
+            httpx.Response(429, json=RATE_LIMITED),
             httpx.Response(200, json=completion_body()),
         ]
     )
@@ -89,7 +91,7 @@ def test_a_per_call_max_retries_can_refuse_the_clients_retries(api, sleeps) -> N
 def test_without_an_override_the_clients_max_retries_apply(api, sleeps) -> None:
     route = api.post("/v1/chat/completions").mock(
         side_effect=[
-            httpx.Response(500, json={"error": {"message": "boom"}}),
+            httpx.Response(429, json=RATE_LIMITED),
             httpx.Response(200, json=completion_body()),
         ]
     )

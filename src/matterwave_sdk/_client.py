@@ -12,9 +12,12 @@ every decision through `_base` and differ only in how they wait.
     for chunk in client.chat.completions.create(messages=..., stream=True):
         print(chunk.content, end="")
 
-A 429 (the per-key window) and any 5xx are retried `max_retries` times with
-backoff, honouring `Retry-After` when the server sends it; a 429 whose code
-is `insufficient_quota` is not, because waiting does not refill a budget.
+A 429 (the per-key window) is retried `max_retries` times with backoff,
+honouring `Retry-After` when the server sends it; a 429 whose code is
+`insufficient_quota` is not, because waiting does not refill a budget. A 5xx
+or a dropped connection is retried the same way for a request that is safe to
+send twice (GET, PUT, DELETE); a POST or PATCH is sent again only when the
+connection was never made, since the first copy may already have taken effect.
 Every error carries the `X-Request-Id` the server stamped on the refusal.
 """
 
@@ -1277,7 +1280,7 @@ class MatterWave:
             try:
                 response = self._http.send(http_request, stream=request.stream)
             except httpx.HTTPError as exc:
-                if attempt >= attempt_limit:
+                if attempt >= attempt_limit or not _base.retry_after_failure(exc, request):
                     raise _connection_error(exc, request) from exc
                 time.sleep(_base.backoff_s(attempt, None))
                 attempt += 1
@@ -1291,7 +1294,9 @@ class MatterWave:
             self._last_response = _base.raw_response_of(response)
             if self._on_response is not None:
                 self._on_response(self._last_response)
-            if attempt < attempt_limit and _base.should_retry(response, body):
+            if attempt < attempt_limit and _base.should_retry(
+                response, body, safe_to_repeat=request.safe_to_repeat
+            ):
                 response.close()
                 time.sleep(_base.backoff_s(attempt, _base.retry_after_of(response)))
                 attempt += 1
@@ -1923,7 +1928,7 @@ class AsyncMatterWave:
             try:
                 response = await self._http.send(http_request, stream=request.stream)
             except httpx.HTTPError as exc:
-                if attempt >= attempt_limit:
+                if attempt >= attempt_limit or not _base.retry_after_failure(exc, request):
                     raise _connection_error(exc, request) from exc
                 await asyncio.sleep(_base.backoff_s(attempt, None))
                 attempt += 1
@@ -1937,7 +1942,9 @@ class AsyncMatterWave:
             self._last_response = _base.raw_response_of(response)
             if self._on_response is not None:
                 self._on_response(self._last_response)
-            if attempt < attempt_limit and _base.should_retry(response, body):
+            if attempt < attempt_limit and _base.should_retry(
+                response, body, safe_to_repeat=request.safe_to_repeat
+            ):
                 await response.aclose()
                 await asyncio.sleep(_base.backoff_s(attempt, _base.retry_after_of(response)))
                 attempt += 1

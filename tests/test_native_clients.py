@@ -611,7 +611,7 @@ def test_attachments_upload_retries_with_the_same_bytes(api, client: MatterWave,
 
     route = api.post("/api/attachments")
     route.side_effect = [
-        httpx.Response(503, json={"detail": "busy"}),
+        httpx.Response(429, json={"detail": "busy"}),
         httpx.Response(201, json=attachment_body(), headers=H),
     ]
     client.attachments.upload(io.BytesIO(b"hello"), "notes.txt")

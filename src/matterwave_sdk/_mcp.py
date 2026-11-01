@@ -271,6 +271,9 @@ class Mcp:
             stream=False,
             headers=self._headers(method, named, protocol_version),
             timeout=timeout,
+            # Every JSON-RPC call is a POST; only `tools/call` can change
+            # anything, so the rest retry as the reads they are.
+            idempotent=method != "tools/call",
         )
         response = self._client._send(request)
         payload = _base.parse_json_object(response)
@@ -447,6 +450,7 @@ class AsyncMcp:
             stream=False,
             headers=Mcp._headers(method, named, protocol_version),
             timeout=timeout,
+            idempotent=method != "tools/call",
         )
         response = await self._client._send(request)
         payload = _base.parse_json_object(response)

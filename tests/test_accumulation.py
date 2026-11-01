@@ -133,7 +133,7 @@ def test_the_hooks_see_every_request_and_response(api, sleeps) -> None:
     )
     api.post("/v1/chat/completions").mock(
         side_effect=[
-            httpx.Response(500, json={"error": {"message": "boom"}}),
+            httpx.Response(429, json={"error": {"message": "slow down"}}),
             httpx.Response(
                 200,
                 json={
@@ -156,7 +156,7 @@ def test_the_hooks_see_every_request_and_response(api, sleeps) -> None:
     )
     client.chat.completions.create(messages=[{"role": "user", "content": "hi"}])
     assert seen_requests == ["POST /v1/chat/completions", "POST /v1/chat/completions"]
-    assert [r.status_code for r in seen_responses] == [500, 200]
+    assert [r.status_code for r in seen_responses] == [429, 200]
     assert seen_responses[-1].request_id == "req-final"
 
 

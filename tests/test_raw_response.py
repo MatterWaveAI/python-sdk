@@ -64,8 +64,8 @@ def test_a_retried_call_leaves_the_final_response(api, sleeps) -> None:
     api.post("/v1/chat/completions").mock(
         side_effect=[
             httpx.Response(
-                500,
-                json={"error": {"message": "boom"}},
+                429,
+                json={"error": {"message": "slow down"}},
                 headers={"X-Request-Id": "req-first"},
             ),
             httpx.Response(
