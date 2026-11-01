@@ -1137,7 +1137,7 @@ class AsyncEntitlementsClient(_Async):
         return Entitlements.from_dict(body, request_id=rid)
 
 
-# --- passkeys (T-228) ------------------------------------------------------------------------------
+# --- passkeys -----------------------------------------------------------------
 
 
 class Passkeys(_Sync):
@@ -1223,7 +1223,7 @@ class AsyncPasskeys(_Async):
         return PasskeyLoginFinish.from_dict(body, request_id=rid)
 
 
-# --- MFA (T-228) -------------------------------------------------------------------------------------
+# --- MFA ----------------------------------------------------------------------
 
 
 class Mfa(_Sync):
@@ -1298,7 +1298,7 @@ class AsyncMfa(_Async):
         return TotpConfirmed.from_dict(body, request_id=rid)
 
 
-# --- account switching (T-228) --------------------------------------------------------------------------
+# --- account switching --------------------------------------------------------
 
 
 class BrowserAccounts(_Sync):
@@ -1352,7 +1352,7 @@ class AsyncBrowserAccounts(_Async):
         return LoggedOut.from_dict(body, request_id=rid)
 
 
-# --- edge pairing and sync (T-229) ----------------------------------------------------------------------------
+# --- edge pairing and sync ----------------------------------------------------
 
 
 class SyncPairings(_Sync):
