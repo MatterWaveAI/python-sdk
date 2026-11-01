@@ -50,6 +50,7 @@ from ._resources import (
     AsyncLibraryClient,
     AsyncMembers,
     AsyncNotifications,
+    AsyncOrg,
     AsyncShares,
     AsyncUsageClient,
     AsyncWebhooks,
@@ -63,6 +64,7 @@ from ._resources import (
     LibraryClient,
     Members,
     Notifications,
+    Org,
     Shares,
     UsageClient,
     Webhooks,
@@ -1205,6 +1207,7 @@ class MatterWave:
         self.exports = Exports(self)
         self.imports = Imports(self)
         self.members = Members(self)
+        self.org = Org(self)
         self.mcp = Mcp(self)
 
     @property
@@ -1871,6 +1874,7 @@ class AsyncMatterWave:
         self.exports = AsyncExports(self)
         self.imports = AsyncImports(self)
         self.members = AsyncMembers(self)
+        self.org = AsyncOrg(self)
         self.mcp = AsyncMcp(self)
 
     @property

@@ -3028,3 +3028,471 @@ class LinkPreview:
         )
 
 
+# --- org management ---------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class OrgInfo:
+    """`GET /api/org`: the organisation and the caller's place in it. Any
+    member may read it."""
+
+    id: str
+    name: str
+    created_at: str
+    role: str
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> OrgInfo:
+        return cls(
+            id=_str(data.get("id")),
+            name=_str(data.get("name")),
+            created_at=_str(data.get("created_at")),
+            role=_str(data.get("role")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class OrgClosed:
+    """The answer to `org.close`: the closure plus what each side effect
+    reported, kept honest rather than assumed. A None count means that step
+    could not be confirmed; `subscription` names what happened to the Stripe
+    subscription; `identity_removed` is False when the IdP still holds the
+    org. A repeat by the owner keeps the first closure and re-runs the side
+    effects, which is how a Stripe or IdP failure is retried."""
+
+    status: str
+    closed_at: str
+    already_closed: bool
+    conversations_deleted: int
+    retention_days: int
+    members_mailed: int
+    members_not_mailed: int
+    api_keys_revoked: int | None = None
+    invites_revoked: int | None = None
+    invite_links_revoked: int | None = None
+    subscription: str | None = None
+    identity_removed: bool | None = None
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> OrgClosed:
+        identity = data.get("identity_removed")
+        return cls(
+            status=_str(data.get("status"), "closed"),
+            closed_at=_str(data.get("closed_at")),
+            already_closed=data.get("already_closed") is True,
+            conversations_deleted=_int(data.get("conversations_deleted")),
+            retention_days=_int(data.get("retention_days"), 30),
+            members_mailed=_int(data.get("members_mailed")),
+            members_not_mailed=_int(data.get("members_not_mailed")),
+            api_keys_revoked=_opt_int(data.get("api_keys_revoked")),
+            invites_revoked=_opt_int(data.get("invites_revoked")),
+            invite_links_revoked=_opt_int(data.get("invite_links_revoked")),
+            subscription=_opt_str(data.get("subscription")),
+            identity_removed=identity if isinstance(identity, bool) else None,
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class ModelPolicyRow:
+    """One row of the model allow-list pane: a model the plan permits, the
+    org's switch on it, and whether the switch can be turned off at all
+    (the house model is always allowed, whatever is sent)."""
+
+    id: str
+    label: str
+    allowed: bool
+    locked: bool = False
+    partner: bool = False
+    research_preview: bool = False
+    context_window: int | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ModelPolicyRow:
+        context_window = data.get("context_window")
+        return cls(
+            id=_str(data.get("id")),
+            label=_str(data.get("label")),
+            allowed=data.get("allowed") is True,
+            locked=data.get("locked") is True,
+            partner=data.get("partner") is True,
+            research_preview=data.get("research_preview") is True,
+            context_window=(
+                context_window
+                if isinstance(context_window, int) and not isinstance(context_window, bool)
+                else None
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class ModelPolicy:
+    """`GET /api/org/models`: the plan's models with the org's switch on
+    each. `restricted` is False while every model is allowed; `unlisted`
+    names ids the org switched off that the plan or the gateway no longer
+    offers -- harmless, but a stale entry an admin can clear."""
+
+    house_model: str
+    data: list[ModelPolicyRow]
+    unlisted: list[str]
+    restricted: bool
+    request_id: str | None = field(default=None, compare=False)
+
+    def __iter__(self) -> Any:
+        return iter(self.data)
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> ModelPolicy:
+        return cls(
+            house_model=_str(data.get("house_model")),
+            data=[ModelPolicyRow.from_dict(m) for m in _dicts(data.get("data"))],
+            unlisted=_strs(data.get("unlisted")),
+            restricted=data.get("restricted") is True,
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class SharingPolicy:
+    """`GET /api/org/sharing`: whether members may share conversations by
+    link. Switching it off stops every existing link answering at once,
+    without revoking them; switching it back on brings them back."""
+
+    enabled: bool
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> SharingPolicy:
+        return cls(enabled=data.get("enabled") is True, request_id=request_id)
+
+
+@dataclass(frozen=True)
+class OrgShare:
+    """One share link as the org's admins see it: every link any member
+    made, with `created_by`. Never the tokens -- the store does not hold
+    them. Revoke is `org.shares.revoke`."""
+
+    id: str
+    conversation_id: str
+    title: str
+    message_count: int
+    created_at: str
+    view_count: int
+    status: str
+    created_by: str
+    include_attachments: bool = False
+    expires_at: str | None = None
+    revoked_at: str | None = None
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> OrgShare:
+        return cls(
+            id=_str(data.get("id")),
+            conversation_id=_str(data.get("conversation_id")),
+            title=_str(data.get("title")),
+            message_count=_int(data.get("message_count")),
+            created_at=_str(data.get("created_at")),
+            view_count=_int(data.get("view_count")),
+            status=_str(data.get("status")),
+            created_by=_str(data.get("created_by")),
+            include_attachments=data.get("include_attachments") is True,
+            expires_at=_opt_str(data.get("expires_at")),
+            revoked_at=_opt_str(data.get("revoked_at")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class OrgShareList:
+    """`GET /api/org/shares`: every link the org's members made, newest
+    first, with who made each."""
+
+    data: list[OrgShare]
+    request_id: str | None = field(default=None, compare=False)
+
+    def __iter__(self) -> Any:
+        return iter(self.data)
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> OrgShareList:
+        return cls(
+            data=[OrgShare.from_dict(s) for s in _dicts(data.get("data"))],
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class RevokedOrgShare:
+    """The answer to `org.shares.revoke`."""
+
+    status: str
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(
+        cls, data: dict[str, Any], *, request_id: str | None = None
+    ) -> RevokedOrgShare:
+        return cls(status=_str(data.get("status"), "revoked"), request_id=request_id)
+
+
+@dataclass(frozen=True)
+class SsoSettings:
+    """`GET /api/org/sso`: whether SSO is enforced, plus `blockers`, what
+    would stop it being turned on -- the preflight runs on the read, so the
+    pane can say why the switch is unavailable before it is flipped."""
+
+    sso_required: bool
+    blockers: list[dict[str, Any]]
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> SsoSettings:
+        blockers = data.get("blockers")
+        return cls(
+            sso_required=data.get("sso_required") is True,
+            blockers=_dicts(blockers),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class RecoveryCode:
+    """A break-glass sign-in code for an SSO lock-out. `code` is in this
+    answer and nowhere else; a mint supersedes any unused one."""
+
+    id: str
+    created_at: str
+    expires_at: str
+    created_by: str
+    used_at: str | None = None
+    code: str | None = field(default=None, repr=False)
+    shown_once: bool | None = None
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> RecoveryCode:
+        shown_once = data.get("shown_once")
+        return cls(
+            id=_str(data.get("id")),
+            created_at=_str(data.get("created_at")),
+            expires_at=_str(data.get("expires_at")),
+            created_by=_str(data.get("created_by")),
+            used_at=_opt_str(data.get("used_at")),
+            code=_opt_str(data.get("code")),
+            shown_once=shown_once if isinstance(shown_once, bool) else None,
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class SsoPolicySet:
+    """The answer to `org.sso.set`. Enforcing answers with the minted
+    `recovery` code -- there is no way into the enforced state without being
+    handed the way back out; relaxing answers without one."""
+
+    sso_required: bool
+    recovery: RecoveryCode | None
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> SsoPolicySet:
+        recovery = data.get("recovery")
+        return cls(
+            sso_required=data.get("sso_required") is True,
+            recovery=(
+                RecoveryCode.from_dict(recovery) if isinstance(recovery, dict) else None
+            ),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class DnsRecord:
+    """The TXT record an org publishes to prove it owns a domain."""
+
+    type: str
+    host: str
+    name: str
+    value: str
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> DnsRecord:
+        return cls(
+            type=_str(data.get("type"), "TXT"),
+            host=_str(data.get("host")),
+            name=_str(data.get("name")),
+            value=_str(data.get("value")),
+        )
+
+
+@dataclass(frozen=True)
+class DomainChallenge:
+    """`GET /api/org/domains/{domain}/challenge`: the record to publish.
+    Stable once minted, so a mid-propagation re-open shows the same one."""
+
+    record: DnsRecord
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> DomainChallenge:
+        record = data.get("record")
+        return cls(
+            record=DnsRecord.from_dict(record if isinstance(record, dict) else {}),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class DomainClaim:
+    """One claimed domain: the claim, and whether it has been proven by the
+    DNS check (which decides whose address gets the SSO button and where a
+    JIT-provisioned user lands -- a security boundary, not a form field)."""
+
+    domain: str
+    verified: bool
+    created_at: str
+    verified_at: str | None = None
+    verified_by: str | None = None
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> DomainClaim:
+        return cls(
+            domain=_str(data.get("domain")),
+            verified=data.get("verified") is True,
+            created_at=_str(data.get("created_at")),
+            verified_at=_opt_str(data.get("verified_at")),
+            verified_by=_opt_str(data.get("verified_by")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class DomainClaimList:
+    """`GET /api/org/domains`: the org's claimed domains."""
+
+    data: list[DomainClaim]
+    request_id: str | None = field(default=None, compare=False)
+
+    def __iter__(self) -> Any:
+        return iter(self.data)
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> DomainClaimList:
+        return cls(
+            data=[DomainClaim.from_dict(d) for d in _dicts(data.get("data"))],
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class DomainVerification:
+    """The answer to `org.domains.verify`: the claim's state after one DNS
+    check. `verified` True is proven; False with `detail` means the record
+    is not there yet (202 -- publish it, or wait for propagation), which is
+    why `found` names what the resolver actually saw."""
+
+    domain: str
+    verified: bool
+    verified_at: str | None
+    verified_by: str | None
+    method: str | None
+    last_checked_at: str | None
+    last_error: str | None
+    record: DnsRecord
+    detail: str | None = None
+    found: list[str] = field(default_factory=list)
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(
+        cls, data: dict[str, Any], *, request_id: str | None = None
+    ) -> DomainVerification:
+        record = data.get("record")
+        return cls(
+            domain=_str(data.get("domain")),
+            verified=data.get("verified") is True,
+            verified_at=_opt_str(data.get("verified_at")),
+            verified_by=_opt_str(data.get("verified_by")),
+            method=_opt_str(data.get("method")),
+            last_checked_at=_opt_str(data.get("last_checked_at")),
+            last_error=_opt_str(data.get("last_error")),
+            record=DnsRecord.from_dict(record if isinstance(record, dict) else {}),
+            detail=_opt_str(data.get("detail")),
+            found=_strs(data.get("found")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class IdpConfig:
+    """One attached identity provider, as the settings pane lists it.
+    Never the client secret: it went to the IdP and is not stored here."""
+
+    provider: str
+    kind: str
+    name: str
+    issuer: str | None
+    created_at: str
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> IdpConfig:
+        return cls(
+            provider=_str(data.get("provider")),
+            kind=_str(data.get("kind")),
+            name=_str(data.get("name")),
+            issuer=_opt_str(data.get("issuer")),
+            created_at=_str(data.get("created_at")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class IdpConfigList:
+    """`GET /api/org/idp`: the org's identity providers."""
+
+    data: list[IdpConfig]
+    request_id: str | None = field(default=None, compare=False)
+
+    def __iter__(self) -> Any:
+        return iter(self.data)
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> IdpConfigList:
+        return cls(
+            data=[IdpConfig.from_dict(i) for i in _dicts(data.get("data"))],
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class MfaPolicy:
+    """`GET /api/org/mfa`: whether every member must have an authenticator.
+    Applies to password sign-in; a member arriving through the org's own
+    SSO provider has that provider's factors."""
+
+    mfa_required: bool
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> MfaPolicy:
+        return cls(mfa_required=data.get("mfa_required") is True, request_id=request_id)
+
+

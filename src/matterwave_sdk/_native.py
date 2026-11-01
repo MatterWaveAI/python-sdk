@@ -1064,3 +1064,146 @@ def join_by_link_request(token: str) -> Request:
     return Request("POST", "/api/join", {"token": token}, keyed=True, stream=False)
 
 
+# --- org management ------------------------------------------------------------------
+
+
+def get_org_request() -> Request:
+    return Request("GET", "/api/org", None, keyed=True, stream=False)
+
+
+def rename_org_request(name: str) -> Request:
+    value = name.strip()
+    if not value:
+        raise ValueError("an organisation must have a name")
+    return Request("PATCH", "/api/org", {"name": value}, keyed=True, stream=False)
+
+
+def close_org_request(confirm: str) -> Request:
+    """The organisation's name, typed exactly, is the confirmation."""
+    if not confirm or len(confirm) > 140:
+        raise ValueError("confirm must be the organisation's name")
+    return Request("POST", "/api/org/close", {"confirm": confirm}, keyed=True, stream=False)
+
+
+def get_model_policy_request() -> Request:
+    return Request("GET", "/api/org/models", None, keyed=True, stream=False)
+
+
+def put_model_policy_request(allowed: Sequence[str] | None) -> Request:
+    """The allow-list: the ids members may use, or None to lift the
+    restriction. The house model is added back whatever is sent, so it
+    never has to be listed; an id the plan does not permit is the server's
+    422 naming it."""
+    if allowed is not None and not allowed:
+        raise ValueError("allowed must name at least one model, or None to lift the restriction")
+    return Request(
+        "PUT", "/api/org/models", {"allowed": list(allowed) if allowed else None}, True, False
+    )
+
+
+def get_sharing_request() -> Request:
+    return Request("GET", "/api/org/sharing", None, keyed=True, stream=False)
+
+
+def put_sharing_request(enabled: bool) -> Request:
+    return Request("PUT", "/api/org/sharing", {"enabled": enabled}, keyed=True, stream=False)
+
+
+def list_org_shares_request() -> Request:
+    return Request("GET", "/api/org/shares", None, keyed=True, stream=False)
+
+
+def revoke_org_share_request(share_id: str) -> Request:
+    path = f"/api/org/shares/{_segment('share_id', share_id)}"
+    return Request("DELETE", path, None, keyed=True, stream=False)
+
+
+def get_sso_request() -> Request:
+    return Request("GET", "/api/org/sso", None, keyed=True, stream=False)
+
+
+def put_sso_request(sso_required: bool) -> Request:
+    return Request("PUT", "/api/org/sso", {"sso_required": sso_required}, keyed=True, stream=False)
+
+
+def mint_sso_recovery_code_request() -> Request:
+    return Request("POST", "/api/org/sso/recovery-code", None, keyed=True, stream=False)
+
+
+def list_domains_request() -> Request:
+    return Request("GET", "/api/org/domains", None, keyed=True, stream=False)
+
+
+def claim_domain_request(domain: str) -> Request:
+    return Request("POST", "/api/org/domains", {"domain": _domain(domain)}, keyed=True, stream=False)
+
+
+def _domain(domain: str) -> str:
+    value = domain.strip().lower().rstrip(".")
+    labels = value.split(".")
+    if len(labels) < 2 or not all(labels) or any(" " in label for label in labels):
+        raise ValueError(f"not a domain like example.com: {domain!r}")
+    return value
+
+
+def _domain_path(domain: str, suffix: str = "") -> str:
+    return f"/api/org/domains/{_segment('domain', _domain(domain))}{suffix}"
+
+
+def domain_challenge_request(domain: str) -> Request:
+    return Request("GET", _domain_path(domain, "/challenge"), None, keyed=True, stream=False)
+
+
+def verify_domain_request(domain: str) -> Request:
+    return Request("POST", _domain_path(domain, "/verify"), None, keyed=True, stream=False)
+
+
+def release_domain_request(domain: str) -> Request:
+    return Request("DELETE", _domain_path(domain), None, keyed=True, stream=False)
+
+
+def list_idps_request() -> Request:
+    return Request("GET", "/api/org/idp", None, keyed=True, stream=False)
+
+
+def attach_idp_request(
+    name: str, issuer: str, client_id: str, client_secret: str, scopes: Sequence[str] | None
+) -> Request:
+    """OIDC only in this slice: a plaintext issuer is refused here (no
+    provider accepts one) and the trailing slash is trimmed, as the route's
+    own validator does."""
+    if not name.strip():
+        raise ValueError("name must not be blank")
+    if not issuer.strip():
+        raise ValueError("issuer must not be blank")
+    if not issuer.strip().startswith("https://"):
+        raise ValueError("issuer must be an https:// URL")
+    if not client_id.strip():
+        raise ValueError("client_id must not be blank")
+    if not client_secret:
+        raise ValueError("client_secret must not be blank")
+    body: dict[str, Any] = {
+        "kind": "oidc",
+        "name": name.strip(),
+        "issuer": issuer.strip().rstrip("/"),
+        "client_id": client_id.strip(),
+        "client_secret": client_secret,
+    }
+    if scopes is not None:
+        body["scopes"] = list(scopes)
+    return Request("POST", "/api/org/idp", body, keyed=True, stream=False)
+
+
+def detach_idp_request(provider: str) -> Request:
+    path = f"/api/org/idp/{_segment('provider', provider)}"
+    return Request("DELETE", path, None, keyed=True, stream=False)
+
+
+def get_org_mfa_request() -> Request:
+    return Request("GET", "/api/org/mfa", None, keyed=True, stream=False)
+
+
+def put_org_mfa_request(mfa_required: bool) -> Request:
+    return Request("PUT", "/api/org/mfa", {"mfa_required": mfa_required}, keyed=True, stream=False)
+
+

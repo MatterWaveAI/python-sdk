@@ -52,6 +52,10 @@ from .models import (
     CreatedInviteLink,
     CreatedShare,
     DeletedAccount,
+    DomainChallenge,
+    DomainClaim,
+    DomainClaimList,
+    DomainVerification,
     EmailChangeCancelled,
     EmailChanged,
     EmailChangeStarted,
@@ -59,6 +63,8 @@ from .models import (
     Entitlements,
     ExportJob,
     Folder,
+    IdpConfig,
+    IdpConfigList,
     ImportJob,
     ImportJobList,
     InviteLinkList,
@@ -70,14 +76,21 @@ from .models import (
     MemberBudgetList,
     MemberList,
     Membership,
+    MfaPolicy,
+    ModelPolicy,
     NameUpdated,
     Notification,
     NotificationList,
     NotificationsReadAll,
     OnboardingCompleted,
+    OrgClosed,
+    OrgInfo,
+    OrgShareList,
     OrgUsage,
     PasswordChanged,
     Preferences,
+    RecoveryCode,
+    RevokedOrgShare,
     SearchResults,
     SentInvite,
     SessionList,
@@ -85,6 +98,9 @@ from .models import (
     SessionsLoggedOut,
     SharedConversation,
     ShareList,
+    SharingPolicy,
+    SsoPolicySet,
+    SsoSettings,
     Tag,
     TermsAccepted,
     UsageBalance,
@@ -1542,5 +1558,360 @@ class AsyncMembers(_Async):
     async def join(self, token: str) -> Membership:
         body, rid = await self._object(req.join_by_link_request(token))
         return Membership.from_dict(body, request_id=rid)
+
+
+# --- org management (T-226) -------------------------------------------------------------------
+
+
+class OrgModels(_Sync):
+    """`/api/org/models`: the model allow-list, the switches the policy
+    pane shows. **Owner or admin by membership row** -- members learn the
+    outcome from the picker, which `/api/models` already narrows for them.
+    The house model is allowed whatever is sent, so it never has to be
+    listed."""
+
+    def get(self) -> ModelPolicy:
+        """`GET /api/org/models`: the plan's models with the org's switch
+        on each, `unlisted` naming stale ids an admin can clear."""
+        body, rid = self._object(req.get_model_policy_request())
+        return ModelPolicy.from_dict(body, request_id=rid)
+
+    def set(self, allowed: Sequence[str] | None) -> ModelPolicy:
+        """`PUT /api/org/models`: the ids members may use, or None to lift
+        the restriction. An id the plan does not permit is the server's 422
+        naming it: a switch for a model nobody can reach would read as
+        policy and enforce nothing."""
+        body, rid = self._object(req.put_model_policy_request(allowed))
+        return ModelPolicy.from_dict(body, request_id=rid)
+
+
+class AsyncOrgModels(_Async):
+    async def get(self) -> ModelPolicy:
+        body, rid = await self._object(req.get_model_policy_request())
+        return ModelPolicy.from_dict(body, request_id=rid)
+
+    async def set(self, allowed: Sequence[str] | None) -> ModelPolicy:
+        body, rid = await self._object(req.put_model_policy_request(allowed))
+        return ModelPolicy.from_dict(body, request_id=rid)
+
+
+class OrgSharing(_Sync):
+    """`/api/org/sharing`: whether members may share conversations by
+    link. **Owner or admin by membership row.** Switching it off stops
+    every existing link answering at once -- the public read checks the
+    setting on each request -- without revoking them, so switching it back
+    on brings the links back."""
+
+    def get(self) -> SharingPolicy:
+        body, rid = self._object(req.get_sharing_request())
+        return SharingPolicy.from_dict(body, request_id=rid)
+
+    def set(self, enabled: bool) -> SharingPolicy:
+        """`PUT /api/org/sharing`. Audited: every member is subject to it,
+        and the audit log is where an owner later finds out who made the
+        change."""
+        body, rid = self._object(req.put_sharing_request(enabled))
+        return SharingPolicy.from_dict(body, request_id=rid)
+
+
+class AsyncOrgSharing(_Async):
+    async def get(self) -> SharingPolicy:
+        body, rid = await self._object(req.get_sharing_request())
+        return SharingPolicy.from_dict(body, request_id=rid)
+
+    async def set(self, enabled: bool) -> SharingPolicy:
+        body, rid = await self._object(req.put_sharing_request(enabled))
+        return SharingPolicy.from_dict(body, request_id=rid)
+
+
+class OrgShares(_Sync):
+    """`/api/org/shares`: every link the org's members made. **Owner or
+    admin by membership row.** Never the tokens -- the store does not hold
+    them; revoking is the one permanent withdrawal, and a link of another
+    org and one that does not exist are the same 404."""
+
+    def list(self) -> OrgShareList:
+        body, rid = self._object(req.list_org_shares_request())
+        return OrgShareList.from_dict(body, request_id=rid)
+
+    def revoke(self, share_id: str) -> RevokedOrgShare:
+        body, rid = self._object(req.revoke_org_share_request(share_id))
+        return RevokedOrgShare.from_dict(body, request_id=rid)
+
+
+class AsyncOrgShares(_Async):
+    async def list(self) -> OrgShareList:
+        body, rid = await self._object(req.list_org_shares_request())
+        return OrgShareList.from_dict(body, request_id=rid)
+
+    async def revoke(self, share_id: str) -> RevokedOrgShare:
+        body, rid = await self._object(req.revoke_org_share_request(share_id))
+        return RevokedOrgShare.from_dict(body, request_id=rid)
+
+
+class OrgSso(_Sync):
+    """`/api/org/sso`: single sign-on enforcement and its way back. **Read
+    and configure are an owner's or admin's; enforcing is the owner's
+    alone** -- the setting that can lock the organisation out of its own
+    account. Enabling runs a preflight first and mints a break-glass
+    `recovery` code in the same response, shown exactly once: there is no
+    way into the enforced state without being handed the way out of it.
+    Disabling is open to any admin, because undoing a lock-out should not
+    need the person who caused it."""
+
+    def get(self) -> SsoSettings:
+        """`GET /api/org/sso`: the policy, plus the `blockers` that would
+        stop it being turned on -- the preflight runs on the read."""
+        body, rid = self._object(req.get_sso_request())
+        return SsoSettings.from_dict(body, request_id=rid)
+
+    def set(self, sso_required: bool) -> SsoPolicySet:
+        """`PUT /api/org/sso`. Enforcing answers with the minted
+        `recovery` code; a preflight failure (no verified domain, no
+        provider) is a 409 before anything is set."""
+        body, rid = self._object(req.put_sso_request(sso_required))
+        return SsoPolicySet.from_dict(body, request_id=rid)
+
+    def recovery_code(self) -> RecoveryCode:
+        """`POST /api/org/sso/recovery-code` (201): a fresh break-glass
+        code, superseding any unused one. Owner only, and audited."""
+        body, rid = self._object(req.mint_sso_recovery_code_request())
+        recovery = body.get("recovery")
+        return RecoveryCode.from_dict(
+            recovery if isinstance(recovery, dict) else {}, request_id=rid
+        )
+
+
+class AsyncOrgSso(_Async):
+    async def get(self) -> SsoSettings:
+        body, rid = await self._object(req.get_sso_request())
+        return SsoSettings.from_dict(body, request_id=rid)
+
+    async def set(self, sso_required: bool) -> SsoPolicySet:
+        body, rid = await self._object(req.put_sso_request(sso_required))
+        return SsoPolicySet.from_dict(body, request_id=rid)
+
+    async def recovery_code(self) -> RecoveryCode:
+        body, rid = await self._object(req.mint_sso_recovery_code_request())
+        recovery = body.get("recovery")
+        return RecoveryCode.from_dict(
+            recovery if isinstance(recovery, dict) else {}, request_id=rid
+        )
+
+
+class OrgDomains(_Sync):
+    """`/api/org/domains`: the email domains the org claims. **Owner or
+    admin by membership row.** The claim decides whose address gets the SSO
+    button and where a JIT-provisioned user lands, so proving it is a DNS
+    check, not a form field: claim, publish the challenge's TXT record,
+    verify."""
+
+    def list(self) -> DomainClaimList:
+        body, rid = self._object(req.list_domains_request())
+        return DomainClaimList.from_dict(body, request_id=rid)
+
+    def claim(self, domain: str) -> DomainClaim:
+        """`POST /api/org/domains` (201): claimed, unverified. A claim
+        another org holds is a 409 with no hint of whose."""
+        body, rid = self._object(req.claim_domain_request(domain))
+        return DomainClaim.from_dict(body, request_id=rid)
+
+    def challenge(self, domain: str) -> DomainChallenge:
+        """`GET /api/org/domains/{domain}/challenge`: the TXT record to
+        publish. Stable once minted, so a mid-propagation re-open shows the
+        same one."""
+        body, rid = self._object(req.domain_challenge_request(domain))
+        return DomainChallenge.from_dict(body, request_id=rid)
+
+    def verify(self, domain: str) -> DomainVerification:
+        """`POST /api/org/domains/{domain}/verify`: one DNS check. Three
+        answers, because an admin needs to know which is which: `verified`
+        True (200, proven), `verified` False with `detail` (202 -- the
+        record is not there yet; publish it or wait), and the 503 the
+        resolver being down raises as."""
+        body, rid = self._object(req.verify_domain_request(domain))
+        return DomainVerification.from_dict(body, request_id=rid)
+
+    def release(self, domain: str) -> None:
+        """`DELETE /api/org/domains/{domain}`."""
+        self._none(req.release_domain_request(domain))
+
+
+class AsyncOrgDomains(_Async):
+    async def list(self) -> DomainClaimList:
+        body, rid = await self._object(req.list_domains_request())
+        return DomainClaimList.from_dict(body, request_id=rid)
+
+    async def claim(self, domain: str) -> DomainClaim:
+        body, rid = await self._object(req.claim_domain_request(domain))
+        return DomainClaim.from_dict(body, request_id=rid)
+
+    async def challenge(self, domain: str) -> DomainChallenge:
+        body, rid = await self._object(req.domain_challenge_request(domain))
+        return DomainChallenge.from_dict(body, request_id=rid)
+
+    async def verify(self, domain: str) -> DomainVerification:
+        body, rid = await self._object(req.verify_domain_request(domain))
+        return DomainVerification.from_dict(body, request_id=rid)
+
+    async def release(self, domain: str) -> None:
+        await self._none(req.release_domain_request(domain))
+
+
+class OrgIdp(_Sync):
+    """`/api/org/idp`: the identity providers sign-in is offered through.
+    **Owner or admin by membership row.** Never the client secret: it went
+    to the IdP and is not stored here."""
+
+    def list(self) -> IdpConfigList:
+        body, rid = self._object(req.list_idps_request())
+        return IdpConfigList.from_dict(body, request_id=rid)
+
+    def attach(
+        self,
+        name: str,
+        issuer: str,
+        client_id: str,
+        client_secret: str,
+        *,
+        scopes: Sequence[str] | None = None,
+    ) -> IdpConfig:
+        """`POST /api/org/idp` (201): attach an OIDC provider. The issuer
+        must be https; the IdP is asked first, so a refusal there (a 422
+        naming the issuer) attaches nothing."""
+        body, rid = self._object(
+            req.attach_idp_request(name, issuer, client_id, client_secret, scopes)
+        )
+        return IdpConfig.from_dict(body, request_id=rid)
+
+    def detach(self, provider: str) -> None:
+        """`DELETE /api/org/idp/{provider}`: the row first, then the IdP's,
+        so nobody is sent to a provider that is about to disappear."""
+        self._none(req.detach_idp_request(provider))
+
+
+class AsyncOrgIdp(_Async):
+    async def list(self) -> IdpConfigList:
+        body, rid = await self._object(req.list_idps_request())
+        return IdpConfigList.from_dict(body, request_id=rid)
+
+    async def attach(
+        self,
+        name: str,
+        issuer: str,
+        client_id: str,
+        client_secret: str,
+        *,
+        scopes: Sequence[str] | None = None,
+    ) -> IdpConfig:
+        body, rid = await self._object(
+            req.attach_idp_request(name, issuer, client_id, client_secret, scopes)
+        )
+        return IdpConfig.from_dict(body, request_id=rid)
+
+    async def detach(self, provider: str) -> None:
+        await self._none(req.detach_idp_request(provider))
+
+
+class OrgMfaPolicy(_Sync):
+    """`/api/org/mfa`: whether every member must have an authenticator.
+    Read by any admin; the switch is the owner's in both directions.
+    Applies to password sign-in -- a member arriving through the org's own
+    SSO provider has that provider's factors."""
+
+    def get(self) -> MfaPolicy:
+        body, rid = self._object(req.get_org_mfa_request())
+        return MfaPolicy.from_dict(body, request_id=rid)
+
+    def set(self, mfa_required: bool) -> MfaPolicy:
+        body, rid = self._object(req.put_org_mfa_request(mfa_required))
+        return MfaPolicy.from_dict(body, request_id=rid)
+
+
+class AsyncOrgMfaPolicy(_Async):
+    async def get(self) -> MfaPolicy:
+        body, rid = await self._object(req.get_org_mfa_request())
+        return MfaPolicy.from_dict(body, request_id=rid)
+
+    async def set(self, mfa_required: bool) -> MfaPolicy:
+        body, rid = await self._object(req.put_org_mfa_request(mfa_required))
+        return MfaPolicy.from_dict(body, request_id=rid)
+
+
+class Org(_Sync):
+    """`/api/org`: the organisation itself, its sign-in policy and its
+    model policy.
+
+    **Scoping.** Reads of the org and the caller's role are any member's.
+    Everything else here is **owner or admin by membership row** -- the
+    `organization_members` row decides, never a token claim, so an API key
+    is refused on the admin routes outright and a signed-in session is what
+    answers them (the org trail under `client.audit` is the same). Closing
+    the org is the owner's alone. Each mutation writes an audit row."""
+
+    def __init__(self, client: MatterWave) -> None:
+        super().__init__(client)
+        self.models = OrgModels(client)
+        self.sharing = OrgSharing(client)
+        self.shares = OrgShares(client)
+        self.sso = OrgSso(client)
+        self.domains = OrgDomains(client)
+        self.idp = OrgIdp(client)
+        self.mfa = OrgMfaPolicy(client)
+
+    def get(self) -> OrgInfo:
+        """`GET /api/org`: the org and the caller's place in it."""
+        body, rid = self._object(req.get_org_request())
+        return OrgInfo.from_dict(body, request_id=rid)
+
+    def rename(self, name: str) -> OrgInfo:
+        """`PATCH /api/org`: give the org a real name. Owner or admin."""
+        body, rid = self._object(req.rename_org_request(name))
+        return OrgInfo.from_dict(body, request_id=rid)
+
+    def close(self, confirm: str) -> OrgClosed:
+        """`POST /api/org/close`: **close the workspace, for everyone in
+        it.** Owner only, and `confirm` must be the organisation's name
+        typed exactly.
+
+        The closure lands first: from that commit every request from the org
+        is a 410, whatever happens next. The side effects follow and are
+        reported on the answer rather than assumed -- API keys, invites and
+        invite links revoked, the Stripe subscription cancelled at once, the
+        members mailed, and last (never fatal) the IdP asked to delete the
+        org. Conversations are soft-deleted and erased after
+        `retention_days`. Idempotent: a repeat keeps the first closure and
+        re-runs the side effects, which is how a Stripe or IdP failure is
+        retried."""
+        body, rid = self._object(req.close_org_request(confirm))
+        return OrgClosed.from_dict(body, request_id=rid)
+
+
+class AsyncOrg(_Async):
+    """As `Org`; every method a coroutine. The same scoping: any member
+    reads; owner or admin (by membership row) for the rest; owner to close
+    or enforce SSO."""
+
+    def __init__(self, client: AsyncMatterWave) -> None:
+        super().__init__(client)
+        self.models = AsyncOrgModels(client)
+        self.sharing = AsyncOrgSharing(client)
+        self.shares = AsyncOrgShares(client)
+        self.sso = AsyncOrgSso(client)
+        self.domains = AsyncOrgDomains(client)
+        self.idp = AsyncOrgIdp(client)
+        self.mfa = AsyncOrgMfaPolicy(client)
+
+    async def get(self) -> OrgInfo:
+        body, rid = await self._object(req.get_org_request())
+        return OrgInfo.from_dict(body, request_id=rid)
+
+    async def rename(self, name: str) -> OrgInfo:
+        body, rid = await self._object(req.rename_org_request(name))
+        return OrgInfo.from_dict(body, request_id=rid)
+
+    async def close(self, confirm: str) -> OrgClosed:
+        body, rid = await self._object(req.close_org_request(confirm))
+        return OrgClosed.from_dict(body, request_id=rid)
 
 
