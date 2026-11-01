@@ -174,8 +174,23 @@ APP_OPERATIONS: dict[str, tuple[str, str]] = {
     "budget.members": ("GET", "/api/budget/members"),
     "budget.set_member_default_cap": ("PUT", "/api/budget/members"),
     "budget.set_member_cap": ("PUT", "/api/budget/members/{subject}"),
+    # --- account self-service (T-207) ------------------------------------------
+    "account.rename": ("PATCH", "/api/me"),
+    "account.accept_terms": ("POST", "/api/me/accept-terms"),
+    "account.change_password": ("POST", "/api/me/password"),
+    "account.email_state": ("GET", "/api/me/email"),
+    "account.start_email_change": ("POST", "/api/me/email"),
+    "account.verify_email_change": ("POST", "/api/me/email/verify"),
+    "account.cancel_email_change": ("POST", "/api/me/email/cancel"),
+    "account.resend_email_change_code": ("POST", "/api/me/email/resend"),
+    "account.sessions": ("GET", "/api/me/sessions"),
+    "account.revoke_session": ("DELETE", "/api/me/sessions/{session_id}"),
+    "account.logout_others": ("POST", "/api/me/sessions/revoke-others"),
+    "account.preferences": ("GET", "/api/me/preferences"),
+    "account.update_preferences": ("PUT", "/api/me/preferences"),
+    "account.delete": ("DELETE", "/api/me"),
+    "account.onboarding_complete": ("POST", "/api/me/onboarding/complete"),
 }
-
 
 Role = Literal["system", "user", "assistant", "tool"]
 
@@ -252,6 +267,9 @@ class Request:
     # A multipart upload: field name -> (filename, bytes, content type). The
     # bytes are held whole so a retried upload sends the same file again.
     files: Mapping[str, tuple[str, bytes, str]] | None = None
+    # Form fields beside a multipart upload (speech's language hint), as
+    # httpx takes them.
+    data: Mapping[str, str] | None = None
     # This request's timeout, where the client's default is wrong for it:
     # an MCP tool that runs a whole model turn takes minutes, not seconds.
     timeout: float | None = None

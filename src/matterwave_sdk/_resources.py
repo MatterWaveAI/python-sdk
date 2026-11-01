@@ -1,6 +1,8 @@
 """The native API clients: `keys`, `usage`, `audit`, `webhooks`,
 `attachments`, `library`, `shares`, `budget`, `notifications`,
-`announcements`, `entitlements` and the `admin` namespace, sync and async.
+`announcements`, `entitlements`, the `admin` namespace and the account
+families -- `account`, `exports`/`imports`, `members`, `org`, `billing`,
+`passkeys`, `mfa`, `accounts`, `speech` and `sync` -- sync and async.
 Each method is one route; the request is built in `_native` and the answer
 parsed into `models`, so the two halves here differ only in `await`.
 
@@ -18,11 +20,17 @@ own rows, announcements are the operator's banner anyone signed in reads,
 and entitlements are the plan facts any member of the org may read. The
 `admin` namespace is the exception to all of it: the operator's own
 routes, the platform `admin` role, not an API key's.
+
+The account families keep the routes' own scoping, documented on each
+class: the password, email and deletion writes refuse an API key outright
+(a session answers); the org and members panes gate on the membership row
+(owner or admin); and the machine half of `sync` wants the device key the
+box paired with, not a session.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 from typing import IO, TYPE_CHECKING, Any
 
@@ -42,19 +50,32 @@ from .models import (
     Conversation,
     ConversationTags,
     CreatedShare,
+    DeletedAccount,
+    EmailChangeCancelled,
+    EmailChanged,
+    EmailChangeStarted,
+    EmailChangeState,
     Entitlements,
     Folder,
     Library,
     MemberBudget,
     MemberBudgetList,
+    NameUpdated,
     Notification,
     NotificationList,
     NotificationsReadAll,
+    OnboardingCompleted,
     OrgUsage,
+    PasswordChanged,
+    Preferences,
     SearchResults,
+    SessionList,
+    SessionRevoked,
+    SessionsLoggedOut,
     SharedConversation,
     ShareList,
     Tag,
+    TermsAccepted,
     UsageBalance,
     WebhookDelivery,
     WebhookDeliveryList,
@@ -977,3 +998,231 @@ class AsyncEntitlementsClient(_Async):
     async def get(self) -> Entitlements:
         body, rid = await self._object(req.entitlements_request())
         return Entitlements.from_dict(body, request_id=rid)
+
+
+# --- account self-service (T-207) ---------------------------------------------------
+
+
+class Account(_Sync):
+    """The person's own account, beyond reading it: the writes the Account
+    and Preferences panes make, and the two that do not come back from
+    either. Every route here is about the caller and nobody else, so there
+    is no role gate and no org scoping.
+
+    Three of these refuse an API key outright and answer a signed-in
+    session only -- the password change, both email-change steps that move
+    the address, and the account deletion. A key acts for its owner, and
+    the owner's password, address and existence are not the key's to
+    change; the rest take a key as their owner."""
+
+    def rename(self, name: str) -> NameUpdated:
+        """`PATCH /api/me`: the display name, whitespace-collapsed, at most
+        120 characters once collapsed. The provider is updated before the
+        row, so what `me()` shows and what the next login says never
+        disagree."""
+        body, rid = self._object(req.rename_account_request(name))
+        return NameUpdated.from_dict(body, request_id=rid)
+
+    def accept_terms(self, version: str) -> TermsAccepted:
+        """Record acceptance of the terms. Only the current version is
+        accepted -- the one `me().terms_version` names -- and a stale
+        constant is the server's 422."""
+        body, rid = self._object(req.accept_terms_request(version))
+        return TermsAccepted.from_dict(body, request_id=rid)
+
+    def change_password(self, current_password: str, new_password: str) -> PasswordChanged:
+        """`POST /api/me/password`. **Session only**: an API key is refused
+        with a 403, because its owner's password is not the key's to
+        change. The new password needs at least 12 characters (NIST 800-63B:
+        length, nothing else); the current one is checked on every call, so
+        this is rate-limited hard server-side. On success every *other*
+        session is ended -- a changed password usually answers a device the
+        person no longer trusts -- and `revoked` counts them. Neither
+        password is logged, here or anywhere."""
+        body, rid = self._object(req.change_password_request(current_password, new_password))
+        return PasswordChanged.from_dict(body, request_id=rid)
+
+    def email_state(self) -> EmailChangeState:
+        """`GET /api/me/email`: the sign-in address and any change still
+        waiting for its code, so a client can come back to the code step
+        after a reload. Session only."""
+        body, rid = self._object(req.email_change_state_request())
+        return EmailChangeState.from_dict(body, request_id=rid)
+
+    def start_email_change(self, new_email: str, current_password: str) -> EmailChangeStarted:
+        """`POST /api/me/email`: mail a code to the new address. **Session
+        only.** Nothing changes until `verify_email_change` takes the code
+        back -- the old address keeps signing in. An account with no
+        password signs in through its org's SSO, whose directory owns the
+        address: that is a 409 (`code` `sso_managed`), not a change."""
+        body, rid = self._object(req.start_email_change_request(new_email, current_password))
+        return EmailChangeStarted.from_dict(body, request_id=rid)
+
+    def verify_email_change(self, code: str) -> EmailChanged:
+        """`POST /api/me/email/verify`: the code back, the address moved.
+        **Session only.** Every other session is ended, the change is
+        audited, and the old address is told -- a takeover that moves the
+        address first is otherwise silent. The requesting session keeps
+        going."""
+        body, rid = self._object(req.verify_email_change_request(code))
+        return EmailChanged.from_dict(body, request_id=rid)
+
+    def cancel_email_change(self) -> EmailChangeCancelled:
+        """`POST /api/me/email/cancel`: abandon a started change; the
+        mailed code stops working. Harmless when nothing is pending.
+        Session only."""
+        body, rid = self._object(req.cancel_email_change_request())
+        return EmailChangeCancelled.from_dict(body, request_id=rid)
+
+    def resend_email_change_code(self) -> EmailChangeStarted:
+        """`POST /api/me/email/resend`: a fresh code for the pending
+        address. Refused with a 409 when nothing is pending. Session only."""
+        body, rid = self._object(req.resend_email_change_request())
+        return EmailChangeStarted.from_dict(body, request_id=rid)
+
+    def sessions(self) -> SessionList:
+        """`GET /api/me/sessions`: the live sign-ins, the one making this
+        request flagged. `current_id` is None for an API caller, and then
+        nothing is flagged."""
+        body, rid = self._object(req.list_sessions_request())
+        return SessionList.from_dict(body, request_id=rid)
+
+    def revoke_session(self, session_id: str) -> SessionRevoked:
+        """`DELETE /api/me/sessions/{id}`: sign one session out. The
+        caller's own is allowed -- it is "sign out" -- and `current` says
+        when that was the one."""
+        body, rid = self._object(req.revoke_session_request(session_id))
+        return SessionRevoked.from_dict(body, request_id=rid)
+
+    def logout_others(self) -> SessionsLoggedOut:
+        """`POST /api/me/sessions/revoke-others`: every session but this
+        one; `revoked` counts them. With no session of its own (an API
+        caller) there is no "this one" to keep and every row goes."""
+        body, rid = self._object(req.logout_others_request())
+        return SessionsLoggedOut.from_dict(body, request_id=rid)
+
+    def preferences(self) -> Preferences:
+        """`GET /api/me/preferences`: the mail toggles and locale."""
+        body, rid = self._object(req.get_preferences_request())
+        return Preferences.from_dict(body, request_id=rid)
+
+    def update_preferences(
+        self,
+        *,
+        email: Mapping[str, Any] | None = None,
+        notifications: Mapping[str, Any] | None = None,
+        locale: str | None = None,
+    ) -> Preferences:
+        """`PUT /api/me/preferences`. The route replaces the whole shape,
+        so every group is always sent: a group left out is the defaults,
+        not "leave it alone". `email` takes the toggles as a mapping
+        (`{"product_updates": True}` -- `billing_receipts` is transactional
+        mail and may not be turned off), `notifications`
+        `{"budget_warn": False}`, `locale` a BCP-47 tag or None; anything
+        else is the server's 422."""
+        body, rid = self._object(
+            req.put_preferences_request(email=email, notifications=notifications, locale=locale)
+        )
+        return Preferences.from_dict(body, request_id=rid)
+
+    def onboarding_complete(self) -> OnboardingCompleted:
+        """`POST /api/me/onboarding/complete`: the first-run walkthrough was
+        finished or skipped -- both count. Idempotent."""
+        body, rid = self._object(req.onboarding_complete_request())
+        return OnboardingCompleted.from_dict(body, request_id=rid)
+
+    def delete(self, confirm: str = req.DELETE_ACCOUNT_PHRASE) -> DeletedAccount:
+        """`DELETE /api/me`: **delete the account, for good.**
+
+        Every conversation the caller owns is soft-deleted (rows now, bytes
+        within `retention_days`), their API keys are revoked, their custom
+        instructions are hard-deleted, and the identity provider is asked to
+        retire the login. There is no undo: this is the route the "type a
+        phrase" dialog backs, and `confirm` must be exactly
+        `"delete my account"` -- the same check the route makes, made here
+        so a script cannot do by accident what a person is made to type.
+
+        The last owner of an org that still has members is refused with a
+        409: hand the org over first. **A signed-in session is required** --
+        the route refuses an API key -- and the answer's
+        `identity_removed` is False when the data is gone but the login is
+        not, which the caller must say rather than smooth over."""
+        body, rid = self._object(req.delete_account_request(confirm))
+        return DeletedAccount.from_dict(body, request_id=rid)
+
+
+class AsyncAccount(_Async):
+    """As `Account`; every method a coroutine."""
+
+    async def rename(self, name: str) -> NameUpdated:
+        body, rid = await self._object(req.rename_account_request(name))
+        return NameUpdated.from_dict(body, request_id=rid)
+
+    async def accept_terms(self, version: str) -> TermsAccepted:
+        body, rid = await self._object(req.accept_terms_request(version))
+        return TermsAccepted.from_dict(body, request_id=rid)
+
+    async def change_password(self, current_password: str, new_password: str) -> PasswordChanged:
+        body, rid = await self._object(
+            req.change_password_request(current_password, new_password)
+        )
+        return PasswordChanged.from_dict(body, request_id=rid)
+
+    async def email_state(self) -> EmailChangeState:
+        body, rid = await self._object(req.email_change_state_request())
+        return EmailChangeState.from_dict(body, request_id=rid)
+
+    async def start_email_change(self, new_email: str, current_password: str) -> EmailChangeStarted:
+        body, rid = await self._object(req.start_email_change_request(new_email, current_password))
+        return EmailChangeStarted.from_dict(body, request_id=rid)
+
+    async def verify_email_change(self, code: str) -> EmailChanged:
+        body, rid = await self._object(req.verify_email_change_request(code))
+        return EmailChanged.from_dict(body, request_id=rid)
+
+    async def cancel_email_change(self) -> EmailChangeCancelled:
+        body, rid = await self._object(req.cancel_email_change_request())
+        return EmailChangeCancelled.from_dict(body, request_id=rid)
+
+    async def resend_email_change_code(self) -> EmailChangeStarted:
+        body, rid = await self._object(req.resend_email_change_request())
+        return EmailChangeStarted.from_dict(body, request_id=rid)
+
+    async def sessions(self) -> SessionList:
+        body, rid = await self._object(req.list_sessions_request())
+        return SessionList.from_dict(body, request_id=rid)
+
+    async def revoke_session(self, session_id: str) -> SessionRevoked:
+        body, rid = await self._object(req.revoke_session_request(session_id))
+        return SessionRevoked.from_dict(body, request_id=rid)
+
+    async def logout_others(self) -> SessionsLoggedOut:
+        body, rid = await self._object(req.logout_others_request())
+        return SessionsLoggedOut.from_dict(body, request_id=rid)
+
+    async def preferences(self) -> Preferences:
+        body, rid = await self._object(req.get_preferences_request())
+        return Preferences.from_dict(body, request_id=rid)
+
+    async def update_preferences(
+        self,
+        *,
+        email: Mapping[str, Any] | None = None,
+        notifications: Mapping[str, Any] | None = None,
+        locale: str | None = None,
+    ) -> Preferences:
+        body, rid = await self._object(
+            req.put_preferences_request(email=email, notifications=notifications, locale=locale)
+        )
+        return Preferences.from_dict(body, request_id=rid)
+
+    async def onboarding_complete(self) -> OnboardingCompleted:
+        body, rid = await self._object(req.onboarding_complete_request())
+        return OnboardingCompleted.from_dict(body, request_id=rid)
+
+    async def delete(self, confirm: str = req.DELETE_ACCOUNT_PHRASE) -> DeletedAccount:
+        """As `Account.delete`: the account, for good. Session only."""
+        body, rid = await self._object(req.delete_account_request(confirm))
+        return DeletedAccount.from_dict(body, request_id=rid)
+
+

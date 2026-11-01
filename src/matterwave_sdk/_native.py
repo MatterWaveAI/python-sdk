@@ -10,7 +10,7 @@ scopes), `UNSET` marks "not passed" and None is sent as null.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 from typing import IO, Any
 from urllib.parse import parse_qsl, urlsplit
@@ -714,3 +714,173 @@ def entitlements_request() -> Request:
     """What the caller's org may do. Member-readable, like `/api/budget`:
     a person must be able to see the limit that will stop their request."""
     return Request("GET", "/api/entitlements", None, keyed=True, stream=False)
+
+
+# --- account self-service ---------------------------------------------------------
+
+
+DELETE_ACCOUNT_PHRASE = "delete my account"
+"""What `DELETE /api/me` requires in the body, and what `account.delete`
+checks here as well: an irreversible account-wide action should not be
+reachable by a bare delete, whatever the client is."""
+
+PASSWORD_MIN_LENGTH = 12
+PASSWORD_MAX_LENGTH = 256
+NAME_MAX_LENGTH = 120
+EMAIL_MAX_LENGTH = 254
+TERMS_VERSION_MAX_LENGTH = 32
+
+SPEECH_AUDIO_TYPES = (
+    "audio/webm",
+    "audio/ogg",
+    "audio/mp4",
+    "audio/mpeg",
+    "audio/mp3",
+    "audio/wav",
+    "audio/x-wav",
+    "audio/wave",
+    "audio/flac",
+    "audio/x-m4a",
+    "audio/m4a",
+    "audio/aac",
+    "video/webm",
+    "video/mp4",
+)
+
+
+def rename_account_request(name: str) -> Request:
+    """The Account pane's rename. The server collapses whitespace and
+    bounds the result; the shape is checked here so a name of only spaces
+    is refused before the request is spent."""
+    value = " ".join(name.split())
+    if not value:
+        raise ValueError("a name must not be empty")
+    if len(value) > NAME_MAX_LENGTH:
+        raise ValueError(f"a name must be at most {NAME_MAX_LENGTH} characters")
+    return Request("PATCH", "/api/me", {"full_name": value}, keyed=True, stream=False)
+
+
+def accept_terms_request(version: str) -> Request:
+    if not version or len(version) > TERMS_VERSION_MAX_LENGTH:
+        raise ValueError(f"version must be 1 to {TERMS_VERSION_MAX_LENGTH} characters")
+    return Request("POST", "/api/me/accept-terms", {"version": version}, keyed=True, stream=False)
+
+
+def _password(value: str, name: str) -> str:
+    """The bounds the route's model takes; the length floor is a 400 with a
+    `code` on the wire, which is the caller's to sort onto a field, so the
+    floor is checked here where a ValueError can say it plainly."""
+    if not value:
+        raise ValueError(f"{name} must be non-empty")
+    if len(value) > PASSWORD_MAX_LENGTH:
+        raise ValueError(f"{name} must be at most {PASSWORD_MAX_LENGTH} characters")
+    return value
+
+
+def change_password_request(current_password: str, new_password: str) -> Request:
+    _password(current_password, "current_password")
+    new = _password(new_password, "new_password")
+    if len(new) < PASSWORD_MIN_LENGTH:
+        raise ValueError(f"new_password must be at least {PASSWORD_MIN_LENGTH} characters")
+    return Request(
+        "POST",
+        "/api/me/password",
+        {"current_password": current_password, "new_password": new},
+        keyed=True,
+        stream=False,
+    )
+
+
+def _email_address(value: str) -> str:
+    """Signup's shape rule, read here too: lowercased, one `@`, a local
+    part, a dotted domain. The provider validates the address for real."""
+    cleaned = value.strip().lower()
+    local, at, domain = cleaned.partition("@")
+    if not at or not local or "." not in domain or domain.startswith(".") or " " in cleaned:
+        raise ValueError(f"not an email address: {value!r}")
+    if len(cleaned) > EMAIL_MAX_LENGTH:
+        raise ValueError(f"an email address is at most {EMAIL_MAX_LENGTH} characters")
+    return cleaned
+
+
+def start_email_change_request(new_email: str, current_password: str) -> Request:
+    _password(current_password, "current_password")
+    return Request(
+        "POST",
+        "/api/me/email",
+        {"new_email": _email_address(new_email), "current_password": current_password},
+        keyed=True,
+        stream=False,
+    )
+
+
+def verify_email_change_request(code: str) -> Request:
+    if not code or not code.strip() or len(code) > 64:
+        raise ValueError("code must be 1 to 64 characters")
+    return Request("POST", "/api/me/email/verify", {"code": code.strip()}, keyed=True, stream=False)
+
+
+def cancel_email_change_request() -> Request:
+    return Request("POST", "/api/me/email/cancel", None, keyed=True, stream=False)
+
+
+def email_change_state_request() -> Request:
+    return Request("GET", "/api/me/email", None, keyed=True, stream=False)
+
+
+def resend_email_change_request() -> Request:
+    return Request("POST", "/api/me/email/resend", None, keyed=True, stream=False)
+
+
+def list_sessions_request() -> Request:
+    return Request("GET", "/api/me/sessions", None, keyed=True, stream=False)
+
+
+def revoke_session_request(session_id: str) -> Request:
+    path = f"/api/me/sessions/{_segment('session_id', session_id)}"
+    return Request("DELETE", path, None, keyed=True, stream=False)
+
+
+def logout_others_request() -> Request:
+    return Request("POST", "/api/me/sessions/revoke-others", None, keyed=True, stream=False)
+
+
+def get_preferences_request() -> Request:
+    return Request("GET", "/api/me/preferences", None, keyed=True, stream=False)
+
+
+def put_preferences_request(
+    *,
+    email: Mapping[str, Any] | None,
+    notifications: Mapping[str, Any] | None,
+    locale: str | None,
+) -> Request:
+    """The whole shape, always: the route replaces it, so a group left out
+    is sent as its default rather than left alone. The server validates the
+    result (an unknown locale is its 422); `billing_receipts` is
+    transactional mail and may not be turned off."""
+    return Request(
+        "PUT",
+        "/api/me/preferences",
+        {
+            "email": dict(email or {}),
+            "notifications": dict(notifications or {}),
+            "locale": locale,
+        },
+        keyed=True,
+        stream=False,
+    )
+
+
+def delete_account_request(confirm: str) -> Request:
+    """The typed confirmation, enforced here as well as in the route: the
+    phrase, compared the way the server compares it."""
+    if confirm.strip().lower() != DELETE_ACCOUNT_PHRASE:
+        raise ValueError(f'Confirmation phrase must be "{DELETE_ACCOUNT_PHRASE}".')
+    return Request("DELETE", "/api/me", {"confirm": confirm}, keyed=True, stream=False)
+
+
+def onboarding_complete_request() -> Request:
+    return Request("POST", "/api/me/onboarding/complete", None, keyed=True, stream=False)
+
+

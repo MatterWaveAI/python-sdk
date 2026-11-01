@@ -2288,3 +2288,353 @@ def vision_of(models: Sequence[Any] | None, model_id: str | None) -> VisionVerdi
             return "no"
         return "unknown"
     return "unknown"
+
+
+# --- the account families (0.5) ------------------------------------------------
+#
+# Account self-service, export/import jobs, members, org management, billing,
+# passkeys, MFA, account switching, speech and edge pairing: the remaining
+# routes the web app's settings panes speak. As above, the fields are the
+# ones the routes send today and anything new is dropped rather than refused.
+
+
+ORG_ROLES = ("owner", "admin", "member", "viewer")
+"""The four roles a membership may carry. Ownership moves only between
+owners, and nobody demotes or removes the last owner."""
+
+
+@dataclass(frozen=True)
+class SessionInfo:
+    """One live sign-in (`GET /api/me/sessions`). `current` flags the
+    session that made the request; `user_agent` and `ip` are what the sign-in
+    travelled with, so a device the person no longer trusts is findable."""
+
+    id: str
+    current: bool
+    created_at: str
+    last_seen_at: str
+    user_agent: str
+    ip: str | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> SessionInfo:
+        ip = data.get("ip")
+        return cls(
+            id=_str(data.get("id")),
+            current=data.get("current") is True,
+            created_at=_str(data.get("created_at")),
+            last_seen_at=_str(data.get("last_seen_at")),
+            user_agent=_str(data.get("user_agent")),
+            ip=ip if isinstance(ip, str) else None,
+        )
+
+
+@dataclass(frozen=True)
+class SessionList:
+    """`GET /api/me/sessions`: the caller's live sessions. `current_id` is
+    None for an API caller with no cookie, and then nothing is flagged."""
+
+    current_id: str | None
+    data: list[SessionInfo]
+    request_id: str | None = field(default=None, compare=False)
+
+    def __iter__(self) -> Any:
+        return iter(self.data)
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> SessionList:
+        return cls(
+            current_id=_opt_str(data.get("current_id")),
+            data=[SessionInfo.from_dict(s) for s in _dicts(data.get("sessions"))],
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class SessionRevoked:
+    """The answer to `account.sessions.revoke`. `current` is True when the
+    revoked row was the session that made the request -- "sign out"."""
+
+    status: str
+    current: bool
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(
+        cls, data: dict[str, Any], *, request_id: str | None = None
+    ) -> SessionRevoked:
+        return cls(
+            status=_str(data.get("status")),
+            current=data.get("current") is True,
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class SessionsLoggedOut:
+    """The answer to `account.sessions.logout_others`: how many other live
+    sessions were ended. The one making the request keeps going."""
+
+    revoked: int
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(
+        cls, data: dict[str, Any], *, request_id: str | None = None
+    ) -> SessionsLoggedOut:
+        return cls(revoked=_int(data.get("revoked")), request_id=request_id)
+
+
+@dataclass(frozen=True)
+class EmailPreferences:
+    """The mail toggles. `billing_receipts` is transactional mail: the
+    server sends it as True in every read and refuses a write that tries to
+    turn it off."""
+
+    product_updates: bool = False
+    usage_alerts: bool = True
+    billing_receipts: bool = True
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> EmailPreferences:
+        return cls(
+            product_updates=data.get("product_updates") is True,
+            usage_alerts=data.get("usage_alerts") is not False,
+            billing_receipts=data.get("billing_receipts") is not False,
+        )
+
+
+@dataclass(frozen=True)
+class NotificationPreferences:
+    budget_warn: bool = True
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> NotificationPreferences:
+        return cls(budget_warn=data.get("budget_warn") is not False)
+
+
+@dataclass(frozen=True)
+class Preferences:
+    """`GET /api/me/preferences`: the person's mail toggles and locale. The
+    locale is a BCP-47 tag (None when unset); the server validates the whole
+    shape on a write, so an unknown locale is its 422."""
+
+    email: EmailPreferences = field(default_factory=EmailPreferences)
+    notifications: NotificationPreferences = field(default_factory=NotificationPreferences)
+    locale: str | None = None
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> Preferences:
+        email = data.get("email")
+        notifications = data.get("notifications")
+        return cls(
+            email=EmailPreferences.from_dict(email if isinstance(email, dict) else {}),
+            notifications=(
+                NotificationPreferences.from_dict(notifications)
+                if isinstance(notifications, dict)
+                else NotificationPreferences()
+            ),
+            locale=_opt_str(data.get("locale")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class NameUpdated:
+    """The answer to `account.rename`."""
+
+    name: str
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> NameUpdated:
+        return cls(name=_str(data.get("name")), request_id=request_id)
+
+
+@dataclass(frozen=True)
+class TermsAccepted:
+    """The answer to `account.accept_terms`: the version now on record and
+    when it was accepted. `terms_current` is always True on a 200."""
+
+    terms_version: str
+    terms_accepted_at: str | None
+    terms_current: bool
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> TermsAccepted:
+        return cls(
+            terms_version=_str(data.get("terms_version")),
+            terms_accepted_at=_opt_str(data.get("terms_accepted_at")),
+            terms_current=data.get("terms_current") is True,
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class PasswordChanged:
+    """The answer to `account.change_password`: every other session was
+    ended, and `revoked` counts them."""
+
+    status: str
+    revoked: int
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(
+        cls, data: dict[str, Any], *, request_id: str | None = None
+    ) -> PasswordChanged:
+        return cls(
+            status=_str(data.get("status"), "changed"),
+            revoked=_int(data.get("revoked")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class EmailChangeStarted:
+    """The answer to `account.email.start`: a confirmation code was mailed
+    to `new_email`, which signs in nothing until `email.verify` takes it
+    back. `mail_sent` is False when the relay refused; the code step can
+    still be retried with `email.resend`."""
+
+    status: str
+    new_email: str
+    mail_sent: bool | None
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(
+        cls, data: dict[str, Any], *, request_id: str | None = None
+    ) -> EmailChangeStarted:
+        mail_sent = data.get("mail_sent")
+        return cls(
+            status=_str(data.get("status")),
+            new_email=_str(data.get("new_email")),
+            mail_sent=mail_sent if isinstance(mail_sent, bool) else None,
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class EmailChangeState:
+    """`GET /api/me/email`: the sign-in address and any change still waiting
+    for its code, so a client can come back to the code step after a reload."""
+
+    email: str | None
+    pending_email: str | None
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(
+        cls, data: dict[str, Any], *, request_id: str | None = None
+    ) -> EmailChangeState:
+        return cls(
+            email=_opt_str(data.get("email")),
+            pending_email=_opt_str(data.get("pending_email")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class EmailChanged:
+    """The answer to `account.email.verify`: the new address is the login,
+    every other session was ended, and the old address was told. The
+    requesting session keeps going."""
+
+    status: str
+    email: str
+    revoked: int
+    notice_sent: bool | None
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> EmailChanged:
+        notice_sent = data.get("notice_sent")
+        return cls(
+            status=_str(data.get("status"), "changed"),
+            email=_str(data.get("email")),
+            revoked=_int(data.get("revoked")),
+            notice_sent=notice_sent if isinstance(notice_sent, bool) else None,
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class EmailChangeCancelled:
+    """The answer to `account.email.cancel`: the mailed code stops working
+    and the address stays what it was. Harmless when nothing was pending."""
+
+    status: str
+    email: str
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(
+        cls, data: dict[str, Any], *, request_id: str | None = None
+    ) -> EmailChangeCancelled:
+        return cls(
+            status=_str(data.get("status"), "cancelled"),
+            email=_str(data.get("email")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class OnboardingCompleted:
+    """The answer to `account.onboarding_complete`. Idempotent: a second
+    call keeps the first `completed_at`."""
+
+    onboarding_completed: bool
+    completed_at: str
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(
+        cls, data: dict[str, Any], *, request_id: str | None = None
+    ) -> OnboardingCompleted:
+        return cls(
+            onboarding_completed=data.get("onboarding_completed") is True,
+            completed_at=_str(data.get("completed_at")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class DeletedAccount:
+    """The answer to `account.delete`: what the deletion took with it.
+    Conversations and attachments are soft-deleted -- rows now, bytes on the
+    sweeper's next pass within `retention_days`. `identity_removed` is False
+    when the data is gone but the login is not, which the caller must say
+    rather than smooth over."""
+
+    status: str
+    conversations_deleted: int
+    attachments_marked_deleted: int
+    api_keys_revoked: int
+    custom_instructions_deleted: bool
+    retention_days: int
+    identity_removed: bool
+    deletion_request_id: str | None = None
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> DeletedAccount:
+        identity = data.get("identity_removed")
+        return cls(
+            status=_str(data.get("status"), "deleted"),
+            conversations_deleted=_int(data.get("conversations_deleted")),
+            attachments_marked_deleted=_int(data.get("attachments_marked_deleted")),
+            api_keys_revoked=_int(data.get("api_keys_revoked")),
+            custom_instructions_deleted=data.get("custom_instructions_deleted") is True,
+            retention_days=_int(data.get("retention_days"), 30),
+            identity_removed=identity is True if isinstance(identity, bool) else False,
+            deletion_request_id=_opt_str(data.get("deletion_request_id")),
+            request_id=request_id,
+        )
+
+

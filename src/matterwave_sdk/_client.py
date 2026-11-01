@@ -34,8 +34,10 @@ from . import _base
 from ._base import EmbeddingInput, Message, Request, Tool, ToolChoice
 from ._mcp import AsyncMcp, Mcp
 from ._resources import (
+    Account,
     Admin,
     Announcements,
+    AsyncAccount,
     AsyncAdmin,
     AsyncAnnouncements,
     AsyncAttachments,
@@ -133,6 +135,7 @@ class _Config:
             request.method,
             self.base_url + request.path,
             json=request.json,
+            data=dict(request.data) if request.data else None,
             files=dict(request.files) if request.files else None,
             params=dict(request.params) or None,
             headers=headers,
@@ -1192,6 +1195,7 @@ class MatterWave:
         self.announcements = Announcements(self)
         self.entitlements = EntitlementsClient(self)
         self.admin = Admin(self)
+        self.account = Account(self)
         self.mcp = Mcp(self)
 
     @property
@@ -1854,6 +1858,7 @@ class AsyncMatterWave:
         self.announcements = AsyncAnnouncements(self)
         self.entitlements = AsyncEntitlementsClient(self)
         self.admin = AsyncAdmin(self)
+        self.account = AsyncAccount(self)
         self.mcp = AsyncMcp(self)
 
     @property
