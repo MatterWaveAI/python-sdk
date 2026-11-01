@@ -18,6 +18,7 @@ from typing import Any, Literal, TypedDict
 
 import httpx
 
+from ._version import __version__
 from .errors import (
     APIError,
     DeviceAuthError,
@@ -30,6 +31,7 @@ API_KEY_ENV = "MATTERWAVE_API_KEY"
 BASE_URL_ENV = "MATTERWAVE_BASE_URL"
 REQUEST_ID_HEADER = "x-request-id"
 API_PREFIX = "/v1"
+USER_AGENT = f"matterwave-python/{__version__}"
 SSE_DONE = "[DONE]"
 
 DEFAULT_TIMEOUT_S = 60.0
@@ -175,6 +177,115 @@ APP_OPERATIONS: dict[str, tuple[str, str]] = {
     "budget.set_member_default_cap": ("PUT", "/api/budget/members"),
     "budget.set_member_cap": ("PUT", "/api/budget/members/{subject}"),
 }
+
+
+# The credential each operation needs, from the per-route `security` of the
+# platform's route document (tests/openapi-full.json, which the drift test
+# holds this table to):
+#
+# * "public" -- nothing; the route answers anyone.
+# * "key" -- an API key with no particular scope, or a person's token.
+# * "key:<scope>" -- an API key carrying that scope, or a person's token.
+# * "person" -- a person's token (`access_token=`), never an API key. The
+#   routes that manage the organisation gate on the caller's membership row
+#   rather than a key scope and answer a key 403 "Membership is managed by
+#   a person, not an API key."
+#
+# A scope never widens the role: a key acts as its owner, and a person as
+# themselves, so an org route still needs the org role it asks for.
+CREDENTIALS: dict[str, str] = {
+    "index": "public",
+    "models.list": "key:chat:read",
+    "models.retrieve": "key:chat:read",
+    "chat.completions.create": "key:chat:write",
+    "embeddings.create": "key:chat:write",
+    "me": "key",
+    "conversations.list": "key:chat:read",
+    "conversations.search": "key:chat:read",
+    "conversations.create": "key:chat:write",
+    "conversations.get": "key:chat:read",
+    "conversations.update": "key:chat:write",
+    "conversations.tree": "key:chat:read",
+    "conversations.set_active_leaf": "key:chat:write",
+    "conversations.send": "key:chat:write",
+    "conversations.edit": "key:chat:write",
+    "conversations.regenerate": "key:chat:write",
+    "conversations.fork": "key:chat:write",
+    "conversations.context": "key:chat:read",
+    "conversations.compact": "key:chat:write",
+    "conversations.delete": "key:chat:write",
+    "conversations.pin": "key:chat:write",
+    "conversations.unpin": "key:chat:write",
+    "conversations.archive": "key:chat:write",
+    "conversations.unarchive": "key:chat:write",
+    "conversations.update_instructions": "key:chat:write",
+    "conversations.report": "key:chat:write",
+    "instructions.user": "key",
+    "instructions.update_user": "key",
+    "instructions.org": "person",
+    "instructions.update_org": "person",
+    "notifications.list": "key",
+    "notifications.read_all": "key",
+    "notifications.read": "key",
+    "announcements.list": "key",
+    "admin.announcements.list": "person",
+    "admin.announcements.create": "person",
+    "admin.announcements.update": "person",
+    "admin.announcements.delete": "person",
+    "entitlements.get": "key",
+    "messages.set_feedback": "key",
+    "messages.delete_feedback": "key",
+    "messages.list_feedback": "key:chat:read",
+    "app_models": "key",
+    "auth.device.start": "public",
+    "auth.device.poll": "public",
+    "keys.list": "key",
+    "keys.create": "key:keys:manage",
+    "keys.update": "key:keys:manage",
+    "keys.rotate": "key:keys:manage",
+    "keys.revoke": "key:keys:manage",
+    "usage.get": "key",
+    "usage.org": "key:usage:read",
+    "usage.export_csv": "key:usage:read",
+    "audit.list": "person",
+    "audit.export_csv": "person",
+    "webhooks.list": "key:webhooks:manage",
+    "webhooks.create": "key:webhooks:manage",
+    "webhooks.get": "key:webhooks:manage",
+    "webhooks.update": "key:webhooks:manage",
+    "webhooks.delete": "key:webhooks:manage",
+    "webhooks.rotate_secret": "key:webhooks:manage",
+    "webhooks.test": "key:webhooks:manage",
+    "webhooks.deliveries": "key:webhooks:manage",
+    "webhooks.redeliver": "key:webhooks:manage",
+    "attachments.upload": "key",
+    "attachments.get": "key",
+    "attachments.delete": "key",
+    "attachments.download": "key",
+    "attachments.limits": "key",
+    "library.get": "key",
+    "library.search": "key",
+    "library.create_folder": "key",
+    "library.update_folder": "key",
+    "library.delete_folder": "key",
+    "library.move": "key",
+    "library.create_tag": "key",
+    "library.delete_tag": "key",
+    "library.set_tags": "key",
+    "shares.create": "key:chat:write",
+    "shares.list": "key:chat:read",
+    "shares.list_mine": "key",
+    "shares.revoke": "key",
+    "shares.view": "public",
+    "budget.get": "key",
+    "budget.set_overage_cap": "person",
+    "budget.members": "person",
+    "budget.set_member_default_cap": "person",
+    "budget.set_member_cap": "person",
+}
+
+# What the platform answers an API key on a "person" route.
+PERSON_ONLY_DETAIL = "Membership is managed by a person, not an API key."
 
 
 Role = Literal["system", "user", "assistant", "tool"]
@@ -728,7 +839,9 @@ def headers_for(
     """The request's headers, least specific first: the client's own
     defaults (`Accept`, `User-Agent`), then the caller's `default_headers`,
     which may replace them (a client built on this one names itself), then
-    what the operation itself needs, such as `Last-Event-ID` on a resume."""
+    what the operation itself needs, such as `Last-Event-ID` on a resume.
+    `api_key` is the bearer a keyed request carries: an API key or a
+    person's access token, which the API reads from the same header."""
     headers = {"Accept": "application/json", "User-Agent": user_agent}
     if request.stream:
         headers["Accept"] = "text/event-stream"
@@ -737,8 +850,8 @@ def headers_for(
     if request.keyed:
         if api_key is None:
             raise MissingAPIKeyError(
-                f"{request.method} {request.path} needs an API key: pass api_key= or set "
-                f"{API_KEY_ENV}."
+                f"{request.method} {request.path} needs a credential: pass api_key= (or set "
+                f"{API_KEY_ENV}), or a person's access_token=."
             )
         headers["Authorization"] = f"Bearer {api_key}"
     return headers

@@ -337,6 +337,66 @@ signed_in = MatterWave(api_key=token.access_token)
 own. The SDK never writes the token anywhere: store it in the OS keyring or the
 editor's secret storage, not a dotfile.
 
+The key device login mints carries `chat:read` and `chat:write`, so it acts as
+the person in their conversations but not on the routes that manage the
+organisation; for those, sign the person in at the identity provider instead.
+
+## Signing a person in
+
+The routes that manage the organisation -- the audit trail, the org's
+instructions, budget caps, and the operator console -- gate on the caller's
+membership, not a key scope, and answer every API key 403 "Membership is managed
+by a person, not an API key." A person's access token from the deployment's
+identity provider is what they take. Pass one as `access_token=`, the token
+itself or a callable that returns it; the client sends it where a key would go,
+and every other route takes it too.
+
+```python
+from matterwave_sdk import MatterWave
+
+signin = MatterWave(base_url="https://your-matterwave.example").auth.person
+token = signin.login(
+    on_code=lambda code: print(f"Open {code.verification_uri_complete}"),
+    timeout=300,
+)
+admin = MatterWave(
+    base_url="https://your-matterwave.example",
+    access_token=signin.session(token, on_refresh=store_in_keyring),
+)
+print(admin.audit.list(event="org.sso").data)
+```
+
+`auth.person.login` is the device authorization grant (RFC 8628) against the
+identity provider's native client, which `/api/auth-config` names; a deployment
+without one raises `MatterWaveError`. It asks for `offline_access` beside the
+deployment's scopes, so the `PersonToken` carries a refresh token, and
+`session(token)` is a callable that hands over the access token and refreshes it
+a minute before it expires, passing each new set to `on_refresh` so the caller
+can store the rotated refresh token. `start()`, `poll(device_code)` and
+`refresh(token)` are the steps on their own. A token from anywhere else -- an
+agent's or a service account's, issued by the same identity provider for the
+deployment's project -- works the same way: `access_token="eyJ..."`. On
+`AsyncMatterWave` the callable may be a coroutine function.
+
+### Which credential each method needs
+
+`CREDENTIALS` maps every operation to what its route accepts, from the
+platform's route document (the drift test holds the two together):
+
+| `CREDENTIALS` | Accepts | Methods |
+| --- | --- | --- |
+| `public` | nothing | `index`, `auth.device.start` / `poll`, `shares.view` |
+| `key` | any API key, or a person's token | `me`, `app_models`, `instructions.user` / `update_user`, `notifications`, `announcements.list`, `entitlements.get`, `messages.set_feedback` / `delete_feedback`, `keys.list`, `usage.get`, `attachments`, `library`, `shares.list_mine` / `revoke`, `budget.get` |
+| `key:chat:read` | a key with `chat:read`, or a person's token | `models`, the conversation reads, `messages.list_feedback`, `shares.list` |
+| `key:chat:write` | a key with `chat:write`, or a person's token | `chat.completions.create`, `embeddings.create`, the conversation writes and turns, `shares.create` |
+| `key:keys:manage` | a key with `keys:manage`, or a person's token | `keys.create` / `update` / `rotate` / `revoke` |
+| `key:usage:read` | a key with `usage:read`, or a person's token | `usage.org`, `usage.export_csv` |
+| `key:webhooks:manage` | a key with `webhooks:manage`, or a person's token | `webhooks` |
+| `person` | a person's token only | `audit`, `instructions.org` / `update_org`, `budget.members` / `set_overage_cap` / `set_member_default_cap` / `set_member_cap`, `admin` |
+
+A scope never widens a role: the org routes still need the org role they ask of a
+person, whichever credential carries it.
+
 ## Connect your editor to MatterWave
 
 `/mcp` on the deployment's origin is an MCP server: the conversation API in a

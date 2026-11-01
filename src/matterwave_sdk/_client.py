@@ -60,7 +60,7 @@ from ._resources import (
     UsageClient,
     Webhooks,
 )
-from ._version import __version__
+from ._signin import AsyncPersonAuth, PersonAuth
 from .errors import (
     APIConnectionError,
     APIError,
@@ -100,7 +100,13 @@ from .models import (
     UserInstructions,
 )
 
-USER_AGENT = f"matterwave-python/{__version__}"
+USER_AGENT = _base.USER_AGENT
+
+# A person's access token, as `access_token=` takes it: the token itself, or
+# a callable asked for it before each call (a `PersonSession`, or the
+# caller's own refresher). The async client's may be a coroutine function.
+AccessToken = str | Callable[[], str]
+AsyncAccessToken = str | Callable[[], str | Awaitable[str]]
 
 
 class _Config:
@@ -111,22 +117,54 @@ class _Config:
         timeout: float | httpx.Timeout | None,
         max_retries: int,
         default_headers: Mapping[str, str] | None,
+        access_token: AsyncAccessToken | None = None,
     ) -> None:
         if max_retries < 0:
             raise ValueError("max_retries must be 0 or more")
-        self.api_key = _base.resolve_api_key(api_key)
+        if api_key is not None and access_token is not None:
+            raise ValueError("pass api_key or access_token, not both: each is the whole bearer")
+        if access_token is not None and not (isinstance(access_token, str) or callable(access_token)):
+            raise TypeError("access_token must be a token or a callable that returns one")
+        # A person's token replaces the key outright, so MATTERWAVE_API_KEY
+        # is not read beside one.
+        self.access_token = access_token
+        self.api_key = None if access_token is not None else _base.resolve_api_key(api_key)
         self.base_url = _base.resolve_base_url(base_url)
         self.timeout = _base.DEFAULT_TIMEOUT_S if timeout is None else timeout
         self.max_retries = max_retries
         self.default_headers = dict(default_headers or {})
+
+    def bearer(self, request: Request) -> str | None:
+        """The credential a request carries: none for a public route (so a
+        token callback is not asked for one it would not send), else the
+        key or the person's token, a callback's answered now."""
+        if not request.keyed or self.access_token is None:
+            return self.api_key if request.keyed else None
+        if isinstance(self.access_token, str):
+            return self.access_token
+        token = self.access_token()
+        if inspect.isawaitable(token):
+            if inspect.iscoroutine(token):
+                token.close()
+            raise TypeError("access_token returned an awaitable; use AsyncMatterWave for that")
+        return _token_text(token)
+
+    async def async_bearer(self, request: Request) -> str | None:
+        if not request.keyed or self.access_token is None or isinstance(self.access_token, str):
+            return self.bearer(request)
+        token = self.access_token()
+        if inspect.isawaitable(token):
+            token = await token
+        return _token_text(token)
 
     def build(
         self,
         request: Request,
         client: httpx.Client | httpx.AsyncClient,
         timeout: float | httpx.Timeout | None = None,
+        bearer: str | None = None,
     ) -> httpx.Request:
-        headers = _base.headers_for(request, self.api_key, USER_AGENT, self.default_headers)
+        headers = _base.headers_for(request, bearer, USER_AGENT, self.default_headers)
         # Most specific first: the call's own timeout, then the operation's
         # (an MCP tool that runs a whole model turn), then the client's.
         effective = timeout if timeout is not None else request.timeout
@@ -139,6 +177,12 @@ class _Config:
             headers=headers,
             timeout=effective if effective is not None else self.timeout,
         )
+
+
+def _token_text(token: object) -> str:
+    if not isinstance(token, str) or not token:
+        raise TypeError("access_token's callable must return the token, a non-empty str")
+    return token
 
 
 def _connection_error(exc: httpx.HTTPError, request: Request) -> APIConnectionError:
@@ -1157,19 +1201,31 @@ class DeviceAuth:
 
 
 class Auth:
+    """`device` signs a person in through the API and ends in an API key;
+    `person` signs them in at the identity provider and ends in their own
+    token, which the routes that manage the organisation require."""
+
     def __init__(self, client: MatterWave) -> None:
         self.device = DeviceAuth(client)
+        self.person = PersonAuth(client)
 
 
 class MatterWave:
     """The blocking client. `api_key` defaults to `MATTERWAVE_API_KEY`,
     `base_url` to `MATTERWAVE_BASE_URL` (the origin, with or without `/v1`).
-    Pass `http_client` to share a connection pool or a mock transport."""
+    Pass `http_client` to share a connection pool or a mock transport.
+
+    `access_token` is a person's token from the identity provider, in place
+    of a key: the token itself, or a callable asked for it before each call
+    (`client.auth.person.session(token)` is one that refreshes). The routes
+    that manage the organisation (`CREDENTIALS` marks them `person`) take
+    nothing else; every other route takes either."""
 
     def __init__(
         self,
         *,
         api_key: str | None = None,
+        access_token: AccessToken | None = None,
         base_url: str | None = None,
         timeout: float | httpx.Timeout | None = None,
         max_retries: int = _base.DEFAULT_MAX_RETRIES,
@@ -1178,7 +1234,9 @@ class MatterWave:
         on_request: Callable[[Request], object] | None = None,
         on_response: Callable[[_base.RawResponse], object] | None = None,
     ) -> None:
-        self._config = _Config(api_key, base_url, timeout, max_retries, default_headers)
+        self._config = _Config(
+            api_key, base_url, timeout, max_retries, default_headers, access_token
+        )
         self._owns_http = http_client is None
         self._http = http_client or httpx.Client()
         self._last_response: _base.RawResponse | None = None
@@ -1226,7 +1284,7 @@ class MatterWave:
         )
 
     def me(self) -> Me:
-        """`GET /api/me`: who the key (or device-login token) acts as."""
+        """`GET /api/me`: who the key or the person's token acts as."""
         response = self._send(_base.me_request())
         return Me.from_dict(
             _base.parse_json_object(response), request_id=_base.request_id_of(response)
@@ -1278,6 +1336,7 @@ class MatterWave:
         so one long call need not hold the whole client at its pace."""
         attempt_limit = self._config.max_retries if max_retries is None else max_retries
         attempt = 0
+        bearer = self._config.bearer(request)
         while True:
             if self._closed:
                 raise MatterWaveError(
@@ -1285,7 +1344,7 @@ class MatterWave:
                 )
             if self._on_request is not None:
                 self._on_request(request)
-            http_request = self._config.build(request, self._http, timeout=timeout)
+            http_request = self._config.build(request, self._http, timeout=timeout, bearer=bearer)
             try:
                 response = self._http.send(http_request, stream=request.stream)
             except httpx.HTTPError as exc:
@@ -1814,16 +1873,19 @@ class AsyncDeviceAuth:
 class AsyncAuth:
     def __init__(self, client: AsyncMatterWave) -> None:
         self.device = AsyncDeviceAuth(client)
+        self.person = AsyncPersonAuth(client)
 
 
 class AsyncMatterWave:
     """The awaitable client; the same surface as `MatterWave`, every
-    operation a coroutine and the stream an async iterator."""
+    operation a coroutine and the stream an async iterator. Its
+    `access_token` callable may be a coroutine function."""
 
     def __init__(
         self,
         *,
         api_key: str | None = None,
+        access_token: AsyncAccessToken | None = None,
         base_url: str | None = None,
         timeout: float | httpx.Timeout | None = None,
         max_retries: int = _base.DEFAULT_MAX_RETRIES,
@@ -1832,7 +1894,9 @@ class AsyncMatterWave:
         on_request: Callable[[Request], object] | None = None,
         on_response: Callable[[_base.RawResponse], object] | None = None,
     ) -> None:
-        self._config = _Config(api_key, base_url, timeout, max_retries, default_headers)
+        self._config = _Config(
+            api_key, base_url, timeout, max_retries, default_headers, access_token
+        )
         self._owns_http = http_client is None
         self._http = http_client or httpx.AsyncClient()
         self._last_response: _base.RawResponse | None = None
@@ -1916,6 +1980,7 @@ class AsyncMatterWave:
         call's own `timeout` and `max_retries` winning over the client's."""
         attempt_limit = self._config.max_retries if max_retries is None else max_retries
         attempt = 0
+        bearer = await self._config.async_bearer(request)
         while True:
             if self._closed:
                 raise MatterWaveError(
@@ -1923,7 +1988,7 @@ class AsyncMatterWave:
                 )
             if self._on_request is not None:
                 self._on_request(request)
-            http_request = self._config.build(request, self._http, timeout=timeout)
+            http_request = self._config.build(request, self._http, timeout=timeout, bearer=bearer)
             try:
                 response = await self._http.send(http_request, stream=request.stream)
             except httpx.HTTPError as exc:

@@ -9,7 +9,10 @@ Both arguments default to `MATTERWAVE_API_KEY` and `MATTERWAVE_BASE_URL`.
 
 `client.conversations` is the app's own conversation API, streaming typed
 frames (`matterwave_sdk.frames`); `client.auth.device` signs a person in by
-device code and returns the key to use. `client.keys`, `client.usage`,
+device code and returns the key to use, and `client.auth.person` signs them
+in at the identity provider for a token of their own (`access_token=`), which
+the routes that manage the organisation require; `CREDENTIALS` says which
+credential each operation needs. `client.keys`, `client.usage`,
 `client.webhooks`, `client.attachments`, `client.library`,
 `client.notifications`, `client.announcements`, `client.entitlements` and
 `client.shares` are the app's native routes for the same, `client.admin`
@@ -22,6 +25,7 @@ coding clients share, with its path, edit, diff and approval helpers.
 from . import agent, frames, webhooks
 from ._base import (
     APP_OPERATIONS,
+    CREDENTIALS,
     OPERATIONS,
     EmbeddingInput,
     Message,
@@ -68,6 +72,14 @@ from ._resources import (
     Shares,
     UsageClient,
     Webhooks,
+)
+from ._signin import (
+    AsyncPersonAuth,
+    AsyncPersonSession,
+    AuthConfig,
+    PersonAuth,
+    PersonSession,
+    PersonToken,
 )
 from ._version import __version__
 from .errors import (
@@ -191,6 +203,7 @@ from .models import (
 
 __all__ = [
     "APP_OPERATIONS",
+    "CREDENTIALS",
     "OPERATIONS",
     "APIConnectionError",
     "APIError",
@@ -220,6 +233,8 @@ __all__ = [
     "AsyncMatterWave",
     "AsyncMcp",
     "AsyncNotifications",
+    "AsyncPersonAuth",
+    "AsyncPersonSession",
     "AsyncShares",
     "AsyncStream",
     "AsyncUsageClient",
@@ -230,6 +245,7 @@ __all__ = [
     "Audit",
     "AuditEvent",
     "AuditPage",
+    "AuthConfig",
     "AuthenticationError",
     "BadRequestError",
     "Budget",
@@ -308,6 +324,9 @@ __all__ = [
     "PartEndFrame",
     "PartStartFrame",
     "PermissionDeniedError",
+    "PersonAuth",
+    "PersonSession",
+    "PersonToken",
     "RateLimit",
     "RateLimitError",
     "RawResponse",

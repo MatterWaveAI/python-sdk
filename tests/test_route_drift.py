@@ -10,7 +10,9 @@ checkout, so a refresh that moves, removes or adds a route fails here:
   names internal (the operator console's announcements are);
 * every route in the document is wrapped by the SDK or listed in
   tests/routes-not-covered.json with the reason it is not;
-* nothing listed as not covered is wrapped, or gone from the document.
+* nothing listed as not covered is wrapped, or gone from the document;
+* `CREDENTIALS` names, for each operation, the credential its route's
+  `security` accepts -- so a route that stops taking a key fails here.
 
 The live check (scripts/check_live_routes.py, run on a schedule) holds a
 running deployment's `/openapi.json` to the same pair.
@@ -22,7 +24,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from matterwave_sdk import APP_OPERATIONS, OPERATIONS
+from matterwave_sdk import APP_OPERATIONS, CREDENTIALS, OPERATIONS
 
 TESTS = Path(__file__).resolve().parent
 DOCUMENT_BYTES = (TESTS / "openapi-full.json").read_bytes()
@@ -105,3 +107,25 @@ def test_nothing_listed_as_not_covered_is_wrapped_or_gone() -> None:
         assert reason.strip(), f"{prefix} needs the reason it is left out"
         assert any(under(path, prefix) for _, path in documented()), f"nothing under {prefix}"
         assert not any(under(path, prefix) for _, path in sdk_routes().values()), prefix
+
+
+def credential_of(security: list[dict[str, list[str]]]) -> str:
+    """The document's `security` as `CREDENTIALS` spells it."""
+    if not security:
+        return "public"
+    schemes = {name: scopes for requirement in security for name, scopes in requirement.items()}
+    if "apiKey" not in schemes:
+        return "person"
+    return "key:" + ",".join(schemes["apiKey"]) if schemes["apiKey"] else "key"
+
+
+def test_each_operation_names_the_credential_its_route_accepts() -> None:
+    wrong = {}
+    for name, (method, path) in sdk_routes().items():
+        operation = DOCUMENT["paths"].get(path, {}).get(method.lower())
+        # The internal routes the SDK calls are the operator console's,
+        # which take the operator's own session or token.
+        expected = credential_of(operation["security"]) if operation else "person"
+        if CREDENTIALS.get(name) != expected:
+            wrong[name] = (CREDENTIALS.get(name), expected)
+    assert wrong == {}, "CREDENTIALS (SDK, document) disagree"
