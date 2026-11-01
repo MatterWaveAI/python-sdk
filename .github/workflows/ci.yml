@@ -1,6 +1,7 @@
-# CI on every push and pull request: lint, format, types and the suite, on
-# each supported Python. The publish workflow (publish-pypi.yml) stays
-# tag-only and runs the same checks before building.
+# CI on a push to develop or main and on a pull request into either: lint,
+# format, types and the suite, on each supported Python. The publish
+# workflow (publish-pypi.yml) stays tag-only and runs the same checks before
+# building.
 #
 # Run it by hand with `openapi_source` (a URL of the app's exported
 # docs/developers/openapi.json) to test this client against that API: the
@@ -9,8 +10,9 @@ name: ci
 
 on:
   push:
-    branches: ["**"]
+    branches: [develop, main]
   pull_request:
+    branches: [develop, main]
   workflow_dispatch:
     inputs:
       openapi_source:
