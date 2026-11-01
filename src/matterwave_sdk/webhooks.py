@@ -128,9 +128,7 @@ def unwrap(
     try:
         event = json.loads(payload)
     except ValueError as exc:
-        raise WebhookVerificationError(
-            "The signed delivery is not JSON.", cause=exc
-        ) from exc
+        raise WebhookVerificationError("The signed delivery is not JSON.", cause=exc) from exc
     if not isinstance(event, dict):
         raise WebhookVerificationError(
             f"The signed delivery is JSON but not an object, got {type(event).__name__}."

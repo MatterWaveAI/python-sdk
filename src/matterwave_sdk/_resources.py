@@ -745,8 +745,12 @@ class AsyncBudgetClient(_Async):
         body, rid = await self._object(req.member_budgets_request())
         return MemberBudgetList.from_dict(body, request_id=rid)
 
-    async def set_member_default_cap(self, member_default_cap_micros: int | None) -> MemberBudgetList:
-        body, rid = await self._object(req.set_member_default_cap_request(member_default_cap_micros))
+    async def set_member_default_cap(
+        self, member_default_cap_micros: int | None
+    ) -> MemberBudgetList:
+        body, rid = await self._object(
+            req.set_member_default_cap_request(member_default_cap_micros)
+        )
         return MemberBudgetList.from_dict(body, request_id=rid)
 
     async def set_member_cap(self, subject: str, cap_micros: int | None) -> MemberBudget:

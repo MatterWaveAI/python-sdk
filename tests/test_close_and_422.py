@@ -123,9 +123,7 @@ def test_a_borrowed_transport_is_left_alone_by_close() -> None:
 
 
 def test_an_ordinary_success_still_works_before_any_close(api) -> None:
-    api.post("/v1/chat/completions").mock(
-        return_value=httpx.Response(200, json=completion_body())
-    )
+    api.post("/v1/chat/completions").mock(return_value=httpx.Response(200, json=completion_body()))
     client = MatterWave(api_key="mw_test_key", base_url="https://matterwave.test")
     assert client.chat.completions.create(messages=[{"role": "user", "content": "hi"}]).content
     client.close()

@@ -154,7 +154,9 @@ def test_keys_update_sends_null_to_clear_and_leaves_out_what_was_not_passed(
     route = api.patch(f"/api/keys/{KEY_ID}").respond(
         200, json=key_body(name="renamed", allowed_cidrs=["203.0.113.0/24"]), headers=H
     )
-    key = client.keys.update(KEY_ID, name="renamed", allowed_cidrs=["203.0.113.0/24"], expires_at=None)
+    key = client.keys.update(
+        KEY_ID, name="renamed", allowed_cidrs=["203.0.113.0/24"], expires_at=None
+    )
     assert body_of(route) == {
         "name": "renamed",
         "allowed_cidrs": ["203.0.113.0/24"],
@@ -371,7 +373,7 @@ AUDIT_PAGE = {
 
 AUDIT_CSV = (
     "occurred_at,actor_email,actor_subject,action,target,detail\r\n"
-    '2026-10-30T08:00:00+00:00,a@example.test,user-1,org.sso.enforced,org-1,'
+    "2026-10-30T08:00:00+00:00,a@example.test,user-1,org.sso.enforced,org-1,"
     '"{""recovery_code"":""rec-1""}"\r\n'
 )
 
@@ -611,7 +613,7 @@ def test_attachments_upload_retries_with_the_same_bytes(api, client: MatterWave,
 
     route = api.post("/api/attachments")
     route.side_effect = [
-        httpx.Response(503, json={"detail": "busy"}),
+        httpx.Response(429, json={"detail": "busy"}),
         httpx.Response(201, json=attachment_body(), headers=H),
     ]
     client.attachments.upload(io.BytesIO(b"hello"), "notes.txt")
@@ -843,9 +845,7 @@ def member_budget_body(**extra) -> dict:
     }
 
 
-def test_budget_get_reads_the_balance_and_the_callers_own_cap(
-    api, client: MatterWave
-) -> None:
+def test_budget_get_reads_the_balance_and_the_callers_own_cap(api, client: MatterWave) -> None:
     route = api.get("/api/budget").mock(
         return_value=httpx.Response(200, json=budget_body(), headers=H)
     )
@@ -861,9 +861,7 @@ def test_set_overage_cap_puts_the_number(api, client: MatterWave) -> None:
     route = api.put("/api/budget").mock(
         return_value=httpx.Response(
             200,
-            json=budget_body(
-                overage_cap_micros=10_000_000, member_default_cap_micros=None
-            ),
+            json=budget_body(overage_cap_micros=10_000_000, member_default_cap_micros=None),
             headers=H,
         )
     )
@@ -877,9 +875,7 @@ def test_set_overage_cap_puts_the_number(api, client: MatterWave) -> None:
     assert route.call_count == 1
 
 
-def test_budget_members_reads_rows_and_sets_the_default_cap(
-    api, client: MatterWave
-) -> None:
+def test_budget_members_reads_rows_and_sets_the_default_cap(api, client: MatterWave) -> None:
     listing = {
         "period_start": "2026-10-01",
         "member_default_cap_micros": None,
@@ -918,9 +914,7 @@ def test_budget_members_reads_rows_and_sets_the_default_cap(
     assert body_of(put) == {"member_default_cap_micros": None}
 
 
-def test_set_member_cap_addresses_the_subject_and_accepts_null(
-    api, client: MatterWave
-) -> None:
+def test_set_member_cap_addresses_the_subject_and_accepts_null(api, client: MatterWave) -> None:
     route = api.put("/api/budget/members/u-2").mock(
         return_value=httpx.Response(
             200,

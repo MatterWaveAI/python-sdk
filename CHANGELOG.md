@@ -48,8 +48,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from the app's export (`--check` exits 1 when it is behind), and the `ci`
   workflow takes an `openapi_source` URL on a manual run to test against it.
 
+- `client.with_options(timeout=, max_retries=, max_retry_wait=,
+  default_headers=, idempotency_key=)` (sync and async): the client with
+  those settings replaced for the calls made through it, so any method --
+  the resources, `models.retrieve`, the rest -- can have its own bounds.
+  The view shares the connection pool, and closing the client ends it.
+- An `Idempotency-Key` header on every write (any method but GET): a fresh
+  UUID per call, the same on each of its retries;
+  `with_options(idempotency_key=...)` supplies the caller's own.
+- `max_retry_wait` (default 60 seconds): a `Retry-After` longer than it
+  raises the error at once, with `retry_after` set, rather than waiting.
+- `extra_headers=` and `extra_query=` beside `extra_body=` on
+  `chat.completions.create` / `parse` and `embeddings.create`.
+- `MATTERWAVE_LOG=info` logs a line per response or failure (method, path,
+  status, request id, time) to the `matterwave_sdk` logger and stderr;
+  `debug` adds each attempt and each retry's wait. Bodies and headers are
+  never logged.
+- `APIDeprecationWarning`: raised once per route when a response carries
+  `Deprecation` or `Sunset`, naming the route and the dates.
+- `MatterWaveConfigError`, a `MatterWaveError` and a `ValueError`, for a
+  client setting that cannot be used.
+- `VERSIONING.md`: the 0.x policy and the API namespace each release speaks.
+- Classifiers for Python 3.10 to 3.13; the sdist carries `CHANGELOG.md`,
+  `VERSIONING.md` and `docs/`.
+- `tests/surface.json` and `tests/parity.json`: the public surface, and
+  each difference from the TypeScript SDK with its reason, held by a test
+  against that SDK's copy. The README has the table.
+- Releases: a tag must name the package version, a CycloneDX SBOM is built,
+  and each tag gets a GitHub release with its CHANGELOG section, the wheel,
+  the sdist and the SBOM (`scripts/release.py`).
+- CI on Python 3.10, 3.11, 3.12 and 3.13 with `ruff format --check`, a
+  gitleaks scan of the whole history, and a check that no tracked file
+  names a private ticket; `.pre-commit-config.yaml` runs gitleaks on each
+  commit; `CODEOWNERS`.
+
 ### Changed
 
+- A POST or PATCH is retried only after a 429 or a connection that was
+  never made. After a 5xx or a reply cut short the first copy may have taken
+  effect -- a message stored and billed, a key minted -- so the error is
+  raised instead. GET, PUT, DELETE and the read-only MCP calls retry as
+  before.
+- A bad base URL, a negative `max_retries` and the like raise
+  `MatterWaveConfigError`, still a `ValueError`.
+- Every action in the workflows is pinned to a commit, and the workflow
+  token is read-only unless a job needs more.
+- The source and tests are formatted with `ruff format`.
 - `tests/openapi.json` refreshed from the app's export: the two penalty
   fields on `ChatCompletionRequest` and the `compacting` stream event.
 - CI runs `mypy` beside `ruff` and `pytest`, and checks the TypeScript
@@ -57,6 +101,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A retried write could send a message, or mint a key, twice.
+- A `Retry-After: 3600` held a call for an hour.
 - The README's link to a `docs/package-names.md` that only existed in the
   old monorepo now points at the MatterWaveAI GitHub org.
 
@@ -72,31 +118,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   changeover, and the timestamp must sit within 300 seconds (the platform's
   window) of the receiver's clock. `WebhookVerificationError` for a
   missing, stale or wrong signature, or a body that is not a JSON object;
-  `sign` ships beside it, the platform sender's exact function (T-201).
+  `sign` ships beside it, the platform sender's exact function.
 - Per-call `timeout=` and `max_retries=` on `chat.completions.create`,
   `embeddings.create` and the conversation `send` / `edit` / `regenerate`
   turns, overriding the client's settings for that one call — a single
   long generation need not be cut by the 60s default, nor hold the whole
-  client at its pace (T-202).
+  client at its pace.
 - `client.last_response` — the last HTTP response received, success or
   refusal: status, headers, the request id, `Retry-After` and the
-  `X-RateLimit-*` window the parsed models leave behind (T-203).
+  `X-RateLimit-*` window the parsed models leave behind.
 - `client.chat.completions.parse(response_model=Model)` — `create` plus
   validation: the answer's text read as JSON and handed to the caller's
   pydantic model (`model_validate`, or v1's `parse_obj`), whose instance
   comes back. A non-JSON answer is a `ParseError`; a schema failure raises
-  the model's own error (T-204).
+  the model's own error.
 - `stream.final_text()` on every stream — the whole answer, accumulated:
-  iterate for the pieces, call this for the whole (T-205).
+  iterate for the pieces, call this for the whole.
 - `client.conversations.items()` — every conversation of every page, one
-  at a time, the item-level paginator over `pages()` (T-205).
+  at a time, the item-level paginator over `pages()`.
 - `on_request` / `on_response` client hooks — the request about to go out
-  and the response that came back, once per attempt, for logging (T-205).
+  and the response that came back, once per attempt, for logging.
 - `close()` now refuses anything further: a request sent after close
   raises `MatterWaveError`, and an in-flight conversation turn is refused
-  at its resume rather than retried against a dead client (T-206).
+  at its resume rather than retried against a dead client.
 - `UnprocessableEntityError` — the 422 validation refusal as its own
-  class, the per-field messages joined onto the error (T-206).
+  class, the per-field messages joined onto the error.
 - `client.audit.list()` and `client.audit.export_csv()` — the org's audit
   trail (`GET /api/org/audit`, `GET /api/org/audit.csv`), the reads the org
   pane's audit tab makes: one page of `audit_events` newest first (`data`,

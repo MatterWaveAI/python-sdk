@@ -94,7 +94,8 @@ def test_app_models_keeps_unknown_flags_optional(api, client: MatterWave) -> Non
 
 @pytest.mark.asyncio
 async def test_the_async_app_models_sends_the_same_request(
-    api, async_client  # noqa: ANN001
+    api,
+    async_client,  # noqa: ANN001
 ) -> None:
     route = api.get("/api/models").mock(
         return_value=httpx.Response(
@@ -132,9 +133,7 @@ def test_user_instructions_read_and_update_whole(api, client: MatterWave) -> Non
 
 def test_org_instructions_read_and_update(api, client: MatterWave) -> None:
     put = api.put("/api/org/instructions").mock(
-        return_value=httpx.Response(
-            200, json={"text": "Never quote customer names."}, headers=H
-        )
+        return_value=httpx.Response(200, json={"text": "Never quote customer names."}, headers=H)
     )
     api.get("/api/org/instructions").mock(
         return_value=httpx.Response(200, json={"text": ""}, headers=H)
@@ -150,7 +149,8 @@ def test_org_instructions_read_and_update(api, client: MatterWave) -> None:
 
 @pytest.mark.asyncio
 async def test_the_async_instructions_match_the_sync_bodies(
-    api, async_client  # noqa: ANN001
+    api,
+    async_client,  # noqa: ANN001
 ) -> None:
     api.get("/api/me/instructions").mock(
         return_value=httpx.Response(200, json={"about": "", "style": ""}, headers=H)
@@ -243,9 +243,7 @@ def feedback_row(mid: str, rating: int) -> dict:
     }
 
 
-def test_list_feedback_reads_the_caller_s_own_rows_in_order(
-    api, client: MatterWave
-) -> None:
+def test_list_feedback_reads_the_caller_s_own_rows_in_order(api, client: MatterWave) -> None:
     route = api.get(f"/api/conversations/{CONV}/feedback").mock(
         return_value=httpx.Response(
             200,
@@ -264,7 +262,8 @@ def test_list_feedback_reads_the_caller_s_own_rows_in_order(
 
 @pytest.mark.asyncio
 async def test_the_async_list_feedback_reads_the_same_body(
-    api, async_client  # noqa: ANN001
+    api,
+    async_client,  # noqa: ANN001
 ) -> None:
     route = api.get(f"/api/conversations/{CONV}/feedback").mock(
         return_value=httpx.Response(200, json={"data": [feedback_row("m-1", 1)]}, headers=H)
@@ -276,7 +275,8 @@ async def test_the_async_list_feedback_reads_the_same_body(
 
 @pytest.mark.asyncio
 async def test_the_async_feedback_sends_the_same_body(
-    api, async_client  # noqa: ANN001
+    api,
+    async_client,  # noqa: ANN001
 ) -> None:
     route = api.put("/api/messages/m-asst/feedback").mock(
         return_value=httpx.Response(

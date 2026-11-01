@@ -135,7 +135,7 @@ def test_tools_reach_the_wire_and_tool_calls_come_back_typed(api, client: Matter
             {
                 "id": "call_0",
                 "type": "function",
-                "function": {"name": "weather", "arguments": "{\"city\":\"Oslo\"}"},
+                "function": {"name": "weather", "arguments": '{"city":"Oslo"}'},
             }
         ],
     }
@@ -158,7 +158,7 @@ def test_tools_reach_the_wire_and_tool_calls_come_back_typed(api, client: Matter
     assert completion.content == ""
     assert completion.choices[0].finish_reason == "tool_calls"
     assert [c.function.name for c in completion.tool_calls] == ["weather"]
-    assert completion.tool_calls[0].function.arguments == "{\"city\":\"Oslo\"}"
+    assert completion.tool_calls[0].function.arguments == '{"city":"Oslo"}'
     assert completion.tool_calls[0].id == "call_0"
 
 
@@ -179,7 +179,10 @@ def test_embeddings_create(api, client: MatterWave) -> None:
         )
     )
     result = client.embeddings.create(["one", "two"], dimensions=2)
-    assert json.loads(route.calls.last.request.content) == {"input": ["one", "two"], "dimensions": 2}
+    assert json.loads(route.calls.last.request.content) == {
+        "input": ["one", "two"],
+        "dimensions": 2,
+    }
     assert [e.embedding for e in result] == [[0.1, 0.2], [0.3, 0.4]]
     assert result.model == "embed-small"
     assert result.usage.prompt_tokens == 6
@@ -196,7 +199,12 @@ def test_models_list_and_retrieve(api, client: MatterWave) -> None:
                 "object": "list",
                 "data": [
                     {"id": "grt-nano", "object": "model", "created": 0, "owned_by": "matterwave"},
-                    {"id": "grt-nano-pro", "object": "model", "created": 1700000000, "owned_by": "matterwave"},
+                    {
+                        "id": "grt-nano-pro",
+                        "object": "model",
+                        "created": 1700000000,
+                        "owned_by": "matterwave",
+                    },
                 ],
             },
         )

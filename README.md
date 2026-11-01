@@ -38,9 +38,9 @@ Settings > API keys in the app and shown once.
 completion = client.chat.completions.create(
     messages=[{"role": "user", "content": "Say hello in five words."}],
 )
-print(completion.content)              # the reply
-print(completion.usage.total_tokens)   # what it cost
-print(completion.request_id)           # the server's X-Request-Id
+print(completion.content)  # the reply
+print(completion.usage.total_tokens)  # what it cost
+print(completion.request_id)  # the server's X-Request-Id
 ```
 
 `model` may be omitted; the deployment's default is used. `client.models.list()`
@@ -68,6 +68,7 @@ connection.
 import asyncio
 from matterwave_sdk import AsyncMatterWave, RateLimitError, APIError
 
+
 async def main() -> None:
     async with AsyncMatterWave() as client:
         try:
@@ -82,6 +83,7 @@ async def main() -> None:
             print(err.code, err.retry_after, err.request_id)
         except APIError as err:
             print(err.status_code, err.type, err.code, err.request_id)
+
 
 asyncio.run(main())
 ```
@@ -98,11 +100,51 @@ arrives inside a stream, after the 200, is an `APIError` with
 `status_code=None`. Connection failures are `APIConnectionError`; timeouts
 `APITimeoutError`.
 
-A 429 whose code is `rate_limit_exceeded` and any 5xx (and connection errors)
-are retried up to `max_retries` times (default 2) with exponential backoff and
-jitter, or for exactly `Retry-After` when the server sends one. A 429 whose
-code is `insufficient_quota` is raised at once: waiting does not refill a
-budget. A streamed request is retried only before its stream starts.
+A 429 whose code is `rate_limit_exceeded` is retried up to `max_retries` times
+(default 2) with exponential backoff and jitter, or for exactly `Retry-After`
+when the server sends one. A 429 whose code is `insufficient_quota` is raised
+at once: waiting does not refill a budget. So is a 429 or 5xx whose
+`Retry-After` is longer than `max_retry_wait` (default 60 seconds), with the
+delay in `err.retry_after`. A 5xx or a dropped connection is
+retried the same way for a request that is safe to send twice (GET, PUT,
+DELETE, and the read-only MCP calls). A POST or PATCH -- a message, a key, an
+upload -- is sent again only when the connection was never made: after a 5xx or
+a reply cut short, the first copy may already have taken effect, so the error is
+raised instead. A streamed request is retried only before its stream starts.
+
+Every write (any method but GET) carries an `Idempotency-Key` header: a fresh
+UUID per call, the same on each of its retries, so the server can recognise a
+repeat. `client.with_options(idempotency_key=...)` supplies your own, for a
+write whose retries may come from another process. The API does not yet answer
+a repeated key with the first result, so the narrower retry rule for writes
+above still applies.
+
+### Logging and deprecations
+
+`MATTERWAVE_LOG=info` logs one line per response or failure to stderr --
+method, path, status, request id and time taken; `MATTERWAVE_LOG=debug` adds
+each attempt as it goes out and each wait before a retry. Bodies and headers
+are never logged. The lines go to the `matterwave_sdk` logger, so `logging`
+configuration works too.
+
+When the API marks a route for retirement (`Deprecation` and `Sunset`
+headers), the first call to it raises an `APIDeprecationWarning` naming the
+route and its dates, once per route per process. See
+[VERSIONING.md](VERSIONING.md) for what each release supports.
+
+### Per-call settings
+
+`timeout` (seconds), `max_retries` and `max_retry_wait` are set on the client
+and apply to every call. `with_options` gives a call its own, for any method:
+
+```python
+client.with_options(timeout=600, max_retries=0).conversations.compact(conversation_id)
+```
+
+The view it returns shares the client's connection pool, so making one per call
+costs nothing; `default_headers` passed to it are added to the client's. The
+chat, embeddings and conversation-turn methods also take `timeout=` and
+`max_retries=` as keywords.
 
 ## Tools, structured output and embeddings
 
@@ -189,7 +231,7 @@ with client.conversations.send(conv.id, "Draft a three-line agenda.") as stream:
             meter = (frame.prompt_tokens, frame.context_window)
         elif isinstance(frame, (frames.ErrorFrame, frames.ModerationBlockFrame)):
             print(frame.detail, frame.code)
-print(stream.result.id if stream.result else None)   # the saved assistant message
+print(stream.result.id if stream.result else None)  # the saved assistant message
 ```
 
 `list(filter=, limit=, cursor=)` is one page of the sidebar (`next_cursor`
@@ -363,8 +405,8 @@ SDK's copy is generated.
 import json
 from matterwave_sdk import agent, tool_message
 
-tools = agent.tools_for_mode("ask")                   # the `tools` to send
-system = agent.system_prompt("ask", root=str(root))   # names the tools, the mode and the root
+tools = agent.tools_for_mode("ask")  # the `tools` to send
+system = agent.system_prompt("ask", root=str(root))  # names the tools, the mode and the root
 
 for call in completion.tool_calls:
     decision = agent.allowed(call.function.name, "ask")  # "allow", "ask" or "deny"
@@ -412,13 +454,44 @@ The suite runs the check whenever the TypeScript SDK sits beside this checkout
 (or `MATTERWAVE_TS_SDK` names one), and CI clones it to run the check on every
 push.
 
+## Python and TypeScript
+
+The two SDKs are one client in two languages: a name here in snake_case is the
+same name there in camelCase, and `tests/parity.test` (`test_parity.py`,
+`parity.test.ts`) holds each to the other's public surface. Where they differ
+on purpose, `tests/parity.json` says why; the differences a caller meets are:
+
+| Python | TypeScript | Why |
+| --- | --- | --- |
+| `timeout=`, `max_retry_wait=` (seconds) | `timeoutMs`, `maxRetryWaitMs` | each language's unit for time |
+| `client.with_options(...)` for any call | the same per call in `RequestOptions`, or `client.withOptions(...)` | a TypeScript call takes an options argument; a Python one would need a keyword on every method |
+| `with_options(idempotency_key=...)` | `{ idempotencyKey }` in a call's options or `withOptions` | as above |
+| `extra_headers=`, `extra_query=`, `extra_body=` on chat and embeddings | `extraHeaders`, `extraQuery`, `extraBody` in any call's options (`headers` is `extraHeaders`' older name) | the OpenAI-compatible calls are where the API adds fields first |
+| `stream.final_text()` | `stream.finalText()` (`accumulate()` is its older name) | |
+| `stream.close()`, `client.close()` | `stream.abort()`; the client has no pool to close | httpx holds connections; fetch cancels by signal |
+| `http_client=` | `fetch` | the transport each language sends with |
+| `on_request` receives the `Request` | `onRequest` receives `{ method, path }` | a TypeScript body may be a form or a stream, not something to hand a logger |
+| `MATTERWAVE_LOG` or the `matterwave_sdk` logger | `logLevel` and `logger` (`MATTERWAVE_LOG` where there is an environment) | Python has a logging module; JavaScript does not |
+| `APIDeprecationWarning`, a warning | `logger.warn` | each language's way to warn |
+| | `dangerouslyAllowBrowser` | only a browser puts a key in reach of a page's visitors |
+
+A configuration mistake (no base URL, a negative retry count) is a
+`MatterWaveConfigError` in both, under `MatterWaveError`; in Python it is a
+`ValueError` as well. Python checks other arguments with `ValueError`, as
+Python does; TypeScript throws `MatterWaveConfigError` for those too.
+
 ## Development
 
 ```
 uv sync --extra dev
 uv run pytest
-uv run ruff check . && uv run mypy
+uv run ruff check . && uv run ruff format --check && uv run mypy
 ```
+
+CI runs the same on Python 3.10, 3.11, 3.12 and 3.13.
+
+`pre-commit install` once per clone runs gitleaks on every commit, the same
+secret scan CI runs over the whole history.
 
 `tests/test_openapi_contract.py` checks this client against the app's
 exported OpenAPI document, `docs/developers/openapi.json` in the app repo,

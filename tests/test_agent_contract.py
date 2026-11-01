@@ -46,13 +46,24 @@ def test_the_contract_is_read_only() -> None:
 
 def test_the_seven_tools_with_their_kinds() -> None:
     assert agent.TOOL_NAMES == (
-        "read_file", "list_dir", "glob", "grep", "edit", "write_file", "run_shell"
+        "read_file",
+        "list_dir",
+        "glob",
+        "grep",
+        "edit",
+        "write_file",
+        "run_shell",
     )
     assert get_args(agent.ToolName) == agent.TOOL_NAMES
     kinds = {t.name: t.kind for t in agent.TOOLS}
     assert kinds == {
-        "read_file": "read", "list_dir": "read", "glob": "read", "grep": "read",
-        "edit": "write", "write_file": "write", "run_shell": "shell",
+        "read_file": "read",
+        "list_dir": "read",
+        "glob": "read",
+        "grep": "read",
+        "edit": "write",
+        "write_file": "write",
+        "run_shell": "shell",
     }
     assert agent.READ_ONLY_TOOLS == ("read_file", "list_dir", "glob", "grep")
     assert all(t.read_only == (t.kind == "read") for t in agent.TOOLS)
@@ -93,7 +104,9 @@ def test_the_four_modes_and_the_default() -> None:
     assert agent.DEFAULT_MODE == "ask"
     yolo = agent.MODES_BY_NAME["yolo"]
     assert yolo.requires_flag and not yolo.persistable
-    assert all(m.persistable and not m.requires_flag for m in agent.APPROVAL_MODES if m.name != "yolo")
+    assert all(
+        m.persistable and not m.requires_flag for m in agent.APPROVAL_MODES if m.name != "yolo"
+    )
 
 
 def test_each_mode_lists_only_known_tools_once() -> None:

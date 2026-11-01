@@ -10,8 +10,9 @@ from __future__ import annotations
 import json
 import os
 import random
+import uuid
 from collections.abc import AsyncIterable, AsyncIterator, Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any, Literal, TypedDict
@@ -21,6 +22,7 @@ import httpx
 from .errors import (
     APIError,
     DeviceAuthError,
+    MatterWaveConfigError,
     MissingAPIKeyError,
     RateLimit,
     error_class_for,
@@ -29,6 +31,7 @@ from .errors import (
 API_KEY_ENV = "MATTERWAVE_API_KEY"
 BASE_URL_ENV = "MATTERWAVE_BASE_URL"
 REQUEST_ID_HEADER = "x-request-id"
+IDEMPOTENCY_HEADER = "Idempotency-Key"
 API_PREFIX = "/v1"
 SSE_DONE = "[DONE]"
 
@@ -38,10 +41,34 @@ DEFAULT_MAX_RETRIES = 2
 # capped, with jitter so a fleet of clients does not retry in lockstep.
 BACKOFF_BASE_S = 0.5
 BACKOFF_CAP_S = 8.0
+# The longest a retry may wait. A `Retry-After` beyond it (an hour, say) is
+# the server's way of saying "not now"; the error is raised rather than the
+# call hanging until then, and carries the delay for the caller to decide.
+DEFAULT_MAX_RETRY_WAIT_S = 60.0
 
 # A 429 the server says is the organisation's budget, not the window.
 # Waiting does not refill a budget; retrying it only delays the real answer.
 NON_RETRYABLE_429_CODES = frozenset({"insufficient_quota"})
+
+# Methods a second copy of cannot add anything the first did not: reads, and
+# the PUT and DELETE routes, which set a state rather than append one. A POST
+# or a PATCH that failed after reaching the server may have taken effect --
+# a message stored and billed, a key minted -- so it is only sent again when
+# the failure proves the server never acted on it.
+IDEMPOTENT_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "PUT", "DELETE"})
+# Methods that only read. Every other request is a write and carries an
+# `Idempotency-Key`, one per call and the same on each retry of it, so a
+# server that keeps the keys can answer a repeat with the first result.
+READ_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+# Transport failures that happen before a byte of the request is written:
+# no connection was made, or none was free in the pool. Anything later (a
+# reset, a read timeout) leaves open whether the server acted.
+UNSENT_ERRORS: tuple[type[httpx.HTTPError], ...] = (
+    httpx.ConnectError,
+    httpx.ConnectTimeout,
+    httpx.PoolTimeout,
+)
 
 
 class Operation(TypedDict):
@@ -321,14 +348,14 @@ def resolve_base_url(base_url: str | None) -> str:
     paths this client builds already carry the prefix."""
     value = base_url if base_url is not None else os.environ.get(BASE_URL_ENV, "").strip()
     if not value:
-        raise ValueError(
+        raise MatterWaveConfigError(
             f"No base URL: pass base_url= or set {BASE_URL_ENV} to the MatterWave origin."
         )
     value = value.rstrip("/")
     if value.endswith(API_PREFIX):
         value = value[: -len(API_PREFIX)]
     if not value.startswith(("http://", "https://")):
-        raise ValueError(f"base_url must start with http:// or https://, got {value!r}")
+        raise MatterWaveConfigError(f"base_url must start with http:// or https://, got {value!r}")
     return value
 
 
@@ -353,6 +380,41 @@ class Request:
     # This request's timeout, where the client's default is wrong for it:
     # an MCP tool that runs a whole model turn takes minutes, not seconds.
     timeout: float | None = None
+    # Whether sending it twice is harmless. None reads it off the method;
+    # a POST that only reads (an MCP `tools/list`) says True.
+    idempotent: bool | None = None
+
+    @property
+    def safe_to_repeat(self) -> bool:
+        if self.idempotent is not None:
+            return self.idempotent
+        return self.method in IDEMPOTENT_METHODS
+
+    @property
+    def is_write(self) -> bool:
+        return self.method not in READ_METHODS
+
+
+def with_extras(
+    request: Request,
+    extra_headers: Mapping[str, str] | None,
+    extra_query: Mapping[str, str] | None,
+) -> Request:
+    """The request with the call's own headers and query parameters laid
+    over the operation's: for a header or a filter the API knows and this
+    client does not yet."""
+    if not extra_headers and not extra_query:
+        return request
+    return replace(
+        request,
+        headers={**request.headers, **(extra_headers or {})},
+        params={**request.params, **(extra_query or {})},
+    )
+
+
+def new_idempotency_key() -> str:
+    """A fresh key for one write: a random UUID, as Stripe and OpenAI send."""
+    return str(uuid.uuid4())
 
 
 def index_request() -> Request:
@@ -447,7 +509,11 @@ def embeddings_body(
     one embedding model, and `GET /v1` names it."""
     if not input:
         raise ValueError("input must be a string or a non-empty list")
-    body: dict[str, Any] = {"input": input if isinstance(input, str) else [list(i) if not isinstance(i, (str, int)) else i for i in input]}
+    body: dict[str, Any] = {
+        "input": input
+        if isinstance(input, str)
+        else [list(i) if not isinstance(i, (str, int)) else i for i in input]
+    }
     if model is not None:
         body["model"] = model
     if encoding_format is not None:
@@ -603,7 +669,11 @@ def set_pinned_request(conversation_id: str, pinned: bool) -> Request:
     # toggle is then idempotent by method, so a retried request cannot land
     # in the opposite state from the one the caller asked for.
     return Request(
-        "PUT" if pinned else "DELETE", _conversation_path(conversation_id, "/pin"), None, True, False
+        "PUT" if pinned else "DELETE",
+        _conversation_path(conversation_id, "/pin"),
+        None,
+        True,
+        False,
     )
 
 
@@ -822,16 +892,22 @@ def headers_for(
     api_key: str | None,
     user_agent: str,
     default_headers: Mapping[str, str] | None = None,
+    idempotency_key: str | None = None,
 ) -> dict[str, str]:
     """The request's headers, least specific first: the client's own
     defaults (`Accept`, `User-Agent`), then the caller's `default_headers`,
     which may replace them (a client built on this one names itself), then
-    what the operation itself needs, such as `Last-Event-ID` on a resume."""
+    what the operation itself needs, such as `Last-Event-ID` on a resume.
+    `idempotency_key` goes on unless one of those already set the header."""
     headers = {"Accept": "application/json", "User-Agent": user_agent}
     if request.stream:
         headers["Accept"] = "text/event-stream"
     headers.update(default_headers or {})
     headers.update(request.headers)
+    if idempotency_key is not None and not any(
+        name.lower() == IDEMPOTENCY_HEADER.lower() for name in headers
+    ):
+        headers[IDEMPOTENCY_HEADER] = idempotency_key
     if request.keyed:
         if api_key is None:
             raise MissingAPIKeyError(
@@ -1022,11 +1098,17 @@ def parse_json_object(response: httpx.Response) -> dict[str, Any]:
 # --- retries -----------------------------------------------------------------
 
 
-def should_retry(response: httpx.Response, body: bytes | None = None) -> bool:
-    """429 and 5xx, except the 429 that means the budget is spent."""
+def should_retry(
+    response: httpx.Response, body: bytes | None = None, *, safe_to_repeat: bool = True
+) -> bool:
+    """429, except the one that means the budget is spent, and 5xx for a
+    request that is safe to repeat. A 429 is the server declining before
+    the route runs, so it is retried whatever the method; a 5xx may come
+    after a write took effect (a gateway timing out on a reply the app was
+    still sending), so a POST is not sent again on one."""
     status = response.status_code
     if status >= 500:
-        return True
+        return safe_to_repeat
     if status != 429:
         return False
     raw = body if body is not None else response.content
@@ -1039,7 +1121,15 @@ def should_retry(response: httpx.Response, body: bytes | None = None) -> bool:
     return code not in NON_RETRYABLE_429_CODES
 
 
-def backoff_s(attempt: int, retry_after: float | None, *, rand: random.Random | None = None) -> float:
+def retry_after_failure(exc: httpx.HTTPError, request: Request) -> bool:
+    """Whether a request whose send raised may go again: any request that is
+    safe to repeat, and any other only when it never left the client."""
+    return request.safe_to_repeat or isinstance(exc, UNSENT_ERRORS)
+
+
+def backoff_s(
+    attempt: int, retry_after: float | None, *, rand: random.Random | None = None
+) -> float:
     """How long to wait before retry number `attempt` (0-based). The server's
     `Retry-After` wins when it sent one; otherwise exponential with jitter."""
     if retry_after is not None:

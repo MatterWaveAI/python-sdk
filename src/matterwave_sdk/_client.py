@@ -12,15 +12,20 @@ every decision through `_base` and differ only in how they wait.
     for chunk in client.chat.completions.create(messages=..., stream=True):
         print(chunk.content, end="")
 
-A 429 (the per-key window) and any 5xx are retried `max_retries` times with
-backoff, honouring `Retry-After` when the server sends it; a 429 whose code
-is `insufficient_quota` is not, because waiting does not refill a budget.
-Every error carries the `X-Request-Id` the server stamped on the refusal.
+A 429 (the per-key window) is retried `max_retries` times with backoff,
+honouring `Retry-After` when the server sends it; a 429 whose code is
+`insufficient_quota` is not, because waiting does not refill a budget. A 5xx
+or a dropped connection is retried the same way for a request that is safe to
+send twice (GET, PUT, DELETE); a POST or PATCH is sent again only when the
+connection was never made, since the first copy may already have taken effect.
+Every error carries the `X-Request-Id` the server stamped on the refusal,
+and every write an `Idempotency-Key` that stays the same across its retries.
 """
 
 from __future__ import annotations
 
 import asyncio
+import copy
 import inspect
 import json
 import time
@@ -30,7 +35,7 @@ from typing import Any, Literal, TypeVar, cast, overload
 
 import httpx
 
-from . import _base
+from . import _base, _log
 from ._base import EmbeddingInput, Message, Request, Tool, ToolChoice
 from ._mcp import AsyncMcp, Mcp
 from ._resources import (
@@ -87,6 +92,7 @@ from .errors import (
     APIError,
     APITimeoutError,
     DeviceAuthError,
+    MatterWaveConfigError,
     MatterWaveError,
     ParseError,
 )
@@ -132,22 +138,69 @@ class _Config:
         timeout: float | httpx.Timeout | None,
         max_retries: int,
         default_headers: Mapping[str, str] | None,
+        max_retry_wait: float = _base.DEFAULT_MAX_RETRY_WAIT_S,
     ) -> None:
         if max_retries < 0:
-            raise ValueError("max_retries must be 0 or more")
+            raise MatterWaveConfigError("max_retries must be 0 or more")
+        if not max_retry_wait >= 0:
+            raise MatterWaveConfigError("max_retry_wait must be 0 or more")
         self.api_key = _base.resolve_api_key(api_key)
         self.base_url = _base.resolve_base_url(base_url)
         self.timeout = _base.DEFAULT_TIMEOUT_S if timeout is None else timeout
         self.max_retries = max_retries
+        self.max_retry_wait = max_retry_wait
         self.default_headers = dict(default_headers or {})
+        # Set only on a `with_options` view: the key its writes carry.
+        self.idempotency_key: str | None = None
+
+    def overridden(
+        self,
+        *,
+        timeout: float | httpx.Timeout | None,
+        max_retries: int | None,
+        max_retry_wait: float | None,
+        default_headers: Mapping[str, str] | None,
+        idempotency_key: str | None = None,
+    ) -> _Config:
+        """This configuration with the given settings replaced; None keeps
+        a setting as it is. `default_headers` are laid over the current ones
+        rather than replacing them."""
+        if max_retries is not None and max_retries < 0:
+            raise MatterWaveConfigError("max_retries must be 0 or more")
+        if max_retry_wait is not None and not max_retry_wait >= 0:
+            raise MatterWaveConfigError("max_retry_wait must be 0 or more")
+        config = copy.copy(self)
+        if timeout is not None:
+            config.timeout = timeout
+        if max_retries is not None:
+            config.max_retries = max_retries
+        if max_retry_wait is not None:
+            config.max_retry_wait = max_retry_wait
+        config.default_headers = {**self.default_headers, **(default_headers or {})}
+        if idempotency_key is not None:
+            if not idempotency_key.strip():
+                raise MatterWaveConfigError("idempotency_key must be non-empty")
+            config.idempotency_key = idempotency_key
+        return config
+
+    def idempotency_key_for(self, request: Request) -> str | None:
+        """The key one call of `request` carries on every attempt: the
+        view's own when `with_options` set one, a fresh one for any other
+        write, none for a read."""
+        if not request.is_write:
+            return None
+        return self.idempotency_key or _base.new_idempotency_key()
 
     def build(
         self,
         request: Request,
         client: httpx.Client | httpx.AsyncClient,
         timeout: float | httpx.Timeout | None = None,
+        idempotency_key: str | None = None,
     ) -> httpx.Request:
-        headers = _base.headers_for(request, self.api_key, USER_AGENT, self.default_headers)
+        headers = _base.headers_for(
+            request, self.api_key, USER_AGENT, self.default_headers, idempotency_key
+        )
         # Most specific first: the call's own timeout, then the operation's
         # (an MCP tool that runs a whole model turn), then the client's.
         effective = timeout if timeout is not None else request.timeout
@@ -538,6 +591,8 @@ class Completions:
         response_format: dict[str, Any] | None = None,
         conversation_id: str | None = None,
         extra_body: dict[str, Any] | None = None,
+        extra_headers: Mapping[str, str] | None = None,
+        extra_query: Mapping[str, str] | None = None,
         timeout: float | None = None,
         max_retries: int | None = None,
     ) -> ChatCompletion: ...
@@ -564,6 +619,8 @@ class Completions:
         response_format: dict[str, Any] | None = None,
         conversation_id: str | None = None,
         extra_body: dict[str, Any] | None = None,
+        extra_headers: Mapping[str, str] | None = None,
+        extra_query: Mapping[str, str] | None = None,
         timeout: float | None = None,
         max_retries: int | None = None,
     ) -> Stream: ...
@@ -589,6 +646,8 @@ class Completions:
         response_format: dict[str, Any] | None = None,
         conversation_id: str | None = None,
         extra_body: dict[str, Any] | None = None,
+        extra_headers: Mapping[str, str] | None = None,
+        extra_query: Mapping[str, str] | None = None,
         timeout: float | None = None,
         max_retries: int | None = None,
     ) -> ChatCompletion | Stream:
@@ -599,7 +658,9 @@ class Completions:
         caller to run. `conversation_id` records the turn into that
         conversation of the key owner's (stateless otherwise). `timeout`
         and `max_retries` are the call's own bounds, overriding the
-        client's for this one call."""
+        client's for this one call; `extra_headers`, `extra_query` and
+        `extra_body` carry what the API knows and this client does not
+        yet."""
         body = _base.chat_completion_body(
             messages,
             model=model,
@@ -620,11 +681,11 @@ class Completions:
             conversation_id=conversation_id,
             extra_body=extra_body,
         )
-        request = _base.chat_completions_request(body)
+        request = _base.with_extras(
+            _base.chat_completions_request(body), extra_headers, extra_query
+        )
         if stream:
-            return Stream(
-                self._client._send(request, timeout=timeout, max_retries=max_retries)
-            )
+            return Stream(self._client._send(request, timeout=timeout, max_retries=max_retries))
         response = self._client._send(request, timeout=timeout, max_retries=max_retries)
         return ChatCompletion.from_dict(
             _base.parse_json_object(response), request_id=_base.request_id_of(response)
@@ -684,6 +745,8 @@ class Embeddings:
         dimensions: int | None = None,
         user: str | None = None,
         extra_body: dict[str, Any] | None = None,
+        extra_headers: Mapping[str, str] | None = None,
+        extra_query: Mapping[str, str] | None = None,
         timeout: float | None = None,
         max_retries: int | None = None,
     ) -> EmbeddingList:
@@ -699,7 +762,9 @@ class Embeddings:
             extra_body=extra_body,
         )
         response = self._client._send(
-            _base.embeddings_request(body), timeout=timeout, max_retries=max_retries
+            _base.with_extras(_base.embeddings_request(body), extra_headers, extra_query),
+            timeout=timeout,
+            max_retries=max_retries,
         )
         return EmbeddingList.from_dict(
             _base.parse_json_object(response), request_id=_base.request_id_of(response)
@@ -913,9 +978,7 @@ class Conversations:
         prompt, which replaces the user's instructions for it (the org's
         still apply). None, or an empty string, clears it. The answer
         carries the levels in force, as `get` reports them."""
-        body, rid = self._object(
-            _base.conversation_instructions_request(conversation_id, text)
-        )
+        body, rid = self._object(_base.conversation_instructions_request(conversation_id, text))
         return ConversationInstructions.from_dict(body, request_id=rid)
 
     def _stream(
@@ -959,9 +1022,7 @@ class Conversations:
             attachment_ids=attachment_ids,
             parent_id=parent_id,
         )
-        return self._stream(
-            request, conversation_id, timeout=timeout, max_retries=max_retries
-        )
+        return self._stream(request, conversation_id, timeout=timeout, max_retries=max_retries)
 
     def edit(
         self,
@@ -978,9 +1039,7 @@ class Conversations:
         request = _base.edit_message_request(
             conversation_id, message_id, content, model=model, temperature=temperature
         )
-        return self._stream(
-            request, conversation_id, timeout=timeout, max_retries=max_retries
-        )
+        return self._stream(request, conversation_id, timeout=timeout, max_retries=max_retries)
 
     def regenerate(
         self,
@@ -996,9 +1055,7 @@ class Conversations:
         request = _base.regenerate_message_request(
             conversation_id, message_id, model=model, temperature=temperature
         )
-        return self._stream(
-            request, conversation_id, timeout=timeout, max_retries=max_retries
-        )
+        return self._stream(request, conversation_id, timeout=timeout, max_retries=max_retries)
 
 
 class Messages:
@@ -1032,9 +1089,7 @@ class Messages:
             raise ValueError(
                 f"reasons must be from {', '.join(FEEDBACK_REASONS)}, got {', '.join(unknown)}"
             )
-        body, rid = self._object(
-            _base.set_feedback_request(message_id, rating, reasons, comment)
-        )
+        body, rid = self._object(_base.set_feedback_request(message_id, rating, reasons, comment))
         return MessageFeedback.from_dict(body, request_id=rid)
 
     def delete_feedback(self, message_id: str) -> RemovedFeedback:
@@ -1175,6 +1230,8 @@ class Auth:
 class MatterWave:
     """The blocking client. `api_key` defaults to `MATTERWAVE_API_KEY`,
     `base_url` to `MATTERWAVE_BASE_URL` (the origin, with or without `/v1`).
+    `max_retry_wait` is the longest one retry may wait, in seconds: a
+    `Retry-After` beyond it raises the error at once, `retry_after` set.
     Pass `http_client` to share a connection pool or a mock transport."""
 
     def __init__(
@@ -1184,18 +1241,24 @@ class MatterWave:
         base_url: str | None = None,
         timeout: float | httpx.Timeout | None = None,
         max_retries: int = _base.DEFAULT_MAX_RETRIES,
+        max_retry_wait: float = _base.DEFAULT_MAX_RETRY_WAIT_S,
         default_headers: Mapping[str, str] | None = None,
         http_client: httpx.Client | None = None,
         on_request: Callable[[Request], object] | None = None,
         on_response: Callable[[_base.RawResponse], object] | None = None,
     ) -> None:
-        self._config = _Config(api_key, base_url, timeout, max_retries, default_headers)
+        self._config = _Config(
+            api_key, base_url, timeout, max_retries, default_headers, max_retry_wait
+        )
+        _log.configure_from_env()
         self._owns_http = http_client is None
         self._http = http_client or httpx.Client()
         self._last_response: _base.RawResponse | None = None
         self._on_request = on_request
         self._on_response = on_response
         self._closed = False
+        # The client a `with_options` view was made from, whose close ends it.
+        self._root: MatterWave = self
         self.chat = Chat(self)
         self.models = Models(self)
         self.embeddings = Embeddings(self)
@@ -1231,6 +1294,44 @@ class MatterWave:
     @property
     def base_url(self) -> str:
         return self._config.base_url
+
+    def with_options(
+        self,
+        *,
+        timeout: float | httpx.Timeout | None = None,
+        max_retries: int | None = None,
+        max_retry_wait: float | None = None,
+        default_headers: Mapping[str, str] | None = None,
+        idempotency_key: str | None = None,
+    ) -> MatterWave:
+        """This client with some settings replaced, for the calls made
+        through it: `client.with_options(timeout=600).keys.create(...)`
+        gives one call of any method its own bounds. None keeps a setting;
+        `default_headers` are added to the client's. The view shares the
+        client's connection pool, so it is cheap to make per call, and
+        closing the client closes it too.
+
+        `idempotency_key` replaces the key a write would otherwise get --
+        one fresh UUID per call -- with the caller's, for a write that must
+        keep its key across processes (a job queue's id, say). Every write
+        made through the view carries it, so make one view per write."""
+        view = copy.copy(self)
+        view._config = self._config.overridden(
+            timeout=timeout,
+            max_retries=max_retries,
+            max_retry_wait=max_retry_wait,
+            default_headers=default_headers,
+            idempotency_key=idempotency_key,
+        )
+        view._owns_http = False
+        view._closed = False
+        view._last_response = None
+        # Every public attribute is a namespace built on the client; each is
+        # built again on the view so its calls carry the view's settings.
+        for name, value in vars(self).items():
+            if not name.startswith("_"):
+                setattr(view, name, type(value)(view))
+        return view
 
     @property
     def last_response(self) -> _base.RawResponse | None:
@@ -1299,23 +1400,33 @@ class MatterWave:
         are the call's own bounds: where given, they override the client's,
         so one long call need not hold the whole client at its pace."""
         attempt_limit = self._config.max_retries if max_retries is None else max_retries
+        idempotency_key = self._config.idempotency_key_for(request)
         attempt = 0
         while True:
-            if self._closed:
+            if self._closed or self._root._closed:
                 raise MatterWaveError(
                     f"{request.method} {request.path} was sent to a closed client."
                 )
             if self._on_request is not None:
                 self._on_request(request)
-            http_request = self._config.build(request, self._http, timeout=timeout)
+            http_request = self._config.build(
+                request, self._http, timeout=timeout, idempotency_key=idempotency_key
+            )
+            _log.attempt(request, attempt)
+            since = _log.started()
             try:
                 response = self._http.send(http_request, stream=request.stream)
             except httpx.HTTPError as exc:
-                if attempt >= attempt_limit:
+                _log.failure(request, exc, since)
+                if attempt >= attempt_limit or not _base.retry_after_failure(exc, request):
                     raise _connection_error(exc, request) from exc
-                time.sleep(_base.backoff_s(attempt, None))
+                wait = _base.backoff_s(attempt, None)
+                _log.retry(request, wait, attempt)
+                time.sleep(wait)
                 attempt += 1
                 continue
+            _log.response(request, response, since)
+            _log.warn_if_deprecated(request, response)
             if response.is_success:
                 self._last_response = _base.raw_response_of(response)
                 if self._on_response is not None:
@@ -1325,9 +1436,15 @@ class MatterWave:
             self._last_response = _base.raw_response_of(response)
             if self._on_response is not None:
                 self._on_response(self._last_response)
-            if attempt < attempt_limit and _base.should_retry(response, body):
+            delay = _base.backoff_s(attempt, _base.retry_after_of(response))
+            if (
+                attempt < attempt_limit
+                and delay <= self._config.max_retry_wait
+                and _base.should_retry(response, body, safe_to_repeat=request.safe_to_repeat)
+            ):
                 response.close()
-                time.sleep(_base.backoff_s(attempt, _base.retry_after_of(response)))
+                _log.retry(request, delay, attempt)
+                time.sleep(delay)
                 attempt += 1
                 continue
             response.close()
@@ -1363,6 +1480,8 @@ class AsyncCompletions:
         response_format: dict[str, Any] | None = None,
         conversation_id: str | None = None,
         extra_body: dict[str, Any] | None = None,
+        extra_headers: Mapping[str, str] | None = None,
+        extra_query: Mapping[str, str] | None = None,
         timeout: float | None = None,
         max_retries: int | None = None,
     ) -> ChatCompletion: ...
@@ -1389,6 +1508,8 @@ class AsyncCompletions:
         response_format: dict[str, Any] | None = None,
         conversation_id: str | None = None,
         extra_body: dict[str, Any] | None = None,
+        extra_headers: Mapping[str, str] | None = None,
+        extra_query: Mapping[str, str] | None = None,
         timeout: float | None = None,
         max_retries: int | None = None,
     ) -> AsyncStream: ...
@@ -1414,6 +1535,8 @@ class AsyncCompletions:
         response_format: dict[str, Any] | None = None,
         conversation_id: str | None = None,
         extra_body: dict[str, Any] | None = None,
+        extra_headers: Mapping[str, str] | None = None,
+        extra_query: Mapping[str, str] | None = None,
         timeout: float | None = None,
         max_retries: int | None = None,
     ) -> ChatCompletion | AsyncStream:
@@ -1437,7 +1560,9 @@ class AsyncCompletions:
             conversation_id=conversation_id,
             extra_body=extra_body,
         )
-        request = _base.chat_completions_request(body)
+        request = _base.with_extras(
+            _base.chat_completions_request(body), extra_headers, extra_query
+        )
         if stream:
             return AsyncStream(
                 await self._client._send(request, timeout=timeout, max_retries=max_retries)
@@ -1486,6 +1611,8 @@ class AsyncEmbeddings:
         dimensions: int | None = None,
         user: str | None = None,
         extra_body: dict[str, Any] | None = None,
+        extra_headers: Mapping[str, str] | None = None,
+        extra_query: Mapping[str, str] | None = None,
         timeout: float | None = None,
         max_retries: int | None = None,
     ) -> EmbeddingList:
@@ -1498,7 +1625,9 @@ class AsyncEmbeddings:
             extra_body=extra_body,
         )
         response = await self._client._send(
-            _base.embeddings_request(body), timeout=timeout, max_retries=max_retries
+            _base.with_extras(_base.embeddings_request(body), extra_headers, extra_query),
+            timeout=timeout,
+            max_retries=max_retries,
         )
         return EmbeddingList.from_dict(
             _base.parse_json_object(response), request_id=_base.request_id_of(response)
@@ -1664,9 +1793,7 @@ class AsyncConversations:
         timeout: float | None = None,
         max_retries: int | None = None,
     ) -> AsyncConversationStream:
-        response = await self._client._send(
-            request, timeout=timeout, max_retries=max_retries
-        )
+        response = await self._client._send(request, timeout=timeout, max_retries=max_retries)
         return AsyncConversationStream(self._client, request, conversation_id, response)
 
     async def send(
@@ -1857,18 +1984,23 @@ class AsyncMatterWave:
         base_url: str | None = None,
         timeout: float | httpx.Timeout | None = None,
         max_retries: int = _base.DEFAULT_MAX_RETRIES,
+        max_retry_wait: float = _base.DEFAULT_MAX_RETRY_WAIT_S,
         default_headers: Mapping[str, str] | None = None,
         http_client: httpx.AsyncClient | None = None,
         on_request: Callable[[Request], object] | None = None,
         on_response: Callable[[_base.RawResponse], object] | None = None,
     ) -> None:
-        self._config = _Config(api_key, base_url, timeout, max_retries, default_headers)
+        self._config = _Config(
+            api_key, base_url, timeout, max_retries, default_headers, max_retry_wait
+        )
+        _log.configure_from_env()
         self._owns_http = http_client is None
         self._http = http_client or httpx.AsyncClient()
         self._last_response: _base.RawResponse | None = None
         self._on_request = on_request
         self._on_response = on_response
         self._closed = False
+        self._root: AsyncMatterWave = self
         self.chat = AsyncChat(self)
         self.models = AsyncModels(self)
         self.embeddings = AsyncEmbeddings(self)
@@ -1904,6 +2036,35 @@ class AsyncMatterWave:
     @property
     def base_url(self) -> str:
         return self._config.base_url
+
+    def with_options(
+        self,
+        *,
+        timeout: float | httpx.Timeout | None = None,
+        max_retries: int | None = None,
+        max_retry_wait: float | None = None,
+        default_headers: Mapping[str, str] | None = None,
+        idempotency_key: str | None = None,
+    ) -> AsyncMatterWave:
+        """As `MatterWave.with_options`: this client with some settings
+        replaced, sharing its connection pool."""
+        view = copy.copy(self)
+        view._config = self._config.overridden(
+            timeout=timeout,
+            max_retries=max_retries,
+            max_retry_wait=max_retry_wait,
+            default_headers=default_headers,
+            idempotency_key=idempotency_key,
+        )
+        view._owns_http = False
+        view._closed = False
+        view._last_response = None
+        # Every public attribute is a namespace built on the client; each is
+        # built again on the view so its calls carry the view's settings.
+        for name, value in vars(self).items():
+            if not name.startswith("_"):
+                setattr(view, name, type(value)(view))
+        return view
 
     @property
     def last_response(self) -> _base.RawResponse | None:
@@ -1956,23 +2117,33 @@ class AsyncMatterWave:
         """As `MatterWave._send`: one operation with the retry loop, the
         call's own `timeout` and `max_retries` winning over the client's."""
         attempt_limit = self._config.max_retries if max_retries is None else max_retries
+        idempotency_key = self._config.idempotency_key_for(request)
         attempt = 0
         while True:
-            if self._closed:
+            if self._closed or self._root._closed:
                 raise MatterWaveError(
                     f"{request.method} {request.path} was sent to a closed client."
                 )
             if self._on_request is not None:
                 self._on_request(request)
-            http_request = self._config.build(request, self._http, timeout=timeout)
+            http_request = self._config.build(
+                request, self._http, timeout=timeout, idempotency_key=idempotency_key
+            )
+            _log.attempt(request, attempt)
+            since = _log.started()
             try:
                 response = await self._http.send(http_request, stream=request.stream)
             except httpx.HTTPError as exc:
-                if attempt >= attempt_limit:
+                _log.failure(request, exc, since)
+                if attempt >= attempt_limit or not _base.retry_after_failure(exc, request):
                     raise _connection_error(exc, request) from exc
-                await asyncio.sleep(_base.backoff_s(attempt, None))
+                wait = _base.backoff_s(attempt, None)
+                _log.retry(request, wait, attempt)
+                await asyncio.sleep(wait)
                 attempt += 1
                 continue
+            _log.response(request, response, since)
+            _log.warn_if_deprecated(request, response)
             if response.is_success:
                 self._last_response = _base.raw_response_of(response)
                 if self._on_response is not None:
@@ -1982,9 +2153,15 @@ class AsyncMatterWave:
             self._last_response = _base.raw_response_of(response)
             if self._on_response is not None:
                 self._on_response(self._last_response)
-            if attempt < attempt_limit and _base.should_retry(response, body):
+            delay = _base.backoff_s(attempt, _base.retry_after_of(response))
+            if (
+                attempt < attempt_limit
+                and delay <= self._config.max_retry_wait
+                and _base.should_retry(response, body, safe_to_repeat=request.safe_to_repeat)
+            ):
                 await response.aclose()
-                await asyncio.sleep(_base.backoff_s(attempt, _base.retry_after_of(response)))
+                _log.retry(request, delay, attempt)
+                await asyncio.sleep(delay)
                 attempt += 1
                 continue
             await response.aclose()
