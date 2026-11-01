@@ -117,6 +117,19 @@ write whose retries may come from another process. The API does not yet answer
 a repeated key with the first result, so the narrower retry rule for writes
 above still applies.
 
+### Logging and deprecations
+
+`MATTERWAVE_LOG=info` logs one line per response or failure to stderr --
+method, path, status, request id and time taken; `MATTERWAVE_LOG=debug` adds
+each attempt as it goes out and each wait before a retry. Bodies and headers
+are never logged. The lines go to the `matterwave_sdk` logger, so `logging`
+configuration works too.
+
+When the API marks a route for retirement (`Deprecation` and `Sunset`
+headers), the first call to it raises an `APIDeprecationWarning` naming the
+route and its dates, once per route per process. See
+[VERSIONING.md](VERSIONING.md) for what each release supports.
+
 ### Per-call settings
 
 `timeout` (seconds), `max_retries` and `max_retry_wait` are set on the client

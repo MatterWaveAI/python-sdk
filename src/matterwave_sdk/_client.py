@@ -35,7 +35,7 @@ from typing import Any, Literal, TypeVar, cast, overload
 
 import httpx
 
-from . import _base
+from . import _base, _log
 from ._base import EmbeddingInput, Message, Request, Tool, ToolChoice
 from ._mcp import AsyncMcp, Mcp
 from ._resources import (
@@ -1224,6 +1224,7 @@ class MatterWave:
         self._config = _Config(
             api_key, base_url, timeout, max_retries, default_headers, max_retry_wait
         )
+        _log.configure_from_env()
         self._owns_http = http_client is None
         self._http = http_client or httpx.Client()
         self._last_response: _base.RawResponse | None = None
@@ -1374,14 +1375,21 @@ class MatterWave:
             http_request = self._config.build(
                 request, self._http, timeout=timeout, idempotency_key=idempotency_key
             )
+            _log.attempt(request, attempt)
+            since = _log.started()
             try:
                 response = self._http.send(http_request, stream=request.stream)
             except httpx.HTTPError as exc:
+                _log.failure(request, exc, since)
                 if attempt >= attempt_limit or not _base.retry_after_failure(exc, request):
                     raise _connection_error(exc, request) from exc
-                time.sleep(_base.backoff_s(attempt, None))
+                wait = _base.backoff_s(attempt, None)
+                _log.retry(request, wait, attempt)
+                time.sleep(wait)
                 attempt += 1
                 continue
+            _log.response(request, response, since)
+            _log.warn_if_deprecated(request, response)
             if response.is_success:
                 self._last_response = _base.raw_response_of(response)
                 if self._on_response is not None:
@@ -1398,6 +1406,7 @@ class MatterWave:
                 and _base.should_retry(response, body, safe_to_repeat=request.safe_to_repeat)
             ):
                 response.close()
+                _log.retry(request, delay, attempt)
                 time.sleep(delay)
                 attempt += 1
                 continue
@@ -1937,6 +1946,7 @@ class AsyncMatterWave:
         self._config = _Config(
             api_key, base_url, timeout, max_retries, default_headers, max_retry_wait
         )
+        _log.configure_from_env()
         self._owns_http = http_client is None
         self._http = http_client or httpx.AsyncClient()
         self._last_response: _base.RawResponse | None = None
@@ -2061,14 +2071,21 @@ class AsyncMatterWave:
             http_request = self._config.build(
                 request, self._http, timeout=timeout, idempotency_key=idempotency_key
             )
+            _log.attempt(request, attempt)
+            since = _log.started()
             try:
                 response = await self._http.send(http_request, stream=request.stream)
             except httpx.HTTPError as exc:
+                _log.failure(request, exc, since)
                 if attempt >= attempt_limit or not _base.retry_after_failure(exc, request):
                     raise _connection_error(exc, request) from exc
-                await asyncio.sleep(_base.backoff_s(attempt, None))
+                wait = _base.backoff_s(attempt, None)
+                _log.retry(request, wait, attempt)
+                await asyncio.sleep(wait)
                 attempt += 1
                 continue
+            _log.response(request, response, since)
+            _log.warn_if_deprecated(request, response)
             if response.is_success:
                 self._last_response = _base.raw_response_of(response)
                 if self._on_response is not None:
@@ -2085,6 +2102,7 @@ class AsyncMatterWave:
                 and _base.should_retry(response, body, safe_to_repeat=request.safe_to_repeat)
             ):
                 await response.aclose()
+                _log.retry(request, delay, attempt)
                 await asyncio.sleep(delay)
                 attempt += 1
                 continue

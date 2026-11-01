@@ -60,6 +60,7 @@ include = [
     "/docs",
     "/README.md",
     "/CHANGELOG.md",
+    "/VERSIONING.md",
     "/LICENSE",
 ]
 

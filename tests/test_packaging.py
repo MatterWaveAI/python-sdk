@@ -37,7 +37,14 @@ def test_the_sdist_carries_the_changelog_docs_and_licence(dist: Path) -> None:
     (sdist,) = dist.glob("*.tar.gz")
     with tarfile.open(sdist) as archive:
         names = {name.split("/", 1)[1] for name in archive.getnames() if "/" in name}
-    for wanted in ("CHANGELOG.md", "LICENSE", "README.md", "docs/mcp.md", "src/matterwave_sdk/py.typed"):
+    for wanted in (
+        "CHANGELOG.md",
+        "VERSIONING.md",
+        "LICENSE",
+        "README.md",
+        "docs/mcp.md",
+        "src/matterwave_sdk/py.typed",
+    ):
         assert wanted in names, f"{wanted} missing from the sdist"
 
 

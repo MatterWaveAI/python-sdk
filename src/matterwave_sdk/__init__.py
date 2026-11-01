@@ -71,6 +71,7 @@ from ._resources import (
 from ._version import __version__
 from .errors import (
     APIConnectionError,
+    APIDeprecationWarning,
     APIError,
     APITimeoutError,
     AuthenticationError,
@@ -192,6 +193,7 @@ __all__ = [
     "APP_OPERATIONS",
     "OPERATIONS",
     "APIConnectionError",
+    "APIDeprecationWarning",
     "APIError",
     "APITimeoutError",
     "Admin",

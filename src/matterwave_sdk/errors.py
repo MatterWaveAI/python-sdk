@@ -221,6 +221,13 @@ class McpToolError(McpError):
         self.error = error if error is not None else {}
 
 
+class APIDeprecationWarning(FutureWarning):
+    """A route the API has marked for retirement with `Deprecation` and
+    `Sunset` headers: raised once per route per process, naming the route
+    and the dates. A `FutureWarning`, so it shows by default; the
+    `warnings` filters silence it or turn it into an error."""
+
+
 def error_class_for(status_code: int) -> type[APIError]:
     if status_code == 400:
         return BadRequestError
