@@ -231,8 +231,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `list` / `get` / `wait` over a ChatGPT or Claude export file. `start` is
   `create` under the name the Data pane uses.
 - `client.speech.transcribe` -- one clip, multipart, its type named from
-  the file's extension or `content_type` and checked against the route's
-  list, with an optional BCP 47 `language` hint.
+  the file's extension or `content_type`, with an optional BCP 47
+  `language` hint. A type that is not audio is refused before sending; any
+  audio type goes to the route, which answers 415 for one it does not take.
 - `client.attachments.scan` / `view` -- an attachment's scan verdict, and
   its bytes through the route's same-origin signed redirect.
 - `client.billing` -- `status` (any member; `billing_enabled` and the
@@ -251,8 +252,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `set_role`, `transfer_ownership`, `remove`), `client.invites` (`list`,
   `create`, `resend`, `revoke`, the anonymous `lookup`, and `accept`) and
   `client.invite_links` (`list`, `create` -- the token and url shown once --
-  `revoke`, the anonymous `lookup`, and `join`; `members.join_lookup` and
-  `members.join` too).
+  `revoke`, the anonymous `lookup`, and `join`). `client.members` answers
+  the same routes as `list_invites`, `create_invite`, `resend_invite`,
+  `revoke_invite`, `lookup_invite`, `accept_invite`, `list_invite_links`,
+  `create_invite_link`, `revoke_invite_link`, `lookup_join_link` (or
+  `join_lookup`) and `join`.
 - `client.auth.device.lookup` / `approve` / `deny` -- the other side of
   device login, deciding a code a device shows.
 - The organisation, member, invite and billing-administration routes gate

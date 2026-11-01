@@ -426,7 +426,10 @@ name), `models` / `set_models`, `sharing` / `set_sharing`, `shares` /
 `lookup`, `accept`. `invite_links`: `list`, `create`, `revoke`, `lookup`, `join`.
 `billing`: `checkout`, `portal`, `invoices`, `change_plan` (or `switch_plan`),
 `plan_history` beside `status`, and the public `plans` (as `plans.list`).
-`members.join_lookup` and `members.join` are `invite_links.lookup` and `join`. `auth.device`: `lookup`, `approve`, `deny`, the person's side
+`members` answers the invite and link routes too: `list_invites`,
+`create_invite`, `resend_invite`, `revoke_invite`, `lookup_invite`,
+`accept_invite`, `list_invite_links`, `create_invite_link`,
+`revoke_invite_link`, `lookup_join_link` (or `join_lookup`) and `join`. `auth.device`: `lookup`, `approve`, `deny`, the person's side
 of device login. `invites.lookup` and `invite_links.lookup` are anonymous: the
 token is the credential. Reading the org, its members and its invites is any
 member's; the rest is an owner's or admin's, and closing the org, transferring

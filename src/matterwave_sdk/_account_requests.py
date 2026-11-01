@@ -146,8 +146,9 @@ AUDIO_TYPES = {
     ".aac": "audio/aac",
 }
 
-# The media types the route itself accepts; a part labelled otherwise is
-# refused here, with the list, before the bytes are spent.
+# The media types the route names. Any other audio type is sent on and left
+# to the route (a 415 when it will not take it); a type that is not audio at
+# all is refused here, with the list, before the bytes are spent.
 SPEECH_MEDIA_TYPES = (
     "audio/webm",
     "audio/ogg",
@@ -183,8 +184,10 @@ def transcribe_request(
     if kind is None:
         raise ValueError(f"name the clip's content_type; {filename!r} does not say it")
     kind = kind.split(";")[0].strip().lower()
-    if kind not in SPEECH_MEDIA_TYPES:
-        raise ValueError(f"content_type must be one of {', '.join(SPEECH_MEDIA_TYPES)}")
+    if kind not in SPEECH_MEDIA_TYPES and not kind.startswith("audio/"):
+        raise ValueError(
+            f"content_type must be audio, such as {', '.join(SPEECH_MEDIA_TYPES)}; got {kind}"
+        )
     if language is not None and (not language.strip() or len(language) > LANGUAGE_MAX_LENGTH):
         raise ValueError(
             f"language must be a BCP 47 tag of at most {LANGUAGE_MAX_LENGTH} characters"

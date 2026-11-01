@@ -281,7 +281,7 @@ def test_sessions_list_flags_the_current_one(api, client: MatterWave) -> None:
     assert sent(route).headers["authorization"] == f"Bearer {API_KEY}"
     assert sessions.current_id == SESSION_ID
     assert len(sessions) == 2
-    assert sessions.sessions[0].current and sessions.sessions[1].ip is None
+    assert sessions.data[0].current and sessions.data[1].ip is None
 
 
 def test_revoke_session_answers_whether_it_was_the_callers_own(api, client: MatterWave) -> None:

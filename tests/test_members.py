@@ -402,3 +402,69 @@ async def test_async_members_makes_the_same_requests(api, async_client: AsyncMat
         assert await c.invite_links.revoke(LINK_ID) is None
         assert (await c.members.join_lookup("tok")).org_name == "Acme"
         assert (await c.members.join("tok")).role == "owner"
+
+
+def test_members_answers_the_invite_and_link_routes_too(api, client: MatterWave) -> None:
+    """The flat names on `members` are the same routes as `invites` and
+    `invite_links`, request for request."""
+    listed = api.get("/api/org/invites").respond(200, json={"data": [invite_body()]}, headers=H)
+    created = api.post("/api/org/invites").respond(201, json=invite_body(mail="sent"), headers=H)
+    resent = api.post(f"/api/org/invites/{INVITE_ID}/resend").respond(
+        200, json=invite_body(mail="sent"), headers=H
+    )
+    revoked = api.delete(f"/api/org/invites/{INVITE_ID}").respond(204)
+    looked = api.post("/api/org/invites/lookup").respond(
+        200, json={"org_name": "Acme", "status": "pending"}, headers=H
+    )
+    accepted = api.post("/api/org/invites/accept").respond(200, json=member_body(), headers=H)
+    links = api.get("/api/org/invite-links").respond(200, json={"data": [link_body()]}, headers=H)
+    made = api.post("/api/org/invite-links").respond(
+        201, json={**link_body(), "token": "t", "url": "https://x.test/join?link=t"}, headers=H
+    )
+    unmade = api.delete(f"/api/org/invite-links/{LINK_ID}").respond(204)
+    joined = api.post("/api/join/lookup").respond(200, json={"org_name": "Acme"}, headers=H)
+    assert len(client.members.list_invites()) == 1
+    assert client.members.create_invite("Bob@Example.test", role="admin").mail == "sent"
+    assert body_of(created) == {"email": "bob@example.test", "role": "admin"}
+    assert client.members.resend_invite(INVITE_ID).mail == "sent"
+    assert client.members.revoke_invite(INVITE_ID) is None
+    assert client.members.lookup_invite("tok").org_name == "Acme"
+    assert "authorization" not in sent(looked).headers
+    assert client.members.accept_invite("tok").email == "ada@example.test"
+    assert len(client.members.list_invite_links()) == 1
+    assert client.members.create_invite_link(role="viewer").token == "t"
+    assert client.members.revoke_invite_link(LINK_ID) is None
+    assert client.members.lookup_join_link("link-tok").org_name == "Acme"
+    for route in (listed, resent, revoked, accepted, links, made, unmade, joined):
+        assert route.called
+
+
+@pytest.mark.asyncio
+async def test_async_members_answers_the_invite_and_link_routes_too(
+    api, async_client: AsyncMatterWave
+) -> None:
+    api.get("/api/org/invites").respond(200, json={"data": [invite_body()]}, headers=H)
+    api.post("/api/org/invites").respond(201, json=invite_body(mail="sent"), headers=H)
+    api.post(f"/api/org/invites/{INVITE_ID}/resend").respond(
+        200, json=invite_body(mail="sent"), headers=H
+    )
+    api.delete(f"/api/org/invites/{INVITE_ID}").respond(204)
+    api.post("/api/org/invites/lookup").respond(200, json={"org_name": "Acme"}, headers=H)
+    api.post("/api/org/invites/accept").respond(200, json=member_body(), headers=H)
+    api.get("/api/org/invite-links").respond(200, json={"data": [link_body()]}, headers=H)
+    api.post("/api/org/invite-links").respond(
+        201, json={**link_body(), "token": "t", "url": "https://x.test/join?link=t"}, headers=H
+    )
+    api.delete(f"/api/org/invite-links/{LINK_ID}").respond(204)
+    api.post("/api/join/lookup").respond(200, json={"org_name": "Acme"}, headers=H)
+    async with async_client as c:
+        assert len(await c.members.list_invites()) == 1
+        assert (await c.members.create_invite("bob@example.test")).mail == "sent"
+        assert (await c.members.resend_invite(INVITE_ID)).mail == "sent"
+        assert await c.members.revoke_invite(INVITE_ID) is None
+        assert (await c.members.lookup_invite("tok")).org_name == "Acme"
+        assert (await c.members.accept_invite("tok")).state == "active"
+        assert len(await c.members.list_invite_links()) == 1
+        assert (await c.members.create_invite_link()).token == "t"
+        assert await c.members.revoke_invite_link(LINK_ID) is None
+        assert (await c.members.lookup_join_link("tok")).org_name == "Acme"

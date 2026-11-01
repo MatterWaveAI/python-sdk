@@ -113,7 +113,6 @@ class IdentityProviders(_Sync):
 
     def attach(
         self,
-        *,
         name: str,
         issuer: str,
         client_id: str,
@@ -145,7 +144,6 @@ class AsyncIdentityProviders(_Async):
 
     async def attach(
         self,
-        *,
         name: str,
         issuer: str,
         client_id: str,
@@ -188,7 +186,7 @@ class OrgClient(_Sync):
         body, rid = self._object(req.rename_org_request(name))
         return Org.from_dict(body, request_id=rid)
 
-    def close(self, *, confirm: str) -> ClosedOrg:
+    def close(self, confirm: str) -> ClosedOrg:
         """Close the org for good: `confirm` is its name, typed out. Every
         conversation is deleted (erased after the retention period), the
         keys, invites and links are revoked, the subscription is cancelled,
@@ -270,7 +268,7 @@ class AsyncOrgClient(_Async):
         body, rid = await self._object(req.rename_org_request(name))
         return Org.from_dict(body, request_id=rid)
 
-    async def close(self, *, confirm: str) -> ClosedOrg:
+    async def close(self, confirm: str) -> ClosedOrg:
         body, rid = await self._object(req.close_org_request(confirm))
         return ClosedOrg.from_dict(body, request_id=rid)
 
@@ -323,7 +321,9 @@ class AsyncOrgClient(_Async):
 
 
 class Members(_Sync):
-    """`/api/org/members`: who is in the org and in what role."""
+    """`/api/org/members`: who is in the org and in what role. The invite
+    and join-link routes answer here too, under the names the org pane
+    uses, beside `client.invites` and `client.invite_links`."""
 
     def list(self) -> MemberList:
         """Every member, the caller's own role, and the seats. Any member."""
@@ -358,6 +358,58 @@ class Members(_Sync):
         body, rid = self._object(req.join_request(token))
         return Member.from_dict(body, request_id=rid)
 
+    def list_invites(self) -> InviteList:
+        """`GET /api/org/invites`, as `client.invites.list`."""
+        body, rid = self._object(req.list_invites_request())
+        return InviteList.from_dict(body, request_id=rid)
+
+    def create_invite(self, email: str, *, role: str = "member") -> Invite:
+        """`POST /api/org/invites`, as `client.invites.create`."""
+        body, rid = self._object(req.create_invite_request(email, role))
+        return Invite.from_dict(body, request_id=rid)
+
+    def resend_invite(self, invite_id: str) -> Invite:
+        """`POST /api/org/invites/{id}/resend`, as `client.invites.resend`."""
+        body, rid = self._object(req.resend_invite_request(invite_id))
+        return Invite.from_dict(body, request_id=rid)
+
+    def revoke_invite(self, invite_id: str) -> None:
+        """`DELETE /api/org/invites/{id}`, as `client.invites.revoke`."""
+        self._none(req.revoke_invite_request(invite_id))
+
+    def lookup_invite(self, token: str) -> InviteLookup:
+        """`POST /api/org/invites/lookup`, as `client.invites.lookup`; no
+        credential is sent."""
+        body, rid = self._object(req.lookup_invite_request(token))
+        return InviteLookup.from_dict(body, request_id=rid)
+
+    def accept_invite(self, token: str) -> Member:
+        """`POST /api/org/invites/accept`, as `client.invites.accept`."""
+        body, rid = self._object(req.accept_invite_request(token))
+        return Member.from_dict(body, request_id=rid)
+
+    def list_invite_links(self) -> InviteLinkList:
+        """`GET /api/org/invite-links`, as `client.invite_links.list`."""
+        body, rid = self._object(req.list_invite_links_request())
+        return InviteLinkList.from_dict(body, request_id=rid)
+
+    def create_invite_link(
+        self, *, role: str = "member", max_uses: int = 10, expires_in_days: int = 7
+    ) -> InviteLink:
+        """`POST /api/org/invite-links`, as `client.invite_links.create`."""
+        body, rid = self._object(req.create_invite_link_request(role, max_uses, expires_in_days))
+        return InviteLink.from_dict(body, request_id=rid)
+
+    def revoke_invite_link(self, link_id: str) -> None:
+        """`DELETE /api/org/invite-links/{id}`, as `client.invite_links.revoke`."""
+        self._none(req.revoke_invite_link_request(link_id))
+
+    def lookup_join_link(self, token: str) -> LinkLookup:
+        """`POST /api/join/lookup`, as `client.invite_links.lookup`; no
+        credential is sent."""
+        body, rid = self._object(req.lookup_link_request(token))
+        return LinkLookup.from_dict(body, request_id=rid)
+
 
 class AsyncMembers(_Async):
     async def list(self) -> MemberList:
@@ -382,6 +434,48 @@ class AsyncMembers(_Async):
     async def join(self, token: str) -> Member:
         body, rid = await self._object(req.join_request(token))
         return Member.from_dict(body, request_id=rid)
+
+    async def list_invites(self) -> InviteList:
+        body, rid = await self._object(req.list_invites_request())
+        return InviteList.from_dict(body, request_id=rid)
+
+    async def create_invite(self, email: str, *, role: str = "member") -> Invite:
+        body, rid = await self._object(req.create_invite_request(email, role))
+        return Invite.from_dict(body, request_id=rid)
+
+    async def resend_invite(self, invite_id: str) -> Invite:
+        body, rid = await self._object(req.resend_invite_request(invite_id))
+        return Invite.from_dict(body, request_id=rid)
+
+    async def revoke_invite(self, invite_id: str) -> None:
+        await self._none(req.revoke_invite_request(invite_id))
+
+    async def lookup_invite(self, token: str) -> InviteLookup:
+        body, rid = await self._object(req.lookup_invite_request(token))
+        return InviteLookup.from_dict(body, request_id=rid)
+
+    async def accept_invite(self, token: str) -> Member:
+        body, rid = await self._object(req.accept_invite_request(token))
+        return Member.from_dict(body, request_id=rid)
+
+    async def list_invite_links(self) -> InviteLinkList:
+        body, rid = await self._object(req.list_invite_links_request())
+        return InviteLinkList.from_dict(body, request_id=rid)
+
+    async def create_invite_link(
+        self, *, role: str = "member", max_uses: int = 10, expires_in_days: int = 7
+    ) -> InviteLink:
+        body, rid = await self._object(
+            req.create_invite_link_request(role, max_uses, expires_in_days)
+        )
+        return InviteLink.from_dict(body, request_id=rid)
+
+    async def revoke_invite_link(self, link_id: str) -> None:
+        await self._none(req.revoke_invite_link_request(link_id))
+
+    async def lookup_join_link(self, token: str) -> LinkLookup:
+        body, rid = await self._object(req.lookup_link_request(token))
+        return LinkLookup.from_dict(body, request_id=rid)
 
 
 class Invites(_Sync):
