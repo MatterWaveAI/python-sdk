@@ -1,0 +1,27 @@
+{
+  "python_only": {
+    "ConversationStream.close": "Python closes the HTTP response the stream holds; TypeScript cancels the fetch, as abort().",
+    "Stream.close": "Python closes the HTTP response the stream holds; TypeScript cancels the fetch, as abort().",
+    "client.close": "Python owns an httpx connection pool to release; fetch keeps no pool for the client to close.",
+    "errors.APIDeprecationWarning": "Python reports a retiring route through the warnings module; TypeScript through the logger's warn.",
+    "options.httpClient": "An httpx client, to share a pool or mock the transport; TypeScript takes fetch for the same.",
+    "options.maxRetryWait": "Seconds, as Python's times are; TypeScript's maxRetryWaitMs is the same in milliseconds.",
+    "options.timeout": "Seconds (or an httpx.Timeout), as Python's times are; TypeScript's timeoutMs is milliseconds.",
+    "withOptions.maxRetryWait": "Seconds, as Python's times are; TypeScript's maxRetryWaitMs is the same in milliseconds.",
+    "withOptions.timeout": "Seconds, as Python's times are; TypeScript's timeoutMs is the same in milliseconds."
+  },
+  "typescript_only": {
+    "ConversationStream.abort": "Cancels the fetch behind the stream; Python's close().",
+    "ConversationStream.accumulate": "The earlier name of finalText, kept as its alias.",
+    "Stream.abort": "Cancels the fetch behind the stream; Python's close().",
+    "Stream.accumulate": "The earlier name of finalText, kept as its alias.",
+    "options.dangerouslyAllowBrowser": "Only a browser puts a key in reach of a page's visitors; Python does not run there.",
+    "options.fetch": "The fetch to send with, a stand-in in tests; Python takes http_client.",
+    "options.logLevel": "Python logs through the logging module (MATTERWAVE_LOG or the matterwave_sdk logger); TypeScript has no such module, so the client takes the level.",
+    "options.logger": "Python logs through the logging module's handlers; TypeScript has no such module, so the client takes the sink.",
+    "options.maxRetryWaitMs": "Milliseconds, as JavaScript's times are; Python's max_retry_wait is the same in seconds.",
+    "options.timeoutMs": "Milliseconds, as JavaScript's times are; Python's timeout is the same in seconds.",
+    "withOptions.maxRetryWaitMs": "Milliseconds, as JavaScript's times are; Python's max_retry_wait is the same in seconds.",
+    "withOptions.timeoutMs": "Milliseconds, as JavaScript's times are; Python's timeout is the same in seconds."
+  }
+}

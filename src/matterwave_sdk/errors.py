@@ -28,6 +28,13 @@ class MatterWaveError(Exception):
     """Base class for everything this package raises."""
 
 
+class MatterWaveConfigError(MatterWaveError, ValueError):
+    """A client setting that cannot be used: no base URL, one that is not
+    http(s), a negative retry count or wait, an empty idempotency key. A
+    `ValueError` as well, as it always was, and a `MatterWaveError`, so one
+    `except` covers everything the client raises."""
+
+
 class MissingAPIKeyError(MatterWaveError):
     """A keyed operation was called with no key configured: neither an
     `api_key` argument nor `MATTERWAVE_API_KEY` in the environment."""

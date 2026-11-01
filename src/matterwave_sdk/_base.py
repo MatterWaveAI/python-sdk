@@ -12,7 +12,7 @@ import os
 import random
 import uuid
 from collections.abc import AsyncIterable, AsyncIterator, Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any, Literal, TypedDict
@@ -22,6 +22,7 @@ import httpx
 from .errors import (
     APIError,
     DeviceAuthError,
+    MatterWaveConfigError,
     MissingAPIKeyError,
     RateLimit,
     error_class_for,
@@ -252,14 +253,16 @@ def resolve_base_url(base_url: str | None) -> str:
     paths this client builds already carry the prefix."""
     value = base_url if base_url is not None else os.environ.get(BASE_URL_ENV, "").strip()
     if not value:
-        raise ValueError(
+        raise MatterWaveConfigError(
             f"No base URL: pass base_url= or set {BASE_URL_ENV} to the MatterWave origin."
         )
     value = value.rstrip("/")
     if value.endswith(API_PREFIX):
         value = value[: -len(API_PREFIX)]
     if not value.startswith(("http://", "https://")):
-        raise ValueError(f"base_url must start with http:// or https://, got {value!r}")
+        raise MatterWaveConfigError(
+            f"base_url must start with http:// or https://, got {value!r}"
+        )
     return value
 
 
@@ -294,6 +297,23 @@ class Request:
     @property
     def is_write(self) -> bool:
         return self.method not in READ_METHODS
+
+
+def with_extras(
+    request: Request,
+    extra_headers: Mapping[str, str] | None,
+    extra_query: Mapping[str, str] | None,
+) -> Request:
+    """The request with the call's own headers and query parameters laid
+    over the operation's: for a header or a filter the API knows and this
+    client does not yet."""
+    if not extra_headers and not extra_query:
+        return request
+    return replace(
+        request,
+        headers={**request.headers, **(extra_headers or {})},
+        params={**request.params, **(extra_query or {})},
+    )
 
 
 def new_idempotency_key() -> str:

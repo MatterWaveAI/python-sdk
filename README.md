@@ -452,6 +452,32 @@ The suite runs the check whenever the TypeScript SDK sits beside this checkout
 (or `MATTERWAVE_TS_SDK` names one), and CI clones it to run the check on every
 push.
 
+## Python and TypeScript
+
+The two SDKs are one client in two languages: a name here in snake_case is the
+same name there in camelCase, and `tests/parity.test` (`test_parity.py`,
+`parity.test.ts`) holds each to the other's public surface. Where they differ
+on purpose, `tests/parity.json` says why; the differences a caller meets are:
+
+| Python | TypeScript | Why |
+| --- | --- | --- |
+| `timeout=`, `max_retry_wait=` (seconds) | `timeoutMs`, `maxRetryWaitMs` | each language's unit for time |
+| `client.with_options(...)` for any call | the same per call in `RequestOptions`, or `client.withOptions(...)` | a TypeScript call takes an options argument; a Python one would need a keyword on every method |
+| `with_options(idempotency_key=...)` | `{ idempotencyKey }` in a call's options or `withOptions` | as above |
+| `extra_headers=`, `extra_query=`, `extra_body=` on chat and embeddings | `extraHeaders`, `extraQuery`, `extraBody` in any call's options (`headers` is `extraHeaders`' older name) | the OpenAI-compatible calls are where the API adds fields first |
+| `stream.final_text()` | `stream.finalText()` (`accumulate()` is its older name) | |
+| `stream.close()`, `client.close()` | `stream.abort()`; the client has no pool to close | httpx holds connections; fetch cancels by signal |
+| `http_client=` | `fetch` | the transport each language sends with |
+| `on_request` receives the `Request` | `onRequest` receives `{ method, path }` | a TypeScript body may be a form or a stream, not something to hand a logger |
+| `MATTERWAVE_LOG` or the `matterwave_sdk` logger | `logLevel` and `logger` (`MATTERWAVE_LOG` where there is an environment) | Python has a logging module; JavaScript does not |
+| `APIDeprecationWarning`, a warning | `logger.warn` | each language's way to warn |
+| | `dangerouslyAllowBrowser` | only a browser puts a key in reach of a page's visitors |
+
+A configuration mistake (no base URL, a negative retry count) is a
+`MatterWaveConfigError` in both, under `MatterWaveError`; in Python it is a
+`ValueError` as well. Python checks other arguments with `ValueError`, as
+Python does; TypeScript throws `MatterWaveConfigError` for those too.
+
 ## Development
 
 ```

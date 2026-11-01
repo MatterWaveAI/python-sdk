@@ -70,6 +70,7 @@ from .errors import (
     APIError,
     APITimeoutError,
     DeviceAuthError,
+    MatterWaveConfigError,
     MatterWaveError,
     ParseError,
 )
@@ -118,9 +119,9 @@ class _Config:
         max_retry_wait: float = _base.DEFAULT_MAX_RETRY_WAIT_S,
     ) -> None:
         if max_retries < 0:
-            raise ValueError("max_retries must be 0 or more")
+            raise MatterWaveConfigError("max_retries must be 0 or more")
         if not max_retry_wait >= 0:
-            raise ValueError("max_retry_wait must be 0 or more")
+            raise MatterWaveConfigError("max_retry_wait must be 0 or more")
         self.api_key = _base.resolve_api_key(api_key)
         self.base_url = _base.resolve_base_url(base_url)
         self.timeout = _base.DEFAULT_TIMEOUT_S if timeout is None else timeout
@@ -143,9 +144,9 @@ class _Config:
         a setting as it is. `default_headers` are laid over the current ones
         rather than replacing them."""
         if max_retries is not None and max_retries < 0:
-            raise ValueError("max_retries must be 0 or more")
+            raise MatterWaveConfigError("max_retries must be 0 or more")
         if max_retry_wait is not None and not max_retry_wait >= 0:
-            raise ValueError("max_retry_wait must be 0 or more")
+            raise MatterWaveConfigError("max_retry_wait must be 0 or more")
         config = copy.copy(self)
         if timeout is not None:
             config.timeout = timeout
@@ -156,7 +157,7 @@ class _Config:
         config.default_headers = {**self.default_headers, **(default_headers or {})}
         if idempotency_key is not None:
             if not idempotency_key.strip():
-                raise ValueError("idempotency_key must be non-empty")
+                raise MatterWaveConfigError("idempotency_key must be non-empty")
             config.idempotency_key = idempotency_key
         return config
 
@@ -567,6 +568,8 @@ class Completions:
         response_format: dict[str, Any] | None = None,
         conversation_id: str | None = None,
         extra_body: dict[str, Any] | None = None,
+        extra_headers: Mapping[str, str] | None = None,
+        extra_query: Mapping[str, str] | None = None,
         timeout: float | None = None,
         max_retries: int | None = None,
     ) -> ChatCompletion: ...
@@ -593,6 +596,8 @@ class Completions:
         response_format: dict[str, Any] | None = None,
         conversation_id: str | None = None,
         extra_body: dict[str, Any] | None = None,
+        extra_headers: Mapping[str, str] | None = None,
+        extra_query: Mapping[str, str] | None = None,
         timeout: float | None = None,
         max_retries: int | None = None,
     ) -> Stream: ...
@@ -618,6 +623,8 @@ class Completions:
         response_format: dict[str, Any] | None = None,
         conversation_id: str | None = None,
         extra_body: dict[str, Any] | None = None,
+        extra_headers: Mapping[str, str] | None = None,
+        extra_query: Mapping[str, str] | None = None,
         timeout: float | None = None,
         max_retries: int | None = None,
     ) -> ChatCompletion | Stream:
@@ -628,7 +635,9 @@ class Completions:
         caller to run. `conversation_id` records the turn into that
         conversation of the key owner's (stateless otherwise). `timeout`
         and `max_retries` are the call's own bounds, overriding the
-        client's for this one call."""
+        client's for this one call; `extra_headers`, `extra_query` and
+        `extra_body` carry what the API knows and this client does not
+        yet."""
         body = _base.chat_completion_body(
             messages,
             model=model,
@@ -649,7 +658,9 @@ class Completions:
             conversation_id=conversation_id,
             extra_body=extra_body,
         )
-        request = _base.chat_completions_request(body)
+        request = _base.with_extras(
+            _base.chat_completions_request(body), extra_headers, extra_query
+        )
         if stream:
             return Stream(
                 self._client._send(request, timeout=timeout, max_retries=max_retries)
@@ -713,6 +724,8 @@ class Embeddings:
         dimensions: int | None = None,
         user: str | None = None,
         extra_body: dict[str, Any] | None = None,
+        extra_headers: Mapping[str, str] | None = None,
+        extra_query: Mapping[str, str] | None = None,
         timeout: float | None = None,
         max_retries: int | None = None,
     ) -> EmbeddingList:
@@ -728,7 +741,9 @@ class Embeddings:
             extra_body=extra_body,
         )
         response = self._client._send(
-            _base.embeddings_request(body), timeout=timeout, max_retries=max_retries
+            _base.with_extras(_base.embeddings_request(body), extra_headers, extra_query),
+            timeout=timeout,
+            max_retries=max_retries,
         )
         return EmbeddingList.from_dict(
             _base.parse_json_object(response), request_id=_base.request_id_of(response)
@@ -1443,6 +1458,8 @@ class AsyncCompletions:
         response_format: dict[str, Any] | None = None,
         conversation_id: str | None = None,
         extra_body: dict[str, Any] | None = None,
+        extra_headers: Mapping[str, str] | None = None,
+        extra_query: Mapping[str, str] | None = None,
         timeout: float | None = None,
         max_retries: int | None = None,
     ) -> ChatCompletion: ...
@@ -1469,6 +1486,8 @@ class AsyncCompletions:
         response_format: dict[str, Any] | None = None,
         conversation_id: str | None = None,
         extra_body: dict[str, Any] | None = None,
+        extra_headers: Mapping[str, str] | None = None,
+        extra_query: Mapping[str, str] | None = None,
         timeout: float | None = None,
         max_retries: int | None = None,
     ) -> AsyncStream: ...
@@ -1494,6 +1513,8 @@ class AsyncCompletions:
         response_format: dict[str, Any] | None = None,
         conversation_id: str | None = None,
         extra_body: dict[str, Any] | None = None,
+        extra_headers: Mapping[str, str] | None = None,
+        extra_query: Mapping[str, str] | None = None,
         timeout: float | None = None,
         max_retries: int | None = None,
     ) -> ChatCompletion | AsyncStream:
@@ -1517,7 +1538,9 @@ class AsyncCompletions:
             conversation_id=conversation_id,
             extra_body=extra_body,
         )
-        request = _base.chat_completions_request(body)
+        request = _base.with_extras(
+            _base.chat_completions_request(body), extra_headers, extra_query
+        )
         if stream:
             return AsyncStream(
                 await self._client._send(request, timeout=timeout, max_retries=max_retries)
@@ -1566,6 +1589,8 @@ class AsyncEmbeddings:
         dimensions: int | None = None,
         user: str | None = None,
         extra_body: dict[str, Any] | None = None,
+        extra_headers: Mapping[str, str] | None = None,
+        extra_query: Mapping[str, str] | None = None,
         timeout: float | None = None,
         max_retries: int | None = None,
     ) -> EmbeddingList:
@@ -1578,7 +1603,9 @@ class AsyncEmbeddings:
             extra_body=extra_body,
         )
         response = await self._client._send(
-            _base.embeddings_request(body), timeout=timeout, max_retries=max_retries
+            _base.with_extras(_base.embeddings_request(body), extra_headers, extra_query),
+            timeout=timeout,
+            max_retries=max_retries,
         )
         return EmbeddingList.from_dict(
             _base.parse_json_object(response), request_id=_base.request_id_of(response)
