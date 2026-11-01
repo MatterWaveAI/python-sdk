@@ -36,9 +36,7 @@ def _ask(client: MatterWave):
     return client.chat.completions.create(messages=[{"role": "user", "content": "hi"}])
 
 
-def test_a_429_with_retry_after_waits_exactly_that_long_then_succeeds(
-    api, client, sleeps
-) -> None:
+def test_a_429_with_retry_after_waits_exactly_that_long_then_succeeds(api, client, sleeps) -> None:
     route = api.post("/v1/chat/completions").mock(
         side_effect=[
             httpx.Response(429, json=RATE_LIMITED, headers={"Retry-After": "3"}),

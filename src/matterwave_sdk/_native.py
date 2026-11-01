@@ -693,8 +693,7 @@ def update_admin_announcement_request(
         body["end_now"] = True
     if not body:
         raise ValueError(
-            "update needs one of message, severity, link, starts_at, ends_at, dismissible, "
-            "end_now"
+            "update needs one of message, severity, link, starts_at, ends_at, dismissible, end_now"
         )
     return Request(
         "PATCH", _admin_announcement_path(announcement_id), body, keyed=True, stream=False

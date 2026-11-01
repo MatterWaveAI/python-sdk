@@ -37,7 +37,9 @@ def camel(name: str) -> str:
 
 def _is_namespace(value: Any) -> bool:
     module = type(value).__module__
-    return module.startswith("matterwave_sdk") and hasattr(value, "__dict__") and not callable(value)
+    return (
+        module.startswith("matterwave_sdk") and hasattr(value, "__dict__") and not callable(value)
+    )
 
 
 def _walk(obj: Any, prefix: str, out: set[str]) -> None:
@@ -150,7 +152,13 @@ def test_extra_headers_and_query_reach_the_wire(api, client) -> None:
     )
     embed = api.post("/v1/embeddings").mock(
         return_value=httpx.Response(
-            200, json={"object": "list", "data": [], "model": "e", "usage": {"prompt_tokens": 1, "total_tokens": 1}}
+            200,
+            json={
+                "object": "list",
+                "data": [],
+                "model": "e",
+                "usage": {"prompt_tokens": 1, "total_tokens": 1},
+            },
         )
     )
     client.chat.completions.create(

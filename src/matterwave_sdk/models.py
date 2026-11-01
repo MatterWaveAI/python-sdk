@@ -525,7 +525,8 @@ class ApiIndex:
             capabilities=dict(capabilities) if isinstance(capabilities, dict) else {},
             stability=Stability.from_dict(stability if isinstance(stability, dict) else {}),
             extensions={
-                str(k): str(v) for k, v in (extensions if isinstance(extensions, dict) else {}).items()
+                str(k): str(v)
+                for k, v in (extensions if isinstance(extensions, dict) else {}).items()
             },
             docs=_str(data.get("docs")),
             request_id=request_id,
@@ -823,9 +824,7 @@ class DeviceCode:
             device_code=_str(data.get("device_code")),
             user_code=_str(data.get("user_code")),
             verification_uri=verification_uri,
-            verification_uri_complete=_str(
-                data.get("verification_uri_complete"), verification_uri
-            ),
+            verification_uri_complete=_str(data.get("verification_uri_complete"), verification_uri),
             expires_in=_int(data.get("expires_in"), 600),
             # RFC 8628 section 3.2: five seconds when the server names no interval.
             interval=_int(data.get("interval"), 5),
@@ -1620,9 +1619,7 @@ class UserInstructions:
     request_id: str | None = field(default=None, compare=False)
 
     @classmethod
-    def from_dict(
-        cls, data: dict[str, Any], *, request_id: str | None = None
-    ) -> UserInstructions:
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> UserInstructions:
         return cls(
             about=_str(data.get("about")),
             style=_str(data.get("style")),
@@ -1639,9 +1636,7 @@ class OrgInstructions:
     request_id: str | None = field(default=None, compare=False)
 
     @classmethod
-    def from_dict(
-        cls, data: dict[str, Any], *, request_id: str | None = None
-    ) -> OrgInstructions:
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> OrgInstructions:
         return cls(text=_str(data.get("text")), request_id=request_id)
 
 
@@ -1687,9 +1682,7 @@ class MessageFeedback:
     request_id: str | None = field(default=None, compare=False)
 
     @classmethod
-    def from_dict(
-        cls, data: dict[str, Any], *, request_id: str | None = None
-    ) -> MessageFeedback:
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> MessageFeedback:
         return cls(
             message_id=_str(data.get("message_id")),
             rating=_int(data.get("rating")),
@@ -1710,9 +1703,7 @@ class RemovedFeedback:
     request_id: str | None = field(default=None, compare=False)
 
     @classmethod
-    def from_dict(
-        cls, data: dict[str, Any], *, request_id: str | None = None
-    ) -> RemovedFeedback:
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> RemovedFeedback:
         return cls(status=_str(data.get("status")), request_id=request_id)
 
 
@@ -1845,7 +1836,9 @@ class Budget:
             member_cap=_opt_int(data.get("member_cap")),
             member_spent=_opt_int(data.get("member_spent")),
             member_exhausted=(
-                data.get("member_exhausted") if isinstance(data.get("member_exhausted"), bool) else None
+                data.get("member_exhausted")
+                if isinstance(data.get("member_exhausted"), bool)
+                else None
             ),
             request_id=request_id,
         )
@@ -1905,9 +1898,7 @@ class MemberBudgetList:
         return len(self.data)
 
     @classmethod
-    def from_dict(
-        cls, data: dict[str, Any], *, request_id: str | None = None
-    ) -> MemberBudgetList:
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> MemberBudgetList:
         return cls(
             period_start=_str(data.get("period_start")),
             member_default_cap_micros=_opt_int(data.get("member_default_cap_micros")),
@@ -2100,9 +2091,7 @@ class AdminAnnouncement:
     request_id: str | None = field(default=None, compare=False)
 
     @classmethod
-    def from_dict(
-        cls, data: dict[str, Any], *, request_id: str | None = None
-    ) -> AdminAnnouncement:
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> AdminAnnouncement:
         return cls(
             id=_str(data.get("id")),
             message=_str(data.get("message")),

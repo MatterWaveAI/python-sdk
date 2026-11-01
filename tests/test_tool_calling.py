@@ -31,11 +31,28 @@ PROMPT = [{"role": "user", "content": "Read the README and the licence."}]
 TWO_CALLS = (
     chunk({"role": "assistant", "content": ""})
     + chunk({"content": "Reading both."})
-    + chunk({"tool_calls": [{"index": 0, "id": "call_a", "type": "function", "function": {"name": "read_file", "arguments": ""}}]})
-    + chunk({"tool_calls": [{"index": 1, "id": "call_b", "type": "function", "function": {"name": "read_file"}}]})
-    + chunk({"tool_calls": [{"index": 0, "function": {"arguments": "{\"path\":"}}]})
-    + chunk({"tool_calls": [{"index": 1, "function": {"arguments": "{\"path\":\"LICENSE\"}"}}]})
-    + chunk({"tool_calls": [{"index": 0, "function": {"arguments": "\"README.md\"}"}}]})
+    + chunk(
+        {
+            "tool_calls": [
+                {
+                    "index": 0,
+                    "id": "call_a",
+                    "type": "function",
+                    "function": {"name": "read_file", "arguments": ""},
+                }
+            ]
+        }
+    )
+    + chunk(
+        {
+            "tool_calls": [
+                {"index": 1, "id": "call_b", "type": "function", "function": {"name": "read_file"}}
+            ]
+        }
+    )
+    + chunk({"tool_calls": [{"index": 0, "function": {"arguments": '{"path":'}}]})
+    + chunk({"tool_calls": [{"index": 1, "function": {"arguments": '{"path":"LICENSE"}'}}]})
+    + chunk({"tool_calls": [{"index": 0, "function": {"arguments": '"README.md"}'}}]})
     + chunk({}, "tool_calls")
     + chunk(None, usage={"prompt_tokens": 30, "completion_tokens": 12, "total_tokens": 42})
     + "data: [DONE]\n\n"
@@ -44,7 +61,9 @@ TWO_CALLS = (
 
 def _stream(api, body: str):
     return api.post("/v1/chat/completions").mock(
-        return_value=httpx.Response(200, headers={"Content-Type": "text/event-stream"}, content=body)
+        return_value=httpx.Response(
+            200, headers={"Content-Type": "text/event-stream"}, content=body
+        )
     )
 
 
@@ -77,7 +96,18 @@ def test_the_accumulator_keeps_finish_reason_and_usage(api, client: MatterWave) 
 def test_a_pure_tool_call_turn_has_no_content(api, client: MatterWave) -> None:
     body = (
         chunk({"role": "assistant"})
-        + chunk({"tool_calls": [{"index": 0, "id": "call_0", "type": "function", "function": {"name": "list_dir", "arguments": "{}"}}]})
+        + chunk(
+            {
+                "tool_calls": [
+                    {
+                        "index": 0,
+                        "id": "call_0",
+                        "type": "function",
+                        "function": {"name": "list_dir", "arguments": "{}"},
+                    }
+                ]
+            }
+        )
         + chunk({}, "tool_calls")
         + "data: [DONE]\n\n"
     )
@@ -88,7 +118,11 @@ def test_a_pure_tool_call_turn_has_no_content(api, client: MatterWave) -> None:
         "role": "assistant",
         "content": None,
         "tool_calls": [
-            {"id": "call_0", "type": "function", "function": {"name": "list_dir", "arguments": "{}"}}
+            {
+                "id": "call_0",
+                "type": "function",
+                "function": {"name": "list_dir", "arguments": "{}"},
+            }
         ],
     }
 
@@ -102,7 +136,9 @@ def test_a_plain_answer_has_no_tool_calls(api, client: MatterWave) -> None:
 
 
 @pytest.mark.asyncio
-async def test_the_async_stream_reassembles_the_same_way(api, async_client: AsyncMatterWave) -> None:
+async def test_the_async_stream_reassembles_the_same_way(
+    api, async_client: AsyncMatterWave
+) -> None:
     _stream(api, TWO_CALLS)
     stream = await async_client.chat.completions.create(messages=PROMPT, stream=True)
     message = await stream.final_message()
@@ -118,14 +154,23 @@ def test_the_tool_round_goes_back_on_the_wire(api, client: MatterWave) -> None:
         "role": "assistant",
         "content": None,
         "tool_calls": [
-            {"id": "call_0", "type": "function", "function": {"name": "read_file", "arguments": "{\"path\":\"a.txt\"}"}}
+            {
+                "id": "call_0",
+                "type": "function",
+                "function": {"name": "read_file", "arguments": '{"path":"a.txt"}'},
+            }
         ],
     }
     first["choices"][0]["finish_reason"] = "tool_calls"
     route = api.post("/v1/chat/completions").mock(
-        side_effect=[httpx.Response(200, json=first), httpx.Response(200, json=completion_body("Done."))]
+        side_effect=[
+            httpx.Response(200, json=first),
+            httpx.Response(200, json=completion_body("Done.")),
+        ]
     )
-    tools = [{"type": "function", "function": {"name": "read_file", "parameters": {"type": "object"}}}]
+    tools = [
+        {"type": "function", "function": {"name": "read_file", "parameters": {"type": "object"}}}
+    ]
     completion = client.chat.completions.create(messages=PROMPT, tools=tools, tool_choice="auto")
     call = completion.tool_calls[0]
     assert isinstance(call, ToolCall)
@@ -141,7 +186,11 @@ def test_the_tool_round_goes_back_on_the_wire(api, client: MatterWave) -> None:
         "role": "assistant",
         "content": None,
         "tool_calls": [
-            {"id": "call_0", "type": "function", "function": {"name": "read_file", "arguments": "{\"path\":\"a.txt\"}"}}
+            {
+                "id": "call_0",
+                "type": "function",
+                "function": {"name": "read_file", "arguments": '{"path":"a.txt"}'},
+            }
         ],
     }
     assert sent["messages"][2] == {
@@ -157,7 +206,9 @@ def test_tool_message_needs_the_call_id() -> None:
         tool_message("", "result")
 
 
-@pytest.mark.parametrize(("sent", "read"), [(True, True), (False, False), (None, None), ("yes", None)])
+@pytest.mark.parametrize(
+    ("sent", "read"), [(True, True), (False, False), (None, None), ("yes", None)]
+)
 def test_supports_tools_is_read_as_sent(sent, read) -> None:
     row: dict = {"id": "grt", "label": "GRT", "included": True}
     if sent is not None:

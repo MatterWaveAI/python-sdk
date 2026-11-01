@@ -42,9 +42,7 @@ def notification_row(nid: str, *, read: bool = False) -> dict:
 # --- notifications -----------------------------------------------------------------
 
 
-def test_notifications_list_reads_the_rows_and_the_unread_count(
-    api, client: MatterWave
-) -> None:
+def test_notifications_list_reads_the_rows_and_the_unread_count(api, client: MatterWave) -> None:
     route = api.get("/api/me/notifications").mock(
         return_value=httpx.Response(
             200,
@@ -87,9 +85,7 @@ def test_notifications_list_refuses_a_limit_outside_the_route_s_range(
         client.notifications.list(limit=101)
 
 
-def test_notifications_read_marks_one_read_and_carries_the_count(
-    api, client: MatterWave
-) -> None:
+def test_notifications_read_marks_one_read_and_carries_the_count(api, client: MatterWave) -> None:
     route = api.post("/api/me/notifications/n-1/read").mock(
         return_value=httpx.Response(
             200,
@@ -107,9 +103,7 @@ def test_notifications_read_marks_one_read_and_carries_the_count(
 
 def test_notifications_read_404s_for_another_person_s_row(api, client: MatterWave) -> None:
     api.post("/api/me/notifications/n-other/read").mock(
-        return_value=httpx.Response(
-            404, json={"detail": "No such notification."}, headers=H
-        )
+        return_value=httpx.Response(404, json={"detail": "No such notification."}, headers=H)
     )
     with pytest.raises(NotFoundError):
         client.notifications.read("n-other")
@@ -127,7 +121,8 @@ def test_notifications_read_all_answers_how_many_it_marked(api, client: MatterWa
 
 @pytest.mark.asyncio
 async def test_the_async_notifications_match_the_sync_requests(
-    api, async_client: AsyncMatterWave  # noqa: ANN001
+    api,
+    async_client: AsyncMatterWave,  # noqa: ANN001
 ) -> None:
     list_route = api.get("/api/me/notifications").mock(
         return_value=httpx.Response(
@@ -170,9 +165,7 @@ def test_announcements_list_reads_the_active_rows(api, client: MatterWave) -> No
     route = api.get("/api/announcements").mock(
         return_value=httpx.Response(
             200,
-            json={
-                "data": [announcement_row("a-1", "critical"), announcement_row("a-2", "info")]
-            },
+            json={"data": [announcement_row("a-1", "critical"), announcement_row("a-2", "info")]},
             headers=H,
         )
     )
@@ -195,7 +188,8 @@ def test_announcements_list_tolerates_an_empty_banner(api, client: MatterWave) -
 
 @pytest.mark.asyncio
 async def test_the_async_announcements_read_the_same_body(
-    api, async_client: AsyncMatterWave  # noqa: ANN001
+    api,
+    async_client: AsyncMatterWave,  # noqa: ANN001
 ) -> None:
     route = api.get("/api/announcements").mock(
         return_value=httpx.Response(
@@ -254,9 +248,7 @@ def test_admin_announcements_list_reads_every_column(api, client: MatterWave) ->
     assert sent(route).url.path == "/api/admin/announcements"
 
 
-def test_admin_announcements_create_sends_the_operator_s_body(
-    api, client: MatterWave
-) -> None:
+def test_admin_announcements_create_sends_the_operator_s_body(api, client: MatterWave) -> None:
     route = api.post("/api/admin/announcements").mock(
         return_value=httpx.Response(201, json=admin_announcement_row(ANN_ID), headers=H)
     )
@@ -303,15 +295,11 @@ def test_admin_announcements_create_accepts_a_naive_datetime_as_the_server_does(
     route = api.post("/api/admin/announcements").mock(
         return_value=httpx.Response(201, json=admin_announcement_row(ANN_ID), headers=H)
     )
-    client.admin.announcements.create(
-        "Back soon.", ends_at=datetime(2026, 10, 31, 8, 0)
-    )
+    client.admin.announcements.create("Back soon.", ends_at=datetime(2026, 10, 31, 8, 0))
     assert json.loads(sent(route).content)["ends_at"] == "2026-10-31T08:00:00"
 
 
-def test_admin_announcements_create_refuses_what_the_route_would(
-    api, client: MatterWave
-) -> None:
+def test_admin_announcements_create_refuses_what_the_route_would(api, client: MatterWave) -> None:
     route = api.post("/api/admin/announcements").mock(
         return_value=httpx.Response(201, json=admin_announcement_row(ANN_ID), headers=H)
     )
@@ -328,9 +316,7 @@ def test_admin_announcements_create_refuses_what_the_route_would(
     assert not route.called
 
 
-def test_admin_announcements_update_sends_only_what_changed(
-    api, client: MatterWave
-) -> None:
+def test_admin_announcements_update_sends_only_what_changed(api, client: MatterWave) -> None:
     route = api.patch(f"/api/admin/announcements/{ANN_ID}").mock(
         return_value=httpx.Response(200, json=admin_announcement_row(ANN_ID), headers=H)
     )
@@ -356,9 +342,7 @@ def test_admin_announcements_update_refuses_an_empty_change(client: MatterWave) 
         client.admin.announcements.update(ANN_ID)
 
 
-def test_admin_announcements_update_404s_for_an_id_that_is_not_one(
-    api, client: MatterWave
-) -> None:
+def test_admin_announcements_update_404s_for_an_id_that_is_not_one(api, client: MatterWave) -> None:
     api.patch("/api/admin/announcements/ann-other").mock(
         return_value=httpx.Response(404, json={"detail": "No such announcement."}, headers=H)
     )
@@ -375,9 +359,7 @@ def test_admin_announcements_delete_is_a_204(api, client: MatterWave) -> None:
     assert sent(route).url.path == f"/api/admin/announcements/{ANN_ID}"
 
 
-def test_admin_announcements_delete_404s_for_an_id_that_is_not_one(
-    api, client: MatterWave
-) -> None:
+def test_admin_announcements_delete_404s_for_an_id_that_is_not_one(api, client: MatterWave) -> None:
     api.delete("/api/admin/announcements/ann-other").mock(
         return_value=httpx.Response(404, json={"detail": "No such announcement."}, headers=H)
     )
@@ -394,12 +376,11 @@ def test_an_id_that_would_change_the_path_is_refused(client: MatterWave) -> None
 
 @pytest.mark.asyncio
 async def test_the_async_admin_announcements_match_the_sync_requests(
-    api, async_client: AsyncMatterWave  # noqa: ANN001
+    api,
+    async_client: AsyncMatterWave,  # noqa: ANN001
 ) -> None:
     list_route = api.get("/api/admin/announcements").mock(
-        return_value=httpx.Response(
-            200, json={"data": [admin_announcement_row(ANN_ID)]}, headers=H
-        )
+        return_value=httpx.Response(200, json={"data": [admin_announcement_row(ANN_ID)]}, headers=H)
     )
     create_route = api.post("/api/admin/announcements").mock(
         return_value=httpx.Response(201, json=admin_announcement_row(ANN_ID), headers=H)
@@ -500,14 +481,10 @@ def test_entitlements_get_reports_a_downgraded_org(api, client: MatterWave) -> N
         "read_only_reason": "This organisation holds 12 conversations more than the "
         "Free plan's limit of 200.",
     }
-    api.get("/api/entitlements").mock(
-        return_value=httpx.Response(200, json=over, headers=H)
-    )
+    api.get("/api/entitlements").mock(return_value=httpx.Response(200, json=over, headers=H))
     ent = client.entitlements.get()
     assert ent.writes_blocked and ent.over_capacity == 12
-    assert ent.read_only_reason is not None and ent.read_only_reason.startswith(
-        "This organisation"
-    )
+    assert ent.read_only_reason is not None and ent.read_only_reason.startswith("This organisation")
 
 
 def test_entitlements_get_tolerates_a_sparse_body(api, client: MatterWave) -> None:
@@ -524,7 +501,8 @@ def test_entitlements_get_tolerates_a_sparse_body(api, client: MatterWave) -> No
 
 @pytest.mark.asyncio
 async def test_the_async_entitlements_read_the_same_body(
-    api, async_client: AsyncMatterWave  # noqa: ANN001
+    api,
+    async_client: AsyncMatterWave,  # noqa: ANN001
 ) -> None:
     route = api.get("/api/entitlements").mock(
         return_value=httpx.Response(200, json=entitlements_body(), headers=H)
@@ -539,9 +517,7 @@ async def test_the_async_entitlements_read_the_same_body(
 CONV = "c0ffee00-0000-4000-8000-000000000001"
 
 
-def test_report_files_a_report_and_reads_the_acknowledgement(
-    api, client: MatterWave
-) -> None:
+def test_report_files_a_report_and_reads_the_acknowledgement(api, client: MatterWave) -> None:
     route = api.post(f"/api/conversations/{CONV}/report").mock(
         return_value=httpx.Response(201, json={"id": "rep-0001", "kind": "unsafe"}, headers=H)
     )
@@ -559,9 +535,7 @@ def test_report_files_a_report_and_reads_the_acknowledgement(
     }
 
 
-def test_report_sends_only_the_kind_when_that_is_all_there_is(
-    api, client: MatterWave
-) -> None:
+def test_report_sends_only_the_kind_when_that_is_all_there_is(api, client: MatterWave) -> None:
     route = api.post(f"/api/conversations/{CONV}/report").mock(
         return_value=httpx.Response(201, json={"id": "rep-0002", "kind": "unhelpful"}, headers=H)
     )
@@ -570,9 +544,7 @@ def test_report_sends_only_the_kind_when_that_is_all_there_is(
     assert json.loads(sent(route).content) == {"kind": "unhelpful"}
 
 
-def test_report_refuses_an_unknown_kind_and_an_overlong_note(
-    api, client: MatterWave
-) -> None:
+def test_report_refuses_an_unknown_kind_and_an_overlong_note(api, client: MatterWave) -> None:
     route = api.post(f"/api/conversations/{CONV}/report").mock(
         return_value=httpx.Response(201, json={"id": "rep-0003", "kind": "unsafe"}, headers=H)
     )
@@ -583,26 +555,25 @@ def test_report_refuses_an_unknown_kind_and_an_overlong_note(
     assert not route.called
 
 
-def test_report_404s_for_a_conversation_that_is_not_the_caller_s(
-    api, client: MatterWave
-) -> None:
+def test_report_404s_for_a_conversation_that_is_not_the_caller_s(api, client: MatterWave) -> None:
     api.post("/api/conversations/c0ffee00-0000-4000-8000-000000000009/report").mock(
         return_value=httpx.Response(404, json={"detail": "No such conversation"}, headers=H)
     )
     with pytest.raises(NotFoundError):
-        client.conversations.report(
-            "c0ffee00-0000-4000-8000-000000000009", "unsafe"
-        )
+        client.conversations.report("c0ffee00-0000-4000-8000-000000000009", "unsafe")
 
 
 @pytest.mark.asyncio
 async def test_the_async_report_sends_the_same_body(
-    api, async_client: AsyncMatterWave  # noqa: ANN001
+    api,
+    async_client: AsyncMatterWave,  # noqa: ANN001
 ) -> None:
     route = api.post(f"/api/conversations/{CONV}/report").mock(
         return_value=httpx.Response(201, json={"id": "rep-0004", "kind": "unhelpful"}, headers=H)
     )
-    filed = await async_client.conversations.report(CONV, "unhelpful", note="Refused for no reason.")
+    filed = await async_client.conversations.report(
+        CONV, "unhelpful", note="Refused for no reason."
+    )
     assert filed.id == "rep-0004"
     assert json.loads(sent(route).content) == {
         "kind": "unhelpful",

@@ -68,9 +68,7 @@ def test_a_retried_call_leaves_the_final_response(api, sleeps) -> None:
                 json={"error": {"message": "slow down"}},
                 headers={"X-Request-Id": "req-first"},
             ),
-            httpx.Response(
-                200, json=completion_body(), headers={"X-Request-Id": "req-final"}
-            ),
+            httpx.Response(200, json=completion_body(), headers={"X-Request-Id": "req-final"}),
         ]
     )
     client = MatterWave(api_key="mw_test_key", base_url="https://matterwave.test")

@@ -100,9 +100,7 @@ def test_malformed_headers_are_refused(header: str) -> None:
 
 def test_any_v1_element_may_match_so_a_rotated_secret_verifies() -> None:
     old_mac = hmac_mod.new(SECRET.encode(), f"{int(NOW)}.".encode() + BODY, hashlib.sha256)
-    new_mac = hmac_mod.new(
-        b"whsec_rotated", f"{int(NOW)}.".encode() + BODY, hashlib.sha256
-    )
+    new_mac = hmac_mod.new(b"whsec_rotated", f"{int(NOW)}.".encode() + BODY, hashlib.sha256)
     header = f"t={int(NOW)},v1={old_mac.hexdigest()},v1={new_mac.hexdigest()}"
     event = webhooks.unwrap(BODY, headers_with(header), "whsec_rotated", now=NOW)
     assert event["id"] == "evt_1"
@@ -128,14 +126,12 @@ def test_sign_writes_the_scheme_the_platform_sends() -> None:
     header = webhooks.sign(SECRET, 1_800_000_000, BODY)
     assert header.startswith("t=1800000000,v1=")
     # Independent of `sign`: the value the platform's own snippet computes.
-    expected = hmac_mod.new(
-        SECRET.encode(), b"1800000000." + BODY, hashlib.sha256
-    ).hexdigest()
+    expected = hmac_mod.new(SECRET.encode(), b"1800000000." + BODY, hashlib.sha256).hexdigest()
     assert header == f"t=1800000000,v1={expected}"
 
 
 def test_tolerance_is_wideable_for_a_slow_receiver() -> None:
     old = webhooks.sign(SECRET, int(NOW) - 600, BODY)
-    assert webhooks.verify_signature(
-        SECRET, headers_with(old), BODY, now=NOW, tolerance_s=700
-    ) is True
+    assert (
+        webhooks.verify_signature(SECRET, headers_with(old), BODY, now=NOW, tolerance_s=700) is True
+    )

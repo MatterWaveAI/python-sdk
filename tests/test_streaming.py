@@ -55,9 +55,20 @@ def test_chunks_arrive_typed_and_in_order(api, client: MatterWave) -> None:
 def test_tool_call_fragments_arrive_typed(api, client: MatterWave) -> None:
     body = (
         chunk({"role": "assistant", "content": ""})
-        + chunk({"tool_calls": [{"index": 0, "id": "call_0", "type": "function", "function": {"name": "weather"}}]})
-        + chunk({"tool_calls": [{"index": 0, "function": {"arguments": "{\"city\""}}]})
-        + chunk({"tool_calls": [{"index": 0, "function": {"arguments": ":\"Oslo\"}"}}]})
+        + chunk(
+            {
+                "tool_calls": [
+                    {
+                        "index": 0,
+                        "id": "call_0",
+                        "type": "function",
+                        "function": {"name": "weather"},
+                    }
+                ]
+            }
+        )
+        + chunk({"tool_calls": [{"index": 0, "function": {"arguments": '{"city"'}}]})
+        + chunk({"tool_calls": [{"index": 0, "function": {"arguments": ':"Oslo"}'}}]})
         + chunk({}, "tool_calls")
         + "data: [DONE]\n\n"
     )
@@ -65,7 +76,7 @@ def test_tool_call_fragments_arrive_typed(api, client: MatterWave) -> None:
     chunks = list(client.chat.completions.create(messages=PROMPT, stream=True))
     fragments = [c.choices[0].delta.tool_calls[0] for c in chunks[1:4]]
     assert fragments[0].id == "call_0" and fragments[0].function.name == "weather"
-    assert "".join(f.function.arguments or "" for f in fragments) == "{\"city\":\"Oslo\"}"
+    assert "".join(f.function.arguments or "" for f in fragments) == '{"city":"Oslo"}'
     assert chunks[4].choices[0].finish_reason == "tool_calls"
     assert all(c.content == "" for c in chunks)
 
@@ -89,7 +100,10 @@ def test_the_request_asks_for_a_stream_and_usage(api, client: MatterWave) -> Non
 def test_an_error_frame_mid_stream_is_raised_after_what_arrived_before_it(
     api, client: MatterWave
 ) -> None:
-    _stream(api, chunk({"role": "assistant", "content": ""}) + chunk({"content": "partial"}) + ERROR_FRAME)
+    _stream(
+        api,
+        chunk({"role": "assistant", "content": ""}) + chunk({"content": "partial"}) + ERROR_FRAME,
+    )
     stream = client.chat.completions.create(messages=PROMPT, stream=True)
     seen: list[str] = []
     with pytest.raises(APIError) as caught:

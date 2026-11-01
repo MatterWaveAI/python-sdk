@@ -260,9 +260,7 @@ def resolve_base_url(base_url: str | None) -> str:
     if value.endswith(API_PREFIX):
         value = value[: -len(API_PREFIX)]
     if not value.startswith(("http://", "https://")):
-        raise MatterWaveConfigError(
-            f"base_url must start with http:// or https://, got {value!r}"
-        )
+        raise MatterWaveConfigError(f"base_url must start with http:// or https://, got {value!r}")
     return value
 
 
@@ -413,7 +411,11 @@ def embeddings_body(
     one embedding model, and `GET /v1` names it."""
     if not input:
         raise ValueError("input must be a string or a non-empty list")
-    body: dict[str, Any] = {"input": input if isinstance(input, str) else [list(i) if not isinstance(i, (str, int)) else i for i in input]}
+    body: dict[str, Any] = {
+        "input": input
+        if isinstance(input, str)
+        else [list(i) if not isinstance(i, (str, int)) else i for i in input]
+    }
     if model is not None:
         body["model"] = model
     if encoding_format is not None:
@@ -569,7 +571,11 @@ def set_pinned_request(conversation_id: str, pinned: bool) -> Request:
     # toggle is then idempotent by method, so a retried request cannot land
     # in the opposite state from the one the caller asked for.
     return Request(
-        "PUT" if pinned else "DELETE", _conversation_path(conversation_id, "/pin"), None, True, False
+        "PUT" if pinned else "DELETE",
+        _conversation_path(conversation_id, "/pin"),
+        None,
+        True,
+        False,
     )
 
 
@@ -1023,7 +1029,9 @@ def retry_after_failure(exc: httpx.HTTPError, request: Request) -> bool:
     return request.safe_to_repeat or isinstance(exc, UNSENT_ERRORS)
 
 
-def backoff_s(attempt: int, retry_after: float | None, *, rand: random.Random | None = None) -> float:
+def backoff_s(
+    attempt: int, retry_after: float | None, *, rand: random.Random | None = None
+) -> float:
     """How long to wait before retry number `attempt` (0-based). The server's
     `Retry-After` wins when it sent one; otherwise exponential with jitter."""
     if retry_after is not None:

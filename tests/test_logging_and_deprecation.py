@@ -37,7 +37,9 @@ def fresh(monkeypatch):
 
 def test_info_logs_each_response_and_never_the_body_or_the_key(api, client, caplog) -> None:
     api.post("/v1/chat/completions").mock(
-        return_value=httpx.Response(200, json=completion_body(), headers={"X-Request-Id": REQUEST_ID})
+        return_value=httpx.Response(
+            200, json=completion_body(), headers={"X-Request-Id": REQUEST_ID}
+        )
     )
     with caplog.at_level(logging.INFO, logger="matterwave_sdk"):
         client.chat.completions.create(messages=[{"role": "user", "content": SECRET_WORDS}])
@@ -71,7 +73,9 @@ def test_a_failed_connection_is_logged_by_its_kind(api, client, caplog, sleeps) 
     api.get("/api/me").mock(side_effect=httpx.ConnectError("refused"))
     with caplog.at_level(logging.INFO, logger="matterwave_sdk"), pytest.raises(APIConnectionError):
         client.me()
-    assert all("failed in" in r.getMessage() and "ConnectError" in r.getMessage() for r in caplog.records)
+    assert all(
+        "failed in" in r.getMessage() and "ConnectError" in r.getMessage() for r in caplog.records
+    )
     assert len(caplog.records) == 3
 
 
@@ -99,7 +103,9 @@ def test_logging_reaches_stderr_with_the_variable(monkeypatch, api, capsys) -> N
     monkeypatch.setenv("MATTERWAVE_LOG", "info")
     _log.logger.handlers[:] = []
     api.get("/api/me").mock(
-        return_value=httpx.Response(200, json={"subject": "u-1", "kind": "key", "roles": [], "org_id": "o-1"})
+        return_value=httpx.Response(
+            200, json={"subject": "u-1", "kind": "key", "roles": [], "org_id": "o-1"}
+        )
     )
     MatterWave(api_key="k", base_url=BASE_URL).me()
     assert "GET /api/me -> 200 in " in capsys.readouterr().err
@@ -117,10 +123,14 @@ def test_a_deprecated_route_warns_once_with_its_dates(api, client) -> None:
         "Link": '<https://docs.example/models>; rel="deprecation"',
     }
     api.get("/v1/models/grt-nano").mock(
-        return_value=httpx.Response(200, json={"id": "grt-nano", "object": "model"}, headers=headers)
+        return_value=httpx.Response(
+            200, json={"id": "grt-nano", "object": "model"}, headers=headers
+        )
     )
     api.get("/v1/models/grt-mini").mock(
-        return_value=httpx.Response(404, json=error_body("no", "invalid_request_error", None), headers=headers)
+        return_value=httpx.Response(
+            404, json=error_body("no", "invalid_request_error", None), headers=headers
+        )
     )
     with pytest.warns(APIDeprecationWarning) as caught:
         client.models.retrieve("grt-nano")
@@ -140,7 +150,9 @@ def test_a_deprecated_route_warns_once_with_its_dates(api, client) -> None:
 
 def test_a_route_without_the_headers_does_not_warn(api, client) -> None:
     api.get("/api/me").mock(
-        return_value=httpx.Response(200, json={"subject": "u-1", "kind": "key", "roles": [], "org_id": "o-1"})
+        return_value=httpx.Response(
+            200, json={"subject": "u-1", "kind": "key", "roles": [], "org_id": "o-1"}
+        )
     )
     with warnings.catch_warnings():
         warnings.simplefilter("error")
@@ -156,7 +168,9 @@ def test_a_route_without_the_headers_does_not_warn(api, client) -> None:
     ],
 )
 def test_each_deprecation_form_is_read(deprecation, expected) -> None:
-    message = _log.deprecation_message("GET", "/v1/models", httpx.Headers({"Deprecation": deprecation}))
+    message = _log.deprecation_message(
+        "GET", "/v1/models", httpx.Headers({"Deprecation": deprecation})
+    )
     assert message == f"GET /v1/models is deprecated by the MatterWave API{expected}."
 
 
@@ -177,8 +191,13 @@ def test_a_route_is_found_from_its_concrete_path() -> None:
 async def test_the_async_client_logs_and_warns_the_same_way(api, caplog) -> None:
     client = AsyncMatterWave(api_key="k", base_url=BASE_URL)
     api.get("/v1/models").mock(
-        return_value=httpx.Response(200, json={"object": "list", "data": []}, headers={"Sunset": SUNSET})
+        return_value=httpx.Response(
+            200, json={"object": "list", "data": []}, headers={"Sunset": SUNSET}
+        )
     )
-    with caplog.at_level(logging.INFO, logger="matterwave_sdk"), pytest.warns(APIDeprecationWarning):
+    with (
+        caplog.at_level(logging.INFO, logger="matterwave_sdk"),
+        pytest.warns(APIDeprecationWarning),
+    ):
         await client.models.list()
     assert any(r.getMessage().startswith("GET /v1/models -> 200 in ") for r in caplog.records)

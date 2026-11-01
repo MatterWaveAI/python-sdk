@@ -662,9 +662,7 @@ class Completions:
             _base.chat_completions_request(body), extra_headers, extra_query
         )
         if stream:
-            return Stream(
-                self._client._send(request, timeout=timeout, max_retries=max_retries)
-            )
+            return Stream(self._client._send(request, timeout=timeout, max_retries=max_retries))
         response = self._client._send(request, timeout=timeout, max_retries=max_retries)
         return ChatCompletion.from_dict(
             _base.parse_json_object(response), request_id=_base.request_id_of(response)
@@ -957,9 +955,7 @@ class Conversations:
         prompt, which replaces the user's instructions for it (the org's
         still apply). None, or an empty string, clears it. The answer
         carries the levels in force, as `get` reports them."""
-        body, rid = self._object(
-            _base.conversation_instructions_request(conversation_id, text)
-        )
+        body, rid = self._object(_base.conversation_instructions_request(conversation_id, text))
         return ConversationInstructions.from_dict(body, request_id=rid)
 
     def _stream(
@@ -1003,9 +999,7 @@ class Conversations:
             attachment_ids=attachment_ids,
             parent_id=parent_id,
         )
-        return self._stream(
-            request, conversation_id, timeout=timeout, max_retries=max_retries
-        )
+        return self._stream(request, conversation_id, timeout=timeout, max_retries=max_retries)
 
     def edit(
         self,
@@ -1022,9 +1016,7 @@ class Conversations:
         request = _base.edit_message_request(
             conversation_id, message_id, content, model=model, temperature=temperature
         )
-        return self._stream(
-            request, conversation_id, timeout=timeout, max_retries=max_retries
-        )
+        return self._stream(request, conversation_id, timeout=timeout, max_retries=max_retries)
 
     def regenerate(
         self,
@@ -1040,9 +1032,7 @@ class Conversations:
         request = _base.regenerate_message_request(
             conversation_id, message_id, model=model, temperature=temperature
         )
-        return self._stream(
-            request, conversation_id, timeout=timeout, max_retries=max_retries
-        )
+        return self._stream(request, conversation_id, timeout=timeout, max_retries=max_retries)
 
 
 class Messages:
@@ -1076,9 +1066,7 @@ class Messages:
             raise ValueError(
                 f"reasons must be from {', '.join(FEEDBACK_REASONS)}, got {', '.join(unknown)}"
             )
-        body, rid = self._object(
-            _base.set_feedback_request(message_id, rating, reasons, comment)
-        )
+        body, rid = self._object(_base.set_feedback_request(message_id, rating, reasons, comment))
         return MessageFeedback.from_dict(body, request_id=rid)
 
     def delete_feedback(self, message_id: str) -> RemovedFeedback:
@@ -1771,9 +1759,7 @@ class AsyncConversations:
         timeout: float | None = None,
         max_retries: int | None = None,
     ) -> AsyncConversationStream:
-        response = await self._client._send(
-            request, timeout=timeout, max_retries=max_retries
-        )
+        response = await self._client._send(request, timeout=timeout, max_retries=max_retries)
         return AsyncConversationStream(self._client, request, conversation_id, response)
 
     async def send(

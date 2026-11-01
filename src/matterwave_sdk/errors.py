@@ -164,7 +164,9 @@ class ParseError(MatterWaveError):
     propagates, because it says which field the model got wrong. `body`
     carries the text that would not parse."""
 
-    def __init__(self, message: str, *, cause: BaseException | None = None, body: Any = None) -> None:
+    def __init__(
+        self, message: str, *, cause: BaseException | None = None, body: Any = None
+    ) -> None:
         super().__init__(message)
         self.__cause__ = cause
         self.body = body

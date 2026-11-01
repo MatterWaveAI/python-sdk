@@ -108,9 +108,7 @@ _warned: set[tuple[str, str]] = set()
 
 def _template_pattern(template: str) -> re.Pattern[str]:
     parts = re.split(r"(\{[^}]+\})", template)
-    return re.compile(
-        "".join("[^/]+" if p.startswith("{") else re.escape(p) for p in parts) + "$"
-    )
+    return re.compile("".join("[^/]+" if p.startswith("{") else re.escape(p) for p in parts) + "$")
 
 
 def _routes() -> list[tuple[str, str, re.Pattern[str]]]:

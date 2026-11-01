@@ -38,9 +38,9 @@ Settings > API keys in the app and shown once.
 completion = client.chat.completions.create(
     messages=[{"role": "user", "content": "Say hello in five words."}],
 )
-print(completion.content)              # the reply
-print(completion.usage.total_tokens)   # what it cost
-print(completion.request_id)           # the server's X-Request-Id
+print(completion.content)  # the reply
+print(completion.usage.total_tokens)  # what it cost
+print(completion.request_id)  # the server's X-Request-Id
 ```
 
 `model` may be omitted; the deployment's default is used. `client.models.list()`
@@ -68,6 +68,7 @@ connection.
 import asyncio
 from matterwave_sdk import AsyncMatterWave, RateLimitError, APIError
 
+
 async def main() -> None:
     async with AsyncMatterWave() as client:
         try:
@@ -82,6 +83,7 @@ async def main() -> None:
             print(err.code, err.retry_after, err.request_id)
         except APIError as err:
             print(err.status_code, err.type, err.code, err.request_id)
+
 
 asyncio.run(main())
 ```
@@ -229,7 +231,7 @@ with client.conversations.send(conv.id, "Draft a three-line agenda.") as stream:
             meter = (frame.prompt_tokens, frame.context_window)
         elif isinstance(frame, (frames.ErrorFrame, frames.ModerationBlockFrame)):
             print(frame.detail, frame.code)
-print(stream.result.id if stream.result else None)   # the saved assistant message
+print(stream.result.id if stream.result else None)  # the saved assistant message
 ```
 
 `list(filter=, limit=, cursor=)` is one page of the sidebar (`next_cursor`
@@ -403,8 +405,8 @@ SDK's copy is generated.
 import json
 from matterwave_sdk import agent, tool_message
 
-tools = agent.tools_for_mode("ask")                   # the `tools` to send
-system = agent.system_prompt("ask", root=str(root))   # names the tools, the mode and the root
+tools = agent.tools_for_mode("ask")  # the `tools` to send
+system = agent.system_prompt("ask", root=str(root))  # names the tools, the mode and the root
 
 for call in completion.tool_calls:
     decision = agent.allowed(call.function.name, "ask")  # "allow", "ask" or "deny"

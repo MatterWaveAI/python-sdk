@@ -15,7 +15,13 @@ from matterwave_sdk import AsyncMatterWave, MatterWave
 
 RATE_LIMITED = error_body("Rate limit exceeded.", "rate_limit_error", "rate_limit_exceeded")
 ME = {"subject": "u-1", "kind": "key", "roles": [], "org_id": "o-1"}
-KEY = {"id": "k-1", "name": "ci", "prefix": "mw_ab", "scopes": [], "created_at": "2026-10-31T00:00:00Z"}
+KEY = {
+    "id": "k-1",
+    "name": "ci",
+    "prefix": "mw_ab",
+    "scopes": [],
+    "created_at": "2026-10-31T00:00:00Z",
+}
 
 
 def key_of(call) -> str | None:

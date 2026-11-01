@@ -25,9 +25,7 @@ def test_a_per_call_timeout_reaches_the_transport(api, client: MatterWave) -> No
     route = api.post("/v1/chat/completions").mock(
         return_value=httpx.Response(200, json=completion_body())
     )
-    client.chat.completions.create(
-        messages=[{"role": "user", "content": "hi"}], timeout=120.0
-    )
+    client.chat.completions.create(messages=[{"role": "user", "content": "hi"}], timeout=120.0)
     assert timeout_sent(route.calls.last.request)["read"] == 120.0
 
 
@@ -57,9 +55,7 @@ def test_a_per_call_timeout_on_the_conversation_stream(api, client: MatterWave) 
     assert timeout_sent(route.calls.last.request)["read"] == 600.0
 
 
-def test_a_per_call_max_retries_retries_where_the_client_would_not(
-    api, sleeps
-) -> None:
+def test_a_per_call_max_retries_retries_where_the_client_would_not(api, sleeps) -> None:
     route = api.post("/v1/chat/completions").mock(
         side_effect=[
             httpx.Response(429, json=RATE_LIMITED),
@@ -82,9 +78,7 @@ def test_a_per_call_max_retries_can_refuse_the_clients_retries(api, sleeps) -> N
     )
     client = MatterWave(api_key="mw_test_key", base_url="https://matterwave.test", max_retries=2)
     with pytest.raises(ServerError):
-        client.chat.completions.create(
-            messages=[{"role": "user", "content": "hi"}], max_retries=0
-        )
+        client.chat.completions.create(messages=[{"role": "user", "content": "hi"}], max_retries=0)
     assert route.call_count == 1
 
 
