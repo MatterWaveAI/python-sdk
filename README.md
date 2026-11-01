@@ -110,6 +110,20 @@ upload -- is sent again only when the connection was never made: after a 5xx or
 a reply cut short, the first copy may already have taken effect, so the error is
 raised instead. A streamed request is retried only before its stream starts.
 
+### Per-call settings
+
+`timeout` (seconds), `max_retries` and `max_retry_wait` are set on the client
+and apply to every call. `with_options` gives a call its own, for any method:
+
+```python
+client.with_options(timeout=600, max_retries=0).conversations.compact(conversation_id)
+```
+
+The view it returns shares the client's connection pool, so making one per call
+costs nothing; `default_headers` passed to it are added to the client's. The
+chat, embeddings and conversation-turn methods also take `timeout=` and
+`max_retries=` as keywords.
+
 ## Tools, structured output and embeddings
 
 `tools`, `tool_choice` and `response_format` are passed to the model as sent and

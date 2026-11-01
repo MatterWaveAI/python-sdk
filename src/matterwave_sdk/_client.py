@@ -24,6 +24,7 @@ Every error carries the `X-Request-Id` the server stamped on the refusal.
 from __future__ import annotations
 
 import asyncio
+import copy
 import inspect
 import json
 import time
@@ -125,6 +126,31 @@ class _Config:
         self.max_retries = max_retries
         self.max_retry_wait = max_retry_wait
         self.default_headers = dict(default_headers or {})
+
+    def overridden(
+        self,
+        *,
+        timeout: float | httpx.Timeout | None,
+        max_retries: int | None,
+        max_retry_wait: float | None,
+        default_headers: Mapping[str, str] | None,
+    ) -> _Config:
+        """This configuration with the given settings replaced; None keeps
+        a setting as it is. `default_headers` are laid over the current ones
+        rather than replacing them."""
+        if max_retries is not None and max_retries < 0:
+            raise ValueError("max_retries must be 0 or more")
+        if max_retry_wait is not None and not max_retry_wait >= 0:
+            raise ValueError("max_retry_wait must be 0 or more")
+        config = copy.copy(self)
+        if timeout is not None:
+            config.timeout = timeout
+        if max_retries is not None:
+            config.max_retries = max_retries
+        if max_retry_wait is not None:
+            config.max_retry_wait = max_retry_wait
+        config.default_headers = {**self.default_headers, **(default_headers or {})}
+        return config
 
     def build(
         self,
@@ -1185,6 +1211,8 @@ class MatterWave:
         self._on_request = on_request
         self._on_response = on_response
         self._closed = False
+        # The client a `with_options` view was made from, whose close ends it.
+        self._root: MatterWave = self
         self.chat = Chat(self)
         self.models = Models(self)
         self.embeddings = Embeddings(self)
@@ -1209,6 +1237,37 @@ class MatterWave:
     @property
     def base_url(self) -> str:
         return self._config.base_url
+
+    def with_options(
+        self,
+        *,
+        timeout: float | httpx.Timeout | None = None,
+        max_retries: int | None = None,
+        max_retry_wait: float | None = None,
+        default_headers: Mapping[str, str] | None = None,
+    ) -> MatterWave:
+        """This client with some settings replaced, for the calls made
+        through it: `client.with_options(timeout=600).keys.create(...)`
+        gives one call of any method its own bounds. None keeps a setting;
+        `default_headers` are added to the client's. The view shares the
+        client's connection pool, so it is cheap to make per call, and
+        closing the client closes it too."""
+        view = copy.copy(self)
+        view._config = self._config.overridden(
+            timeout=timeout,
+            max_retries=max_retries,
+            max_retry_wait=max_retry_wait,
+            default_headers=default_headers,
+        )
+        view._owns_http = False
+        view._closed = False
+        view._last_response = None
+        # Every public attribute is a namespace built on the client; each is
+        # built again on the view so its calls carry the view's settings.
+        for name, value in vars(self).items():
+            if not name.startswith("_"):
+                setattr(view, name, type(value)(view))
+        return view
 
     @property
     def last_response(self) -> _base.RawResponse | None:
@@ -1279,7 +1338,7 @@ class MatterWave:
         attempt_limit = self._config.max_retries if max_retries is None else max_retries
         attempt = 0
         while True:
-            if self._closed:
+            if self._closed or self._root._closed:
                 raise MatterWaveError(
                     f"{request.method} {request.path} was sent to a closed client."
                 )
@@ -1855,6 +1914,7 @@ class AsyncMatterWave:
         self._on_request = on_request
         self._on_response = on_response
         self._closed = False
+        self._root: AsyncMatterWave = self
         self.chat = AsyncChat(self)
         self.models = AsyncModels(self)
         self.embeddings = AsyncEmbeddings(self)
@@ -1879,6 +1939,33 @@ class AsyncMatterWave:
     @property
     def base_url(self) -> str:
         return self._config.base_url
+
+    def with_options(
+        self,
+        *,
+        timeout: float | httpx.Timeout | None = None,
+        max_retries: int | None = None,
+        max_retry_wait: float | None = None,
+        default_headers: Mapping[str, str] | None = None,
+    ) -> AsyncMatterWave:
+        """As `MatterWave.with_options`: this client with some settings
+        replaced, sharing its connection pool."""
+        view = copy.copy(self)
+        view._config = self._config.overridden(
+            timeout=timeout,
+            max_retries=max_retries,
+            max_retry_wait=max_retry_wait,
+            default_headers=default_headers,
+        )
+        view._owns_http = False
+        view._closed = False
+        view._last_response = None
+        # Every public attribute is a namespace built on the client; each is
+        # built again on the view so its calls carry the view's settings.
+        for name, value in vars(self).items():
+            if not name.startswith("_"):
+                setattr(view, name, type(value)(view))
+        return view
 
     @property
     def last_response(self) -> _base.RawResponse | None:
@@ -1933,7 +2020,7 @@ class AsyncMatterWave:
         attempt_limit = self._config.max_retries if max_retries is None else max_retries
         attempt = 0
         while True:
-            if self._closed:
+            if self._closed or self._root._closed:
                 raise MatterWaveError(
                     f"{request.method} {request.path} was sent to a closed client."
                 )
