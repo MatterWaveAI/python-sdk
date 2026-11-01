@@ -18,7 +18,8 @@ honouring `Retry-After` when the server sends it; a 429 whose code is
 or a dropped connection is retried the same way for a request that is safe to
 send twice (GET, PUT, DELETE); a POST or PATCH is sent again only when the
 connection was never made, since the first copy may already have taken effect.
-Every error carries the `X-Request-Id` the server stamped on the refusal.
+Every error carries the `X-Request-Id` the server stamped on the refusal,
+and every write an `Idempotency-Key` that stays the same across its retries.
 """
 
 from __future__ import annotations
@@ -126,6 +127,8 @@ class _Config:
         self.max_retries = max_retries
         self.max_retry_wait = max_retry_wait
         self.default_headers = dict(default_headers or {})
+        # Set only on a `with_options` view: the key its writes carry.
+        self.idempotency_key: str | None = None
 
     def overridden(
         self,
@@ -134,6 +137,7 @@ class _Config:
         max_retries: int | None,
         max_retry_wait: float | None,
         default_headers: Mapping[str, str] | None,
+        idempotency_key: str | None = None,
     ) -> _Config:
         """This configuration with the given settings replaced; None keeps
         a setting as it is. `default_headers` are laid over the current ones
@@ -150,15 +154,30 @@ class _Config:
         if max_retry_wait is not None:
             config.max_retry_wait = max_retry_wait
         config.default_headers = {**self.default_headers, **(default_headers or {})}
+        if idempotency_key is not None:
+            if not idempotency_key.strip():
+                raise ValueError("idempotency_key must be non-empty")
+            config.idempotency_key = idempotency_key
         return config
+
+    def idempotency_key_for(self, request: Request) -> str | None:
+        """The key one call of `request` carries on every attempt: the
+        view's own when `with_options` set one, a fresh one for any other
+        write, none for a read."""
+        if not request.is_write:
+            return None
+        return self.idempotency_key or _base.new_idempotency_key()
 
     def build(
         self,
         request: Request,
         client: httpx.Client | httpx.AsyncClient,
         timeout: float | httpx.Timeout | None = None,
+        idempotency_key: str | None = None,
     ) -> httpx.Request:
-        headers = _base.headers_for(request, self.api_key, USER_AGENT, self.default_headers)
+        headers = _base.headers_for(
+            request, self.api_key, USER_AGENT, self.default_headers, idempotency_key
+        )
         # Most specific first: the call's own timeout, then the operation's
         # (an MCP tool that runs a whole model turn), then the client's.
         effective = timeout if timeout is not None else request.timeout
@@ -1245,19 +1264,26 @@ class MatterWave:
         max_retries: int | None = None,
         max_retry_wait: float | None = None,
         default_headers: Mapping[str, str] | None = None,
+        idempotency_key: str | None = None,
     ) -> MatterWave:
         """This client with some settings replaced, for the calls made
         through it: `client.with_options(timeout=600).keys.create(...)`
         gives one call of any method its own bounds. None keeps a setting;
         `default_headers` are added to the client's. The view shares the
         client's connection pool, so it is cheap to make per call, and
-        closing the client closes it too."""
+        closing the client closes it too.
+
+        `idempotency_key` replaces the key a write would otherwise get --
+        one fresh UUID per call -- with the caller's, for a write that must
+        keep its key across processes (a job queue's id, say). Every write
+        made through the view carries it, so make one view per write."""
         view = copy.copy(self)
         view._config = self._config.overridden(
             timeout=timeout,
             max_retries=max_retries,
             max_retry_wait=max_retry_wait,
             default_headers=default_headers,
+            idempotency_key=idempotency_key,
         )
         view._owns_http = False
         view._closed = False
@@ -1336,6 +1362,7 @@ class MatterWave:
         are the call's own bounds: where given, they override the client's,
         so one long call need not hold the whole client at its pace."""
         attempt_limit = self._config.max_retries if max_retries is None else max_retries
+        idempotency_key = self._config.idempotency_key_for(request)
         attempt = 0
         while True:
             if self._closed or self._root._closed:
@@ -1344,7 +1371,9 @@ class MatterWave:
                 )
             if self._on_request is not None:
                 self._on_request(request)
-            http_request = self._config.build(request, self._http, timeout=timeout)
+            http_request = self._config.build(
+                request, self._http, timeout=timeout, idempotency_key=idempotency_key
+            )
             try:
                 response = self._http.send(http_request, stream=request.stream)
             except httpx.HTTPError as exc:
@@ -1947,6 +1976,7 @@ class AsyncMatterWave:
         max_retries: int | None = None,
         max_retry_wait: float | None = None,
         default_headers: Mapping[str, str] | None = None,
+        idempotency_key: str | None = None,
     ) -> AsyncMatterWave:
         """As `MatterWave.with_options`: this client with some settings
         replaced, sharing its connection pool."""
@@ -1956,6 +1986,7 @@ class AsyncMatterWave:
             max_retries=max_retries,
             max_retry_wait=max_retry_wait,
             default_headers=default_headers,
+            idempotency_key=idempotency_key,
         )
         view._owns_http = False
         view._closed = False
@@ -2018,6 +2049,7 @@ class AsyncMatterWave:
         """As `MatterWave._send`: one operation with the retry loop, the
         call's own `timeout` and `max_retries` winning over the client's."""
         attempt_limit = self._config.max_retries if max_retries is None else max_retries
+        idempotency_key = self._config.idempotency_key_for(request)
         attempt = 0
         while True:
             if self._closed or self._root._closed:
@@ -2026,7 +2058,9 @@ class AsyncMatterWave:
                 )
             if self._on_request is not None:
                 self._on_request(request)
-            http_request = self._config.build(request, self._http, timeout=timeout)
+            http_request = self._config.build(
+                request, self._http, timeout=timeout, idempotency_key=idempotency_key
+            )
             try:
                 response = await self._http.send(http_request, stream=request.stream)
             except httpx.HTTPError as exc:

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import random
+import uuid
 from collections.abc import AsyncIterable, AsyncIterator, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -29,6 +30,7 @@ from .errors import (
 API_KEY_ENV = "MATTERWAVE_API_KEY"
 BASE_URL_ENV = "MATTERWAVE_BASE_URL"
 REQUEST_ID_HEADER = "x-request-id"
+IDEMPOTENCY_HEADER = "Idempotency-Key"
 API_PREFIX = "/v1"
 SSE_DONE = "[DONE]"
 
@@ -53,6 +55,10 @@ NON_RETRYABLE_429_CODES = frozenset({"insufficient_quota"})
 # a message stored and billed, a key minted -- so it is only sent again when
 # the failure proves the server never acted on it.
 IDEMPOTENT_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "PUT", "DELETE"})
+# Methods that only read. Every other request is a write and carries an
+# `Idempotency-Key`, one per call and the same on each retry of it, so a
+# server that keeps the keys can answer a repeat with the first result.
+READ_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 # Transport failures that happen before a byte of the request is written:
 # no connection was made, or none was free in the pool. Anything later (a
@@ -284,6 +290,15 @@ class Request:
         if self.idempotent is not None:
             return self.idempotent
         return self.method in IDEMPOTENT_METHODS
+
+    @property
+    def is_write(self) -> bool:
+        return self.method not in READ_METHODS
+
+
+def new_idempotency_key() -> str:
+    """A fresh key for one write: a random UUID, as Stripe and OpenAI send."""
+    return str(uuid.uuid4())
 
 
 def index_request() -> Request:
@@ -753,16 +768,22 @@ def headers_for(
     api_key: str | None,
     user_agent: str,
     default_headers: Mapping[str, str] | None = None,
+    idempotency_key: str | None = None,
 ) -> dict[str, str]:
     """The request's headers, least specific first: the client's own
     defaults (`Accept`, `User-Agent`), then the caller's `default_headers`,
     which may replace them (a client built on this one names itself), then
-    what the operation itself needs, such as `Last-Event-ID` on a resume."""
+    what the operation itself needs, such as `Last-Event-ID` on a resume.
+    `idempotency_key` goes on unless one of those already set the header."""
     headers = {"Accept": "application/json", "User-Agent": user_agent}
     if request.stream:
         headers["Accept"] = "text/event-stream"
     headers.update(default_headers or {})
     headers.update(request.headers)
+    if idempotency_key is not None and not any(
+        name.lower() == IDEMPOTENCY_HEADER.lower() for name in headers
+    ):
+        headers[IDEMPOTENCY_HEADER] = idempotency_key
     if request.keyed:
         if api_key is None:
             raise MissingAPIKeyError(

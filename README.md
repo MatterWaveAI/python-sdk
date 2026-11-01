@@ -110,6 +110,13 @@ upload -- is sent again only when the connection was never made: after a 5xx or
 a reply cut short, the first copy may already have taken effect, so the error is
 raised instead. A streamed request is retried only before its stream starts.
 
+Every write (any method but GET) carries an `Idempotency-Key` header: a fresh
+UUID per call, the same on each of its retries, so the server can recognise a
+repeat. `client.with_options(idempotency_key=...)` supplies your own, for a
+write whose retries may come from another process. The API does not yet answer
+a repeated key with the first result, so the narrower retry rule for writes
+above still applies.
+
 ### Per-call settings
 
 `timeout` (seconds), `max_retries` and `max_retry_wait` are set on the client
