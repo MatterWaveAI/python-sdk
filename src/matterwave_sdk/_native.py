@@ -944,3 +944,123 @@ def import_status_request(import_id: str) -> Request:
     return Request("GET", path, None, keyed=True, stream=False)
 
 
+# --- members, invites, invite links, join -------------------------------------------
+
+
+ORG_ROLES = ("owner", "admin", "member", "viewer")
+LINK_MAX_USES = 500
+LINK_MAX_DAYS = 30
+
+
+def _role(role: str) -> str:
+    if role not in ORG_ROLES:
+        raise ValueError(f"role must be one of {', '.join(ORG_ROLES)}, got {role!r}")
+    return role
+
+
+def _member_path(subject: str, suffix: str = "") -> str:
+    return f"/api/org/members/{_segment('subject', subject)}{suffix}"
+
+
+def list_members_request() -> Request:
+    return Request("GET", "/api/org/members", None, keyed=True, stream=False)
+
+
+def set_member_role_request(subject: str, role: str) -> Request:
+    return Request(
+        "PUT", _member_path(subject, "/role"), {"role": _role(role)}, keyed=True, stream=False
+    )
+
+
+def transfer_ownership_request(subject: str) -> Request:
+    return Request(
+        "POST", _member_path(subject, "/transfer-ownership"), None, keyed=True, stream=False
+    )
+
+
+def remove_member_request(subject: str) -> Request:
+    return Request("DELETE", _member_path(subject), None, keyed=True, stream=False)
+
+
+def list_invites_request() -> Request:
+    return Request("GET", "/api/org/invites", None, keyed=True, stream=False)
+
+
+def create_invite_request(email: str, role: str) -> Request:
+    return Request(
+        "POST",
+        "/api/org/invites",
+        {"email": _email_address(email), "role": _role(role)},
+        keyed=True,
+        stream=False,
+    )
+
+
+def _invite_path(invite_id: str, suffix: str = "") -> str:
+    return f"/api/org/invites/{_segment('invite_id', invite_id)}{suffix}"
+
+
+def resend_invite_request(invite_id: str) -> Request:
+    return Request("POST", _invite_path(invite_id, "/resend"), None, keyed=True, stream=False)
+
+
+def revoke_invite_request(invite_id: str) -> Request:
+    return Request("DELETE", _invite_path(invite_id), None, keyed=True, stream=False)
+
+
+def lookup_invite_request(token: str) -> Request:
+    """What a join page asks before it renders. Anonymous: the token is the
+    credential, and a POST so it stays out of access logs."""
+    if not token or len(token) > 256:
+        raise ValueError("token must be 1 to 256 characters")
+    return Request("POST", "/api/org/invites/lookup", {"token": token}, keyed=False, stream=False)
+
+
+def accept_invite_request(token: str) -> Request:
+    if not token or len(token) > 256:
+        raise ValueError("token must be 1 to 256 characters")
+    return Request("POST", "/api/org/invites/accept", {"token": token}, keyed=True, stream=False)
+
+
+def list_invite_links_request() -> Request:
+    return Request("GET", "/api/org/invite-links", None, keyed=True, stream=False)
+
+
+def create_invite_link_request(role: str, max_uses: int, expires_in_days: int) -> Request:
+    """A link is pasted where the org cannot see who reads it, so both
+    bounds are finite: a month at most, and a team's worth of uses. Never an
+    owner link -- ownership goes to a person someone chose, and the route
+    422s one asked for."""
+    if role == "owner":
+        raise ValueError("an invite link is never an owner link")
+    _role(role)
+    if not 1 <= max_uses <= LINK_MAX_USES:
+        raise ValueError(f"max_uses must be 1 to {LINK_MAX_USES}, got {max_uses}")
+    if not 1 <= expires_in_days <= LINK_MAX_DAYS:
+        raise ValueError(f"expires_in_days must be 1 to {LINK_MAX_DAYS}, got {expires_in_days}")
+    return Request(
+        "POST",
+        "/api/org/invite-links",
+        {"role": role, "max_uses": max_uses, "expires_in_days": expires_in_days},
+        keyed=True,
+        stream=False,
+    )
+
+
+def revoke_invite_link_request(link_id: str) -> Request:
+    path = f"/api/org/invite-links/{_segment('link_id', link_id)}"
+    return Request("DELETE", path, None, keyed=True, stream=False)
+
+
+def lookup_invite_link_request(token: str) -> Request:
+    if not token or len(token) > 256:
+        raise ValueError("token must be 1 to 256 characters")
+    return Request("POST", "/api/join/lookup", {"token": token}, keyed=False, stream=False)
+
+
+def join_by_link_request(token: str) -> Request:
+    if not token or len(token) > 256:
+        raise ValueError("token must be 1 to 256 characters")
+    return Request("POST", "/api/join", {"token": token}, keyed=True, stream=False)
+
+

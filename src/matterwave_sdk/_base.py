@@ -197,6 +197,22 @@ APP_OPERATIONS: dict[str, tuple[str, str]] = {
     "imports.start": ("POST", "/api/me/imports"),
     "imports.list": ("GET", "/api/me/imports"),
     "imports.get": ("GET", "/api/me/imports/{import_id}"),
+    # --- members, invites, invite links, join (T-209) ---------------------------
+    "members.list": ("GET", "/api/org/members"),
+    "members.set_role": ("PUT", "/api/org/members/{subject}/role"),
+    "members.transfer_ownership": ("POST", "/api/org/members/{subject}/transfer-ownership"),
+    "members.remove": ("DELETE", "/api/org/members/{subject}"),
+    "members.invites.list": ("GET", "/api/org/invites"),
+    "members.invites.create": ("POST", "/api/org/invites"),
+    "members.invites.resend": ("POST", "/api/org/invites/{invite_id}/resend"),
+    "members.invites.revoke": ("DELETE", "/api/org/invites/{invite_id}"),
+    "members.invites.lookup": ("POST", "/api/org/invites/lookup"),
+    "members.invites.accept": ("POST", "/api/org/invites/accept"),
+    "members.links.list": ("GET", "/api/org/invite-links"),
+    "members.links.create": ("POST", "/api/org/invite-links"),
+    "members.links.revoke": ("DELETE", "/api/org/invite-links/{link_id}"),
+    "members.join_lookup": ("POST", "/api/join/lookup"),
+    "members.join": ("POST", "/api/join"),
 }
 
 Role = Literal["system", "user", "assistant", "tool"]

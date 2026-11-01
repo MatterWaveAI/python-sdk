@@ -48,6 +48,7 @@ from ._resources import (
     AsyncImports,
     AsyncKeys,
     AsyncLibraryClient,
+    AsyncMembers,
     AsyncNotifications,
     AsyncShares,
     AsyncUsageClient,
@@ -60,6 +61,7 @@ from ._resources import (
     Imports,
     Keys,
     LibraryClient,
+    Members,
     Notifications,
     Shares,
     UsageClient,
@@ -1202,6 +1204,7 @@ class MatterWave:
         self.account = Account(self)
         self.exports = Exports(self)
         self.imports = Imports(self)
+        self.members = Members(self)
         self.mcp = Mcp(self)
 
     @property
@@ -1867,6 +1870,7 @@ class AsyncMatterWave:
         self.account = AsyncAccount(self)
         self.exports = AsyncExports(self)
         self.imports = AsyncImports(self)
+        self.members = AsyncMembers(self)
         self.mcp = AsyncMcp(self)
 
     @property

@@ -49,6 +49,7 @@ from .models import (
     Budget,
     Conversation,
     ConversationTags,
+    CreatedInviteLink,
     CreatedShare,
     DeletedAccount,
     EmailChangeCancelled,
@@ -60,9 +61,15 @@ from .models import (
     Folder,
     ImportJob,
     ImportJobList,
+    InviteLinkList,
+    InviteList,
+    InvitePreview,
     Library,
+    LinkPreview,
     MemberBudget,
     MemberBudgetList,
+    MemberList,
+    Membership,
     NameUpdated,
     Notification,
     NotificationList,
@@ -72,6 +79,7 @@ from .models import (
     PasswordChanged,
     Preferences,
     SearchResults,
+    SentInvite,
     SessionList,
     SessionRevoked,
     SessionsLoggedOut,
@@ -1321,5 +1329,218 @@ class AsyncImports(_Async):
     async def get(self, import_id: str) -> ImportJob:
         body, rid = await self._object(req.import_status_request(import_id))
         return ImportJob.from_dict(body, request_id=rid)
+
+
+# --- members, invites, invite links, join (T-209) ------------------------------------------
+
+
+class OrgInvites(_Sync):
+    """The org's mailed invitations. Listing is any member's; sending,
+    re-sending and revoking are an owner's or admin's (by membership row,
+    never a token claim). The seat a promise of a seat: an invite past the
+    plan's `max_seats` is the same 402 every entitlement gate answers."""
+
+    def __init__(self, client: MatterWave) -> None:
+        super().__init__(client)
+
+    def list(self) -> InviteList:
+        """`GET /api/org/invites`: every invitation, each with its
+        `status`: `pending`, `accepted`, `expired` or `revoked`."""
+        body, rid = self._object(req.list_invites_request())
+        return InviteList.from_dict(body, request_id=rid)
+
+    def create(self, email: str, *, role: str = "member") -> SentInvite:
+        """`POST /api/org/invites` (201): the row, then the mail. The
+        answer says whether the mail went (`mail`: `"sent"` or `"failed"`)
+        -- a relay failure does not undo the row, and a resend is the
+        recovery. Already a member, or an invite already pending for the
+        address: a 409."""
+        body, rid = self._object(req.create_invite_request(email, role))
+        return SentInvite.from_dict(body, request_id=rid)
+
+    def resend(self, invite_id: str) -> SentInvite:
+        """`POST /api/org/invites/{id}/resend`: a new token, a new expiry
+        and the mail again -- the recovery for a mail that never arrived.
+        Rate-limited per invite server-side."""
+        body, rid = self._object(req.resend_invite_request(invite_id))
+        return SentInvite.from_dict(body, request_id=rid)
+
+    def revoke(self, invite_id: str) -> None:
+        """`DELETE /api/org/invites/{id}`: the link in the mail stops
+        working."""
+        self._none(req.revoke_invite_request(invite_id))
+
+    def lookup(self, token: str) -> InvitePreview:
+        """`POST /api/org/invites/lookup`: what a join page asks before it
+        renders. Anonymous -- the token is the credential -- and it answers
+        only whose org, which address, which role, and whether the link
+        still works."""
+        body, rid = self._object(req.lookup_invite_request(token))
+        return InvitePreview.from_dict(body, request_id=rid)
+
+    def accept(self, token: str) -> Membership:
+        """`POST /api/org/invites/accept`: the signed-in path. The verified
+        email must be the one invited, and the account must already be in
+        that org -- one account, one org; the 409 says what to do instead.
+        A stranger joins through signup instead, with the token."""
+        body, rid = self._object(req.accept_invite_request(token))
+        return Membership.from_dict(body, request_id=rid)
+
+
+class AsyncOrgInvites(_Async):
+    async def list(self) -> InviteList:
+        body, rid = await self._object(req.list_invites_request())
+        return InviteList.from_dict(body, request_id=rid)
+
+    async def create(self, email: str, *, role: str = "member") -> SentInvite:
+        body, rid = await self._object(req.create_invite_request(email, role))
+        return SentInvite.from_dict(body, request_id=rid)
+
+    async def resend(self, invite_id: str) -> SentInvite:
+        body, rid = await self._object(req.resend_invite_request(invite_id))
+        return SentInvite.from_dict(body, request_id=rid)
+
+    async def revoke(self, invite_id: str) -> None:
+        await self._none(req.revoke_invite_request(invite_id))
+
+    async def lookup(self, token: str) -> InvitePreview:
+        body, rid = await self._object(req.lookup_invite_request(token))
+        return InvitePreview.from_dict(body, request_id=rid)
+
+    async def accept(self, token: str) -> Membership:
+        body, rid = await self._object(req.accept_invite_request(token))
+        return Membership.from_dict(body, request_id=rid)
+
+
+class OrgInviteLinks(_Sync):
+    """Join links: a token anyone holding it may redeem, so making, seeing
+    and revoking them are an owner's or admin's business. Only the hash is
+    kept -- the token exists in the answer to `create` and wherever its
+    maker pasted it -- so a lost link is revoked and replaced, never shown
+    again."""
+
+    def list(self) -> InviteLinkList:
+        """`GET /api/org/invite-links`: the links not revoked, with their
+        uses."""
+        body, rid = self._object(req.list_invite_links_request())
+        return InviteLinkList.from_dict(body, request_id=rid)
+
+    def create(
+        self, *, role: str = "member", max_uses: int = 10, expires_in_days: int = 7
+    ) -> CreatedInviteLink:
+        """`POST /api/org/invite-links` (201): a link with a finite life
+        (a month at most) and a team's worth of uses (500 at most). Never
+        an owner link -- ownership goes to a person someone chose, and
+        asking for one is a ValueError here and a 422 there."""
+        body, rid = self._object(
+            req.create_invite_link_request(role, max_uses, expires_in_days)
+        )
+        return CreatedInviteLink.from_dict(body, request_id=rid)
+
+    def revoke(self, link_id: str) -> None:
+        """`DELETE /api/org/invite-links/{id}`: nobody new joins with it."""
+        self._none(req.revoke_invite_link_request(link_id))
+
+
+class AsyncOrgInviteLinks(_Async):
+    async def list(self) -> InviteLinkList:
+        body, rid = await self._object(req.list_invite_links_request())
+        return InviteLinkList.from_dict(body, request_id=rid)
+
+    async def create(
+        self, *, role: str = "member", max_uses: int = 10, expires_in_days: int = 7
+    ) -> CreatedInviteLink:
+        body, rid = await self._object(
+            req.create_invite_link_request(role, max_uses, expires_in_days)
+        )
+        return CreatedInviteLink.from_dict(body, request_id=rid)
+
+    async def revoke(self, link_id: str) -> None:
+        await self._none(req.revoke_invite_link_request(link_id))
+
+
+class Members(_Sync):
+    """The org's people. Every route here is gated on the caller's
+    membership row, never a token claim: listing is any member's, changing
+    roles and removing others an owner's or admin's, and only an owner
+    touches an owner at all. Nobody demotes or removes the last owner, and
+    a membership change re-bills a per-seat plan behind the same request."""
+
+    def __init__(self, client: MatterWave) -> None:
+        super().__init__(client)
+        self.invites = OrgInvites(client)
+        self.links = OrgInviteLinks(client)
+
+    def list(self) -> MemberList:
+        """`GET /api/org/members`: every member with their role, plus the
+        caller's own `role` (which the token's claims say nothing about)
+        and the plan's `seats`."""
+        body, rid = self._object(req.list_members_request())
+        return MemberList.from_dict(body, request_id=rid)
+
+    def set_role(self, subject: str, role: str) -> Membership:
+        """`PUT /api/org/members/{subject}/role`. Granting ownership is an
+        owner's move; demoting the last owner is a 409."""
+        body, rid = self._object(req.set_member_role_request(subject, role))
+        return Membership.from_dict(body, request_id=rid)
+
+    def transfer_ownership(self, subject: str) -> Membership:
+        """`POST /api/org/members/{subject}/transfer-ownership`: hand the
+        org over in one step -- they become an owner and the caller an
+        admin, together or not at all. Owner only."""
+        body, rid = self._object(req.transfer_ownership_request(subject))
+        return Membership.from_dict(body, request_id=rid)
+
+    def remove(self, subject: str) -> None:
+        """`DELETE /api/org/members/{subject}`: access ends on their next
+        request. Removing yourself is leaving, and every role may; removing
+        anyone else is a manager's. The last owner cannot be removed."""
+        self._none(req.remove_member_request(subject))
+
+    def join_lookup(self, token: str) -> LinkPreview:
+        """`POST /api/join/lookup`: what a join page asks before it renders
+        a link -- whose org, which role, and whether the link still works.
+        Anonymous."""
+        body, rid = self._object(req.lookup_invite_link_request(token))
+        return LinkPreview.from_dict(body, request_id=rid)
+
+    def join(self, token: str) -> Membership:
+        """`POST /api/join`: redeem a link. The account must already be in
+        the link's org without a membership in it (one account, one org);
+        the seat it takes is checked now, because a link reserves none."""
+        body, rid = self._object(req.join_by_link_request(token))
+        return Membership.from_dict(body, request_id=rid)
+
+
+class AsyncMembers(_Async):
+    """As `Members`; every method a coroutine."""
+
+    def __init__(self, client: AsyncMatterWave) -> None:
+        super().__init__(client)
+        self.invites = AsyncOrgInvites(client)
+        self.links = AsyncOrgInviteLinks(client)
+
+    async def list(self) -> MemberList:
+        body, rid = await self._object(req.list_members_request())
+        return MemberList.from_dict(body, request_id=rid)
+
+    async def set_role(self, subject: str, role: str) -> Membership:
+        body, rid = await self._object(req.set_member_role_request(subject, role))
+        return Membership.from_dict(body, request_id=rid)
+
+    async def transfer_ownership(self, subject: str) -> Membership:
+        body, rid = await self._object(req.transfer_ownership_request(subject))
+        return Membership.from_dict(body, request_id=rid)
+
+    async def remove(self, subject: str) -> None:
+        await self._none(req.remove_member_request(subject))
+
+    async def join_lookup(self, token: str) -> LinkPreview:
+        body, rid = await self._object(req.lookup_invite_link_request(token))
+        return LinkPreview.from_dict(body, request_id=rid)
+
+    async def join(self, token: str) -> Membership:
+        body, rid = await self._object(req.join_by_link_request(token))
+        return Membership.from_dict(body, request_id=rid)
 
 

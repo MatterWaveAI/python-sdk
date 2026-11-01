@@ -2743,3 +2743,288 @@ class ImportJobList:
         )
 
 
+# --- members, invites, invite links, join ----------------------------------------
+
+
+@dataclass(frozen=True)
+class Membership:
+    """One person's place in the org, as the members pane lists it. `state`
+    is `active`, `suspended` or `unverified`; `last_seen_at` is None for
+    someone who has never signed in."""
+
+    subject: str
+    email: str
+    role: str
+    state: str
+    created_at: str
+    name: str | None = None
+    last_seen_at: str | None = None
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> Membership:
+        return cls(
+            subject=_str(data.get("subject")),
+            email=_str(data.get("email")),
+            role=_str(data.get("role")),
+            state=_str(data.get("state"), "active"),
+            created_at=_str(data.get("created_at")),
+            name=_opt_str(data.get("name")),
+            last_seen_at=_opt_str(data.get("last_seen_at")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class Seats:
+    """The plan's room against what is taken: members plus pending invites.
+    `max` is None with no cap; `billed` is the seats the org pays for on a
+    plan sold per seat (its members, without the invites)."""
+
+    used: int
+    max: int | None = None
+    billed: int | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Seats:
+        return cls(
+            used=_int(data.get("used")),
+            max=_opt_int(data.get("max")),
+            billed=_opt_int(data.get("billed")),
+        )
+
+
+@dataclass(frozen=True)
+class MemberList:
+    """`GET /api/org/members`: every member with their role, `role` being
+    the caller's own (the token's claims say nothing about the org), and
+    `seats` the plan's room."""
+
+    data: list[Membership]
+    role: str
+    seats: Seats
+    request_id: str | None = field(default=None, compare=False)
+
+    def __iter__(self) -> Any:
+        return iter(self.data)
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> MemberList:
+        seats = data.get("seats")
+        return cls(
+            data=[Membership.from_dict(m) for m in _dicts(data.get("data"))],
+            role=_str(data.get("role")),
+            seats=Seats.from_dict(seats if isinstance(seats, dict) else {}),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class Invite:
+    """A mailed invitation, as the invites pane lists it. Never the token:
+    the plaintext went out in the mail and nowhere else. `status` is
+    `pending`, `accepted`, `expired` or `revoked`."""
+
+    id: str
+    email: str
+    role: str
+    invited_by: str
+    created_at: str
+    expires_at: str
+    status: str
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> Invite:
+        return cls(
+            id=_str(data.get("id")),
+            email=_str(data.get("email")),
+            role=_str(data.get("role")),
+            invited_by=_str(data.get("invited_by")),
+            created_at=_str(data.get("created_at")),
+            expires_at=_str(data.get("expires_at")),
+            status=_str(data.get("status")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class InviteList:
+    """`GET /api/org/invites`: the org's invitations."""
+
+    data: list[Invite]
+    request_id: str | None = field(default=None, compare=False)
+
+    def __iter__(self) -> Any:
+        return iter(self.data)
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> InviteList:
+        return cls(
+            data=[Invite.from_dict(i) for i in _dicts(data.get("data"))],
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class SentInvite:
+    """The answer to `invites.create` and `invites.resend`: the invite plus
+    whether its mail went. A relay failure does not undo the row -- `mail`
+    is `"failed"` with `detail` saying so, and a resend is the recovery."""
+
+    id: str
+    email: str
+    role: str
+    invited_by: str
+    created_at: str
+    expires_at: str
+    status: str
+    mail: str | None = None
+    detail: str | None = None
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> SentInvite:
+        return cls(
+            id=_str(data.get("id")),
+            email=_str(data.get("email")),
+            role=_str(data.get("role")),
+            invited_by=_str(data.get("invited_by")),
+            created_at=_str(data.get("created_at")),
+            expires_at=_str(data.get("expires_at")),
+            status=_str(data.get("status")),
+            mail=_opt_str(data.get("mail")),
+            detail=_opt_str(data.get("detail")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class InvitePreview:
+    """What an anonymous lookup may know about a mailed invite: enough to
+    say "join Acme as a member" and pre-fill the address, nothing about who
+    else is in the org."""
+
+    org_name: str
+    email: str
+    role: str
+    expires_at: str
+    status: str
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> InvitePreview:
+        return cls(
+            org_name=_str(data.get("org_name")),
+            email=_str(data.get("email")),
+            role=_str(data.get("role")),
+            expires_at=_str(data.get("expires_at")),
+            status=_str(data.get("status")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class InviteLink:
+    """A join link, as the pane lists it. Never the token: only its hash is
+    kept, so the plaintext exists in the response that made the link and
+    wherever its owner pasted it. `status` is `active`, `used_up`,
+    `expired` or `revoked`."""
+
+    id: str
+    role: str
+    max_uses: int
+    uses: int
+    created_by: str
+    created_at: str
+    expires_at: str
+    status: str
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> InviteLink:
+        return cls(
+            id=_str(data.get("id")),
+            role=_str(data.get("role")),
+            max_uses=_int(data.get("max_uses")),
+            uses=_int(data.get("uses")),
+            created_by=_str(data.get("created_by")),
+            created_at=_str(data.get("created_at")),
+            expires_at=_str(data.get("expires_at")),
+            status=_str(data.get("status")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class InviteLinkList:
+    """`GET /api/org/invite-links`: the links not revoked, with their uses."""
+
+    data: list[InviteLink]
+    request_id: str | None = field(default=None, compare=False)
+
+    def __iter__(self) -> Any:
+        return iter(self.data)
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> InviteLinkList:
+        return cls(
+            data=[InviteLink.from_dict(link) for link in _dicts(data.get("data"))],
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class CreatedInviteLink:
+    """A new link. `token` and `url` are in this answer and nowhere else --
+    a lost link is revoked and replaced, never shown again."""
+
+    link: InviteLink
+    token: str = field(repr=False)
+    url: str = field(repr=False)
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(
+        cls, data: dict[str, Any], *, request_id: str | None = None
+    ) -> CreatedInviteLink:
+        return cls(
+            link=InviteLink.from_dict(data),
+            token=_str(data.get("token")),
+            url=_str(data.get("url")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class LinkPreview:
+    """What an anonymous lookup may know about a join link: whose org,
+    which role, and whether the link still works -- not how many have used
+    it."""
+
+    org_name: str
+    role: str
+    expires_at: str
+    status: str
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> LinkPreview:
+        return cls(
+            org_name=_str(data.get("org_name")),
+            role=_str(data.get("role")),
+            expires_at=_str(data.get("expires_at")),
+            status=_str(data.get("status")),
+            request_id=request_id,
+        )
+
+
