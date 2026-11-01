@@ -715,7 +715,7 @@ def entitlements_request() -> Request:
     return Request("GET", "/api/entitlements", None, keyed=True, stream=False)
 
 
-# --- the account: rename, preferences, password, email, deletion, onboarding -----
+# --- the account: password, email, deletion, onboarding --------------------------
 
 
 DELETE_ACCOUNT_PHRASE = "delete my account"
@@ -725,43 +725,7 @@ reachable by a bare delete, whatever the client is."""
 
 PASSWORD_MIN_LENGTH = 12
 PASSWORD_MAX_LENGTH = 256
-NAME_MAX_LENGTH = 120
 EMAIL_MAX_LENGTH = 254
-
-
-def rename_account_request(name: str) -> Request:
-    """The Account pane's rename. The server collapses whitespace and
-    bounds the result; the shape is checked here so a name of only spaces
-    is refused before the request is spent."""
-    value = " ".join(name.split())
-    if not value:
-        raise ValueError("a name must not be empty")
-    if len(value) > NAME_MAX_LENGTH:
-        raise ValueError(f"a name must be at most {NAME_MAX_LENGTH} characters")
-    return Request("PATCH", "/api/me", {"full_name": value}, keyed=True, stream=False)
-
-
-def replace_preferences_request(
-    *,
-    email: Mapping[str, Any] | None,
-    notifications: Mapping[str, Any] | None,
-    locale: str | None,
-) -> Request:
-    """The whole shape, always: the route replaces it, so a group left out
-    is sent as its default rather than left alone. The server validates the
-    result (an unknown locale is its 422); `billing_receipts` is
-    transactional mail and may not be turned off."""
-    return Request(
-        "PUT",
-        "/api/me/preferences",
-        {
-            "email": dict(email or {}),
-            "notifications": dict(notifications or {}),
-            "locale": locale,
-        },
-        keyed=True,
-        stream=False,
-    )
 
 
 def _password(value: str, name: str) -> str:
@@ -838,7 +802,7 @@ def delete_account_request(confirm: str) -> Request:
     return Request("DELETE", "/api/me", {"confirm": confirm}, keyed=True, stream=False)
 
 
-def onboarding_complete_request() -> Request:
+def complete_onboarding_request() -> Request:
     return Request("POST", "/api/me/onboarding/complete", None, keyed=True, stream=False)
 
 
@@ -932,17 +896,17 @@ def mfa_state_request() -> Request:
     return Request("GET", "/api/me/mfa", None, keyed=True, stream=False)
 
 
-def mfa_totp_start_request() -> Request:
+def mfa_start_totp_request() -> Request:
     return Request("POST", "/api/me/mfa/totp/start", None, keyed=True, stream=False)
 
 
-def mfa_totp_confirm_request(code: str) -> Request:
+def mfa_confirm_totp_request(code: str) -> Request:
     return Request(
         "POST", "/api/me/mfa/totp/confirm", {"code": _totp_code(code)}, keyed=True, stream=False
     )
 
 
-def mfa_totp_remove_request(code: str | None, recovery_code: str | None) -> Request:
+def mfa_remove_totp_request(code: str | None, recovery_code: str | None) -> Request:
     """A code OR a recovery code: the session cookie alone is not proof
     enough to remove the factor that protects it."""
     body: dict[str, Any] = {}
@@ -957,9 +921,52 @@ def mfa_totp_remove_request(code: str | None, recovery_code: str | None) -> Requ
     return Request("DELETE", "/api/me/mfa/totp", body, keyed=True, stream=False)
 
 
-def mfa_recovery_reissue_request(code: str) -> Request:
+def mfa_reissue_recovery_codes_request(code: str) -> Request:
     return Request(
         "POST", "/api/me/mfa/recovery-codes", {"code": _totp_code(code)}, keyed=True, stream=False
+    )
+
+
+def _challenge(challenge: str) -> str:
+    if not challenge:
+        raise ValueError("challenge must be non-empty")
+    return challenge
+
+
+def mfa_verify_login_request(
+    challenge: str, code: str | None, recovery_code: str | None
+) -> Request:
+    """The code step of a sign-in. Anonymous: the sealed challenge the
+    password step handed out names who is signing in."""
+    body: dict[str, Any] = {"challenge": _challenge(challenge)}
+    if code is not None:
+        body["code"] = _totp_code(code)
+    if recovery_code is not None:
+        if not recovery_code or len(recovery_code) > 32:
+            raise ValueError("recovery_code must be 1 to 32 characters")
+        body["recovery_code"] = recovery_code
+    if len(body) == 1:
+        raise ValueError("prove it with a code or a recovery_code")
+    return Request("POST", "/api/auth/mfa", body, keyed=False, stream=False)
+
+
+def mfa_start_login_enrolment_request(challenge: str) -> Request:
+    return Request(
+        "POST",
+        "/api/auth/mfa/enrol/start",
+        {"challenge": _challenge(challenge)},
+        keyed=False,
+        stream=False,
+    )
+
+
+def mfa_confirm_login_enrolment_request(challenge: str, code: str) -> Request:
+    return Request(
+        "POST",
+        "/api/auth/mfa/enrol/confirm",
+        {"challenge": _challenge(challenge), "code": _totp_code(code)},
+        keyed=False,
+        stream=False,
     )
 
 

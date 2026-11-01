@@ -67,7 +67,9 @@ from .models import (
     LoggedOut,
     MemberBudget,
     MemberBudgetList,
+    MfaEnrolConfirmed,
     MfaState,
+    MfaVerified,
     Notification,
     NotificationList,
     NotificationsReadAll,
@@ -1153,14 +1155,16 @@ class Passkeys(_Sync):
         body, rid = self._object(req.list_passkeys_request())
         return PasskeyList.from_dict(body, request_id=rid)
 
-    def start(self) -> PasskeyStart:
+    def start_registration(self) -> PasskeyStart:
         """`POST /api/me/passkeys/start`: the creation options for
-        `navigator.credentials.create`. Nothing is live until `verify`
-        takes the attestation back."""
+        `navigator.credentials.create`. Nothing is live until
+        `verify_registration` takes the attestation back."""
         body, rid = self._object(req.start_passkey_request())
         return PasskeyStart.from_dict(body, request_id=rid)
 
-    def verify(self, passkey_id: str, credential: Mapping[str, Any], name: str) -> Passkey:
+    def verify_registration(
+        self, passkey_id: str, credential: Mapping[str, Any], name: str
+    ) -> Passkey:
         """`POST /api/me/passkeys/{id}/verify` (201): the browser's
         attestation, back to the provider; on acceptance, the row that
         names it."""
@@ -1177,7 +1181,7 @@ class Passkeys(_Sync):
         row, so the list never claims a credential that cannot sign in."""
         self._none(req.remove_passkey_request(passkey_id))
 
-    def login_start(self, email: str, auth_request: str) -> PasskeyLoginStart:
+    def start_login(self, email: str, auth_request: str) -> PasskeyLoginStart:
         """`POST /api/auth/passkey/start`: the request options for
         `navigator.credentials.get` and the sealed `challenge`. An address
         with no account and one with no passkey are the same 404, so the
@@ -1185,7 +1189,7 @@ class Passkeys(_Sync):
         body, rid = self._object(req.start_passkey_login_request(email, auth_request))
         return PasskeyLoginStart.from_dict(body, request_id=rid)
 
-    def login_finish(self, challenge: str, credential: Mapping[str, Any]) -> PasskeyLoginFinish:
+    def finish_login(self, challenge: str, credential: Mapping[str, Any]) -> PasskeyLoginFinish:
         """`POST /api/auth/passkey/finish`: the assertion back; the answer
         is the redirect that completes the sign-in."""
         body, rid = self._object(req.finish_passkey_login_request(challenge, credential))
@@ -1199,11 +1203,13 @@ class AsyncPasskeys(_Async):
         body, rid = await self._object(req.list_passkeys_request())
         return PasskeyList.from_dict(body, request_id=rid)
 
-    async def start(self) -> PasskeyStart:
+    async def start_registration(self) -> PasskeyStart:
         body, rid = await self._object(req.start_passkey_request())
         return PasskeyStart.from_dict(body, request_id=rid)
 
-    async def verify(self, passkey_id: str, credential: Mapping[str, Any], name: str) -> Passkey:
+    async def verify_registration(
+        self, passkey_id: str, credential: Mapping[str, Any], name: str
+    ) -> Passkey:
         body, rid = await self._object(req.verify_passkey_request(passkey_id, credential, name))
         return Passkey.from_dict(body, request_id=rid)
 
@@ -1214,11 +1220,11 @@ class AsyncPasskeys(_Async):
     async def remove(self, passkey_id: str) -> None:
         await self._none(req.remove_passkey_request(passkey_id))
 
-    async def login_start(self, email: str, auth_request: str) -> PasskeyLoginStart:
+    async def start_login(self, email: str, auth_request: str) -> PasskeyLoginStart:
         body, rid = await self._object(req.start_passkey_login_request(email, auth_request))
         return PasskeyLoginStart.from_dict(body, request_id=rid)
 
-    async def login_finish(
+    async def finish_login(
         self, challenge: str, credential: Mapping[str, Any]
     ) -> PasskeyLoginFinish:
         body, rid = await self._object(req.finish_passkey_login_request(challenge, credential))
@@ -1229,12 +1235,13 @@ class AsyncPasskeys(_Async):
 
 
 class Mfa(_Sync):
-    """The second factor, signed-in side: enrol an authenticator, prove it,
-    keep the recovery codes. The login-side code step (the sealed-challenge
-    flow the password form drives) is browser ceremony and is not here.
-    Every code check is rate-limited per person server-side: a six-digit
-    code is guessable in a million tries, and nothing offers a million
-    tries. These routes take a session; an API key is refused."""
+    """The second factor: enrolment and removal for the signed-in person
+    (`/api/me/mfa/*`, a session; an API key is refused), and the code step
+    of a sign-in (`/api/auth/mfa*`). The sign-in half has no session yet --
+    what it acts for is named by the sealed `challenge` the password step
+    handed out -- so those methods send no credential. Every code check is
+    rate-limited per person server-side: a six-digit code is guessable in a
+    million tries, and nothing offers a million tries."""
 
     def state(self) -> MfaState:
         """`GET /api/me/mfa`: enrolled, codes left, and whether the org
@@ -1242,21 +1249,21 @@ class Mfa(_Sync):
         body, rid = self._object(req.mfa_state_request())
         return MfaState.from_dict(body, request_id=rid)
 
-    def totp_start(self) -> TotpEnrolment:
+    def start_totp(self) -> TotpEnrolment:
         """`POST /api/me/mfa/totp/start`: the secret, the otpauth URI and
         its QR. Nothing is live until the first code confirms it."""
-        body, rid = self._object(req.mfa_totp_start_request())
+        body, rid = self._object(req.mfa_start_totp_request())
         return TotpEnrolment.from_dict(body, request_id=rid)
 
-    def totp_confirm(self, code: str) -> TotpConfirmed:
+    def confirm_totp(self, code: str) -> TotpConfirmed:
         """`POST /api/me/mfa/totp/confirm`: the first code makes the
         authenticator live, and the ten recovery codes come back in the
         same answer -- shown once; only their hashes exist after this
         response."""
-        body, rid = self._object(req.mfa_totp_confirm_request(code))
+        body, rid = self._object(req.mfa_confirm_totp_request(code))
         return TotpConfirmed.from_dict(body, request_id=rid)
 
-    def totp_remove(
+    def remove_totp(
         self, *, code: str | None = None, recovery_code: str | None = None
     ) -> TotpRemoved:
         """`DELETE /api/me/mfa/totp`: remove the authenticator, on proof
@@ -1264,16 +1271,41 @@ class Mfa(_Sync):
         not proof enough to remove the factor that protects it. Refused
         outright for a member of an org that requires one: the policy is
         the owner's to relax, not the member's to step around."""
-        body, rid = self._object(req.mfa_totp_remove_request(code, recovery_code))
+        body, rid = self._object(req.mfa_remove_totp_request(code, recovery_code))
         return TotpRemoved.from_dict(body, request_id=rid)
 
-    def recovery_reissue(self, code: str) -> TotpConfirmed:
+    def reissue_recovery_codes(self, code: str) -> TotpConfirmed:
         """`POST /api/me/mfa/recovery-codes`: ten new codes, the old ones
         retired, on a code from the app -- the authenticator only, because
         a lost sheet of codes must not be what authorises its own
         replacement."""
-        body, rid = self._object(req.mfa_recovery_reissue_request(code))
+        body, rid = self._object(req.mfa_reissue_recovery_codes_request(code))
         return TotpConfirmed.from_dict(body, request_id=rid)
+
+    def verify_login(
+        self, challenge: str, *, code: str | None = None, recovery_code: str | None = None
+    ) -> MfaVerified:
+        """`POST /api/auth/mfa`: the code step of a sign-in, on a code or a
+        recovery code; the answer is the redirect that finishes it. A
+        recovery code is burned whether or not the sign-in then finishes.
+        Anonymous -- the challenge is the credential."""
+        body, rid = self._object(req.mfa_verify_login_request(challenge, code, recovery_code))
+        return MfaVerified.from_dict(body, request_id=rid)
+
+    def start_login_enrolment(self, challenge: str) -> TotpEnrolment:
+        """`POST /api/auth/mfa/enrol/start`: an authenticator for a sign-in
+        parked on `mfa_enrolment_required` (the org insists on one). Only a
+        challenge minted for enrolment opens this door. Anonymous."""
+        body, rid = self._object(req.mfa_start_login_enrolment_request(challenge))
+        return TotpEnrolment.from_dict(body, request_id=rid)
+
+    def confirm_login_enrolment(self, challenge: str, code: str) -> MfaEnrolConfirmed:
+        """`POST /api/auth/mfa/enrol/confirm`: confirm the registration;
+        the recovery codes come back once, with a fresh challenge -- the
+        sign-in still finishes through `verify_login` with the next code.
+        Anonymous."""
+        body, rid = self._object(req.mfa_confirm_login_enrolment_request(challenge, code))
+        return MfaEnrolConfirmed.from_dict(body, request_id=rid)
 
 
 class AsyncMfa(_Async):
@@ -1283,23 +1315,37 @@ class AsyncMfa(_Async):
         body, rid = await self._object(req.mfa_state_request())
         return MfaState.from_dict(body, request_id=rid)
 
-    async def totp_start(self) -> TotpEnrolment:
-        body, rid = await self._object(req.mfa_totp_start_request())
+    async def start_totp(self) -> TotpEnrolment:
+        body, rid = await self._object(req.mfa_start_totp_request())
         return TotpEnrolment.from_dict(body, request_id=rid)
 
-    async def totp_confirm(self, code: str) -> TotpConfirmed:
-        body, rid = await self._object(req.mfa_totp_confirm_request(code))
+    async def confirm_totp(self, code: str) -> TotpConfirmed:
+        body, rid = await self._object(req.mfa_confirm_totp_request(code))
         return TotpConfirmed.from_dict(body, request_id=rid)
 
-    async def totp_remove(
+    async def remove_totp(
         self, *, code: str | None = None, recovery_code: str | None = None
     ) -> TotpRemoved:
-        body, rid = await self._object(req.mfa_totp_remove_request(code, recovery_code))
+        body, rid = await self._object(req.mfa_remove_totp_request(code, recovery_code))
         return TotpRemoved.from_dict(body, request_id=rid)
 
-    async def recovery_reissue(self, code: str) -> TotpConfirmed:
-        body, rid = await self._object(req.mfa_recovery_reissue_request(code))
+    async def reissue_recovery_codes(self, code: str) -> TotpConfirmed:
+        body, rid = await self._object(req.mfa_reissue_recovery_codes_request(code))
         return TotpConfirmed.from_dict(body, request_id=rid)
+
+    async def verify_login(
+        self, challenge: str, *, code: str | None = None, recovery_code: str | None = None
+    ) -> MfaVerified:
+        body, rid = await self._object(req.mfa_verify_login_request(challenge, code, recovery_code))
+        return MfaVerified.from_dict(body, request_id=rid)
+
+    async def start_login_enrolment(self, challenge: str) -> TotpEnrolment:
+        body, rid = await self._object(req.mfa_start_login_enrolment_request(challenge))
+        return TotpEnrolment.from_dict(body, request_id=rid)
+
+    async def confirm_login_enrolment(self, challenge: str, code: str) -> MfaEnrolConfirmed:
+        body, rid = await self._object(req.mfa_confirm_login_enrolment_request(challenge, code))
+        return MfaEnrolConfirmed.from_dict(body, request_id=rid)
 
 
 # --- account switching --------------------------------------------------------
@@ -1359,46 +1405,6 @@ class AsyncBrowserAccounts(_Async):
 # --- edge pairing and sync ----------------------------------------------------
 
 
-class SyncPairings(_Sync):
-    """Minting pairing codes and the device list. **Owner or admin by
-    membership row, by session and never by key** -- pairing a box is a
-    sign-in for a box, and a leaked key must not mint sign-ins."""
-
-    def mint(self, name: str) -> PairingCode:
-        """`POST /api/sync/pairings` (201): a twelve-character code the box
-        redeems once for its key, ten minutes to live."""
-        body, rid = self._object(req.mint_pairing_request(name))
-        return PairingCode.from_dict(body, request_id=rid)
-
-    def devices(self) -> EdgeDeviceList:
-        """`GET /api/sync/devices`: the org's paired boxes -- their keys,
-        never the values, revoked ones included (they are the record of an
-        unpairing)."""
-        body, rid = self._object(req.list_edge_devices_request())
-        return EdgeDeviceList.from_dict(body, request_id=rid)
-
-    def unpair(self, key_id: str) -> None:
-        """`DELETE /api/sync/devices/{id}`: revoke a box's key. The box
-        notices on its next push (401) and stops. Only an edge key:
-        anything else is the API keys pane's to revoke, and a 404 here."""
-        self._none(req.unpair_edge_device_request(key_id))
-
-
-class AsyncSyncPairings(_Async):
-    """As `SyncPairings`; every method a coroutine."""
-
-    async def mint(self, name: str) -> PairingCode:
-        body, rid = await self._object(req.mint_pairing_request(name))
-        return PairingCode.from_dict(body, request_id=rid)
-
-    async def devices(self) -> EdgeDeviceList:
-        body, rid = await self._object(req.list_edge_devices_request())
-        return EdgeDeviceList.from_dict(body, request_id=rid)
-
-    async def unpair(self, key_id: str) -> None:
-        await self._none(req.unpair_edge_device_request(key_id))
-
-
 class Sync(_Sync):
     """Edge pairing and the mirror it buys: an admin mints a code, the box
     redeems it once for a device key holding `conversations:import` and
@@ -1410,9 +1416,26 @@ class Sync(_Sync):
     one that leaks from a box can add conversations to that one account and
     nothing else."""
 
-    def __init__(self, client: MatterWave) -> None:
-        super().__init__(client)
-        self.pairings = SyncPairings(client)
+    def mint_pairing_code(self, name: str) -> PairingCode:
+        """`POST /api/sync/pairings` (201): a twelve-character code the box
+        redeems once for its key, ten minutes to live. Owner or admin, by
+        session."""
+        body, rid = self._object(req.mint_pairing_request(name))
+        return PairingCode.from_dict(body, request_id=rid)
+
+    def devices(self) -> EdgeDeviceList:
+        """`GET /api/sync/devices`: the org's paired boxes -- their keys,
+        never the values, revoked ones included (they are the record of an
+        unpairing). Owner or admin, by session."""
+        body, rid = self._object(req.list_edge_devices_request())
+        return EdgeDeviceList.from_dict(body, request_id=rid)
+
+    def unpair(self, key_id: str) -> None:
+        """`DELETE /api/sync/devices/{id}`: revoke a box's key. The box
+        notices on its next push (401) and stops. Only an edge key:
+        anything else is the API keys pane's to revoke, and a 404 here.
+        Owner or admin, by session."""
+        self._none(req.unpair_edge_device_request(key_id))
 
     def pair(self, code: str, *, device_id: str | None = None) -> PairedKey:
         """`POST /api/sync/pair`: trade a code for the box's key, once.
@@ -1461,9 +1484,16 @@ class Sync(_Sync):
 class AsyncSync(_Async):
     """As `Sync`; every method a coroutine."""
 
-    def __init__(self, client: AsyncMatterWave) -> None:
-        super().__init__(client)
-        self.pairings = AsyncSyncPairings(client)
+    async def mint_pairing_code(self, name: str) -> PairingCode:
+        body, rid = await self._object(req.mint_pairing_request(name))
+        return PairingCode.from_dict(body, request_id=rid)
+
+    async def devices(self) -> EdgeDeviceList:
+        body, rid = await self._object(req.list_edge_devices_request())
+        return EdgeDeviceList.from_dict(body, request_id=rid)
+
+    async def unpair(self, key_id: str) -> None:
+        await self._none(req.unpair_edge_device_request(key_id))
 
     async def pair(self, code: str, *, device_id: str | None = None) -> PairedKey:
         body, rid = await self._object(req.redeem_pairing_request(code, device_id))

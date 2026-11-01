@@ -99,9 +99,9 @@ def export_body(**extra) -> dict:
 READY_URL = f"/api/me/export/{EXPORT_ID}/download?expires=1799000000&sig=abc123"
 
 
-def test_export_start_answers_at_once_with_a_pending_job(api, client: MatterWave) -> None:
+def test_export_create_answers_at_once_with_a_pending_job(api, client: MatterWave) -> None:
     route = api.post("/api/me/export").respond(202, json=export_body(), headers=H)
-    job = client.exports.start()
+    job = client.exports.create()
     assert sent(route).method == "POST"
     assert sent(route).headers["authorization"] == f"Bearer {API_KEY}"
     assert job.status == "pending" and job.download_url is None
@@ -187,19 +187,19 @@ def import_body(**extra) -> dict:
     }
 
 
-def test_import_start_uploads_the_file_and_counts_what_was_found(api, client: MatterWave) -> None:
+def test_import_create_uploads_the_file_and_counts_what_was_found(api, client: MatterWave) -> None:
     route = api.post("/api/me/imports").respond(
         202,
         json=import_body(status="pending", conversations_total=7),
         headers=H,
     )
-    job = client.imports.start(b'{"conversations": []}', "conversations.json")
+    job = client.imports.create(b'{"conversations": []}', "conversations.json")
     request = sent(route)
     assert request.headers["content-type"].startswith("multipart/form-data")
     assert b"conversations.json" in request.content
     assert job.source == "chatgpt" and job.conversations_total == 7
     with pytest.raises(ValueError, match="filename"):
-        client.imports.start(b"x", "")
+        client.imports.create(b"x", "")
 
 
 def test_import_list_is_newest_first(api, client: MatterWave) -> None:
@@ -263,12 +263,12 @@ async def test_async_job_resources_make_the_same_requests(
         200, json=import_body(status="completed", conversations_created=7), headers=H
     )
     async with async_client as c:
-        started = await c.exports.start()
+        started = await c.exports.create()
         assert started.status == "pending"
         ready = await c.exports.get(EXPORT_ID)
         assert ready.download_url == READY_URL
         assert await c.exports.download(ready) == b"[]"
-        imported = await c.imports.start(b"{}", "conversations.json")
+        imported = await c.imports.create(b"{}", "conversations.json")
         assert imported.filename == "conversations.json"
         assert len(await c.imports.list()) == 1
         assert (await c.imports.get(IMPORT_ID)).conversations_created == 7

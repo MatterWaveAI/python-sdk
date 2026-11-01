@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The sign-in code step of two-factor, on `client.mfa`: `verify_login`
+  (a code or a recovery code against the sealed challenge the password step
+  handed out), `start_login_enrolment` and `confirm_login_enrolment` (an
+  authenticator for a sign-in the org's policy holds until one is
+  enrolled). Anonymous: the challenge is the credential. `MfaVerified` and
+  `MfaEnrolConfirmed` are their answers.
 - Examples, each run by `tests/test_examples.py` against a fake API: `chat`,
   `streaming`, `structured_output`, `webhook_receiver`, `device_sign_in`
   (an API key or a person's token) and `pagination`.
@@ -128,6 +134,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The licence is the Apache License 2.0, in place of MIT. `LICENSE` holds
+  its text, `NOTICE` names the copyright holder, the package metadata says
+  `Apache-2.0`, and the sdist and the wheel carry both files.
+- Each operation has one name, the same in both SDKs (snake_case here,
+  camelCase in TypeScript): the resource, then a verb, or a verb and its
+  object when the resource holds more than one kind of thing. Renamed:
+  `account.email_state` is `account.email_change_state`,
+  `account.resend_email_change_code` is `account.resend_email_change`,
+  `account.onboarding_complete` is `account.complete_onboarding`,
+  `passkeys.start` is `passkeys.start_registration`, `passkeys.verify` is
+  `passkeys.verify_registration`, `passkeys.login_start` is
+  `passkeys.start_login`, `passkeys.login_finish` is `passkeys.finish_login`,
+  `mfa.totp_start` is `mfa.start_totp`, `mfa.totp_confirm` is
+  `mfa.confirm_totp`, `mfa.totp_remove` is `mfa.remove_totp`,
+  `mfa.recovery_reissue` is `mfa.reissue_recovery_codes`,
+  `sync.pairings.mint` is `sync.mint_pairing_code`, `sync.pairings.devices`
+  is `sync.devices` and `sync.pairings.unpair` is `sync.unpair`.
+  `APP_OPERATIONS` and `CREDENTIALS` use the new names.
+- `account.delete` takes `confirm=` by keyword and has no default: the
+  caller types the phrase `"delete my account"` every time.
+  `org.close(confirm=...)` and `org.idps.attach(name=..., issuer=...,
+  client_id=..., client_secret=...)` take their arguments by keyword only.
 - A POST or PATCH is retried only after a 429 or a connection that was
   never made. After a 5xx or a reply cut short the first copy may have taken
   effect -- a message stored and billed, a key minted -- so the error is
@@ -148,6 +176,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fields on `ChatCompletionRequest` and the `compacting` stream event.
 - CI runs `mypy` beside `ruff` and `pytest`, and checks the TypeScript
   SDK's copy of the agent contract against `contract.json`.
+
+### Removed
+
+- The second names for routes that already had one. Use the name beside
+  each: `account.rename` (`account.update(full_name=...)`),
+  `account.sessions`, `account.revoke_session` and `account.logout_others`
+  (`sessions.list`, `sessions.revoke`, `sessions.revoke_others`),
+  `account.preferences` and `account.update_preferences`
+  (`preferences.get`, `preferences.update`), `exports.start`
+  (`exports.create`), `imports.start` (`imports.create`), `billing.plans`
+  (`plans.list`), `billing.switch_plan` (`billing.change_plan`),
+  `members.list_invites`, `create_invite`, `resend_invite`, `revoke_invite`,
+  `lookup_invite` and `accept_invite` (`invites.list`, `create`, `resend`,
+  `revoke`, `lookup`, `accept`), `members.list_invite_links`,
+  `create_invite_link`, `revoke_invite_link` and `join`
+  (`invite_links.list`, `create`, `revoke`, `join`),
+  `members.lookup_join_link` and `members.join_lookup`
+  (`invite_links.lookup`), and `SessionList.data` (`SessionList.sessions`).
 
 ### Fixed
 

@@ -363,33 +363,34 @@ status = client.billing.status()  # the plan, its limits, and dunning when late
 catalog = MatterWave(api_key=None).plans.list()  # public: the price list and model prices
 ```
 
-`account`: `update`, `accept_terms`, `enforcement`, `onboarding_complete`, and
-the writes an API key may not make, which take a person's token or a session:
-`change_password`, the email change (`start_email_change`,
-`verify_email_change`, `cancel_email_change`, `resend_email_change_code`,
-`email_state`) and `delete` (the `"delete my account"` phrase, checked here
-too). The same account routes answer to the names the settings panes use
-as well: `account.rename` (the name collapsed and bounded here),
-`account.sessions` / `revoke_session` / `logout_others`, and
-`account.preferences` / `update_preferences`, which sends exactly the groups
-passed and lets the rest go back to their defaults. `preferences`: `get`,
-`update` (the route replaces the whole object, so `update` reads it first; a
-field not passed keeps its value, `locale=None` clears the locale, and billing
-receipts cannot be turned off). `sessions`: `list` (a session's `id` is the
-cookie's own value, kept out of `repr`), `revoke`, `revoke_others`. `exports`:
-`create` (or `start`), `get`, `wait`, `download`, `create_and_download`, and
-`document`, which builds the export inside the request. `imports`: `create`
-(or `start`), `list`, `get`, `wait`. `speech.transcribe`, `attachments.scan` / `view`, `billing.status`,
+`account`: `update`, `accept_terms`, `enforcement`, `complete_onboarding`,
+and the writes an API key may not make, which take a person's token or a
+session: `change_password`, the email change (`email_change_state`,
+`start_email_change`, `verify_email_change`, `resend_email_change`,
+`cancel_email_change`) and `delete` (`confirm="delete my account"`, the
+phrase checked here too). `preferences`: `get`, `update` (the route replaces
+the whole object, so `update` reads it first; a field not passed keeps its
+value, `locale=None` clears the locale, and billing receipts cannot be turned
+off). `sessions`: `list` (a session's `id` is the cookie's own value, kept
+out of `repr`), `revoke`, `revoke_others`. `exports`: `create`, `get`,
+`wait`, `download`, `create_and_download`, and `document`, which builds the
+export inside the request. `imports`: `create`, `list`, `get`, `wait`.
+`speech.transcribe`, `attachments.scan` / `view`, `billing.status`,
 `plans.list` and `policy.stats` (the last two public, sent with no credential).
 `wait` raises `MatterWaveError` when the job failed or expired and
 `APITimeoutError` when `timeout` passes first.
 
-Beside them: `passkeys` (registration for a signed-in person, and the login
-ceremony's two anonymous halves), `mfa` (TOTP enrolment, removal and new
-recovery codes), `accounts` (the accounts signed in on one browser, by its
-cookies) and `sync` (edge pairing: an owner or admin mints a code, the box
-redeems it for a device key with `pair` and pushes conversations with that
-key).
+Beside them: `passkeys` (`list`, `start_registration`,
+`verify_registration`, `rename`, `remove` for a signed-in person, and the
+sign-in ceremony's two anonymous halves, `start_login` and `finish_login`),
+`mfa` (`state`, `start_totp`, `confirm_totp`, `remove_totp`,
+`reissue_recovery_codes`, and the sign-in code step, anonymous:
+`verify_login`, `start_login_enrolment`, `confirm_login_enrolment`),
+`accounts` (the accounts signed in on one browser, by its cookies) and `sync`
+(edge pairing: an owner or admin mints a code with `mint_pairing_code` and
+lists or unpairs boxes with `devices` / `unpair`; the box redeems the code
+for a device key with `pair` and pushes conversations with that key,
+`push`; `status` is what its sync job last did).
 
 ## Administering the organisation
 
@@ -424,13 +425,9 @@ name), `models` / `set_models`, `sharing` / `set_sharing`, `shares` /
 (`list`, `attach`, `detach`). `members`: `list`, `set_role`,
 `transfer_ownership`, `remove`. `invites`: `list`, `create`, `resend`, `revoke`,
 `lookup`, `accept`. `invite_links`: `list`, `create`, `revoke`, `lookup`, `join`.
-`billing`: `checkout`, `portal`, `invoices`, `change_plan` (or `switch_plan`),
-`plan_history` beside `status`, and the public `plans` (as `plans.list`).
-`members` answers the invite and link routes too: `list_invites`,
-`create_invite`, `resend_invite`, `revoke_invite`, `lookup_invite`,
-`accept_invite`, `list_invite_links`, `create_invite_link`,
-`revoke_invite_link`, `lookup_join_link` (or `join_lookup`) and `join`. `auth.device`: `lookup`, `approve`, `deny`, the person's side
-of device login. `invites.lookup` and `invite_links.lookup` are anonymous: the
+`billing`: `checkout`, `portal`, `invoices`, `change_plan`, `plan_history`
+beside `status`; the public catalog is `plans.list`. `auth.device`: `lookup`,
+`approve`, `deny`, the person's side of device login. `invites.lookup` and `invite_links.lookup` are anonymous: the
 token is the credential. Reading the org, its members and its invites is any
 member's; the rest is an owner's or admin's, and closing the org, transferring
 ownership and requiring SSO or two-factor an owner's alone. One-time secrets --
@@ -531,7 +528,7 @@ platform's route document (the drift test holds the two together):
 
 | `CREDENTIALS` | Accepts | Methods |
 | --- | --- | --- |
-| `public` | nothing | `index`, `auth.device.start` / `poll`, `shares.view`, `plans.list`, `policy.stats`, `invites.lookup`, `invite_links.lookup`, `passkeys.login_start` / `login_finish`, `accounts`, `sync.pair` |
+| `public` | nothing | `index`, `auth.device.start` / `poll`, `shares.view`, `plans.list`, `policy.stats`, `invites.lookup`, `invite_links.lookup`, `passkeys.start_login` / `finish_login`, `mfa.verify_login` / `start_login_enrolment` / `confirm_login_enrolment`, `accounts`, `sync.pair` |
 | `key` | any API key, or a person's token | `me`, `account` (but the password, email and deletion methods), `preferences`, `sessions`, `speech`, `billing.status`, `app_models`, `instructions.user` / `update_user`, `notifications`, `announcements.list`, `entitlements.get`, `messages.set_feedback` / `delete_feedback`, `keys.list`, `usage.get`, `attachments`, `library`, `shares.list_mine` / `revoke`, `budget.get`, `sync.status` |
 | `key:chat:read` | a key with `chat:read`, or a person's token | `models`, `exports`, the conversation reads, `messages.list_feedback`, `shares.list` |
 | `key:chat:write` | a key with `chat:write`, or a person's token | `imports`, `chat.completions.create`, `embeddings.create`, the conversation writes and turns, `shares.create` |
@@ -539,7 +536,7 @@ platform's route document (the drift test holds the two together):
 | `key:usage:read` | a key with `usage:read`, or a person's token | `usage.org`, `usage.export_csv` |
 | `key:webhooks:manage` | a key with `webhooks:manage`, or a person's token | `webhooks` |
 | `key:conversations:import` | the device key an edge box got from pairing | `sync.push` |
-| `person` | a person's token only | `audit`, `instructions.org` / `update_org`, `budget.members` / `set_overage_cap` / `set_member_default_cap` / `set_member_cap`, `org`, `members`, `invites` and `invite_links` (but their two `lookup`s), `billing` (but `status`), `auth.device.lookup` / `approve` / `deny`, `account.change_password` / `delete` and the email change, `passkeys` (but the two login steps), `mfa`, `sync.pairings`, `admin` |
+| `person` | a person's token only | `audit`, `instructions.org` / `update_org`, `budget.members` / `set_overage_cap` / `set_member_default_cap` / `set_member_cap`, `org`, `members`, `invites` and `invite_links` (but their two `lookup`s), `billing` (but `status`), `auth.device.lookup` / `approve` / `deny`, `account.change_password` / `delete` and the email change, `passkeys` (but the two login steps), `mfa` (but the three sign-in steps), `sync.mint_pairing_code` / `devices` / `unpair`, `admin` |
 
 A scope never widens a role: the org routes still need the org role they ask of a
 person, whichever credential carries it.
@@ -778,3 +775,7 @@ deployment to the same pair: every route the SDK calls is served, every pinned
 route is still served, and every served route is pinned or internal. The
 `route-drift` workflow runs it daily against the repository variable
 `MATTERWAVE_LIVE_OPENAPI_URL` and opens an issue with the report on drift.
+
+## Licence
+
+Apache License 2.0: see [LICENSE](LICENSE) and [NOTICE](NOTICE).

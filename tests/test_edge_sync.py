@@ -1,4 +1,4 @@
-"""The edge pairing and sync resource (`client.sync`, with `pairings`)
+"""The edge pairing and sync resource (`client.sync`)
 against the fake API: the admin half that mints codes and unpairs boxes,
 and the machine half a paired box pushes with. Each test answers with the
 body the route in matterwave-app sends and checks the request the client
@@ -130,7 +130,7 @@ def device_body(**extra) -> dict:
 
 def test_mint_answers_a_code_that_lives_ten_minutes(api, client: MatterWave) -> None:
     route = api.post("/api/sync/pairings").respond(201, json=pairing_body(), headers=H)
-    code = client.sync.pairings.mint("  Workshop box ")
+    code = client.sync.mint_pairing_code("  Workshop box ")
     # Trimmed, control characters gone, interior spacing kept -- the route's
     # own cleaning, mirrored here.
     assert body_of(route) == {"name": "Workshop box"}
@@ -138,7 +138,7 @@ def test_mint_answers_a_code_that_lives_ten_minutes(api, client: MatterWave) -> 
     assert code.expires_in == 600
     assert route.called
     with pytest.raises(ValueError, match="name"):
-        client.sync.pairings.mint("   ")
+        client.sync.mint_pairing_code("   ")
 
 
 def test_devices_list_carries_the_box_name_and_revoked_rows(api, client: MatterWave) -> None:
@@ -154,7 +154,7 @@ def test_devices_list_carries_the_box_name_and_revoked_rows(api, client: MatterW
         },
         headers=H,
     )
-    devices = client.sync.pairings.devices()
+    devices = client.sync.devices()
     assert sent(route).headers["authorization"] == f"Bearer {API_KEY}"
     assert [d.box_name for d in devices] == ["Workshop box", "Old box"]
     assert devices.data[0].scopes == ["conversations:import"]
@@ -163,15 +163,15 @@ def test_devices_list_carries_the_box_name_and_revoked_rows(api, client: MatterW
 
 def test_unpair_refuses_what_is_not_an_edge_key(api, client: MatterWave) -> None:
     route = api.delete(f"/api/sync/devices/{KEY_ID}").respond(204)
-    assert client.sync.pairings.unpair(KEY_ID) is None
+    assert client.sync.unpair(KEY_ID) is None
     assert route.called
     api.delete(f"/api/sync/devices/{KEY_ID}").respond(
         404, json={"detail": "No such edge box."}, headers=H
     )
     with pytest.raises(NotFoundError):
-        client.sync.pairings.unpair(KEY_ID)
+        client.sync.unpair(KEY_ID)
     with pytest.raises(ValueError, match="key_id"):
-        client.sync.pairings.unpair("../../keys")
+        client.sync.unpair("../../keys")
 
 
 # --- the box half ------------------------------------------------------------------------
@@ -338,10 +338,10 @@ async def test_async_sync_makes_the_same_requests(api, async_client: AsyncMatter
         headers=H,
     )
     async with async_client as c:
-        assert (await c.sync.pairings.mint("Workshop box")).code == "ABCD-EFGH-JKLM"
-        devices = await c.sync.pairings.devices()
+        assert (await c.sync.mint_pairing_code("Workshop box")).code == "ABCD-EFGH-JKLM"
+        devices = await c.sync.devices()
         assert devices.data[0].box_name == "Workshop box"
-        assert await c.sync.pairings.unpair(KEY_ID) is None
+        assert await c.sync.unpair(KEY_ID) is None
         granted = await c.sync.pair("abcd-efgh-jklm")
         assert granted.key == "mw_ed12_secret"
         assert (await c.sync.status()).paired is True

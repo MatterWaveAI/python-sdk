@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Mapping
 from typing import IO, Any
 
 from . import _account_requests as req
@@ -137,54 +136,6 @@ class Account(_Sync):
         body, rid = self._object(req.enforcement_request())
         return Enforcement.from_dict(body, request_id=rid)
 
-    def rename(self, name: str) -> UpdatedName:
-        """`PATCH /api/me`, as `update`, with the name's whitespace collapsed
-        here as the server would and its length (120 at most) checked before
-        the request is spent."""
-        body, rid = self._object(native_req.rename_account_request(name))
-        return UpdatedName.from_dict(body, request_id=rid)
-
-    def sessions(self) -> SessionList:
-        """`GET /api/me/sessions`, as `client.sessions.list`."""
-        body, rid = self._object(req.list_sessions_request())
-        return SessionList.from_dict(body, request_id=rid)
-
-    def revoke_session(self, session_id: str) -> RevokedSession:
-        """`DELETE /api/me/sessions/{id}`, as `client.sessions.revoke`: the
-        caller's own is allowed -- it is "sign out" -- and `current` says
-        when that was the one."""
-        body, rid = self._object(req.revoke_session_request(session_id))
-        return RevokedSession.from_dict(body, request_id=rid)
-
-    def logout_others(self) -> RevokedSessions:
-        """`POST /api/me/sessions/revoke-others`, as
-        `client.sessions.revoke_others`."""
-        body, rid = self._object(req.revoke_other_sessions_request())
-        return RevokedSessions.from_dict(body, request_id=rid)
-
-    def preferences(self) -> Preferences:
-        """`GET /api/me/preferences`, as `client.preferences.get`."""
-        body, rid = self._object(req.get_preferences_request())
-        return Preferences.from_dict(body, request_id=rid)
-
-    def update_preferences(
-        self,
-        *,
-        email: Mapping[str, Any] | None = None,
-        notifications: Mapping[str, Any] | None = None,
-        locale: str | None = None,
-    ) -> Preferences:
-        """`PUT /api/me/preferences` with exactly what is passed: the route
-        replaces the whole shape, so a group left out is sent empty and goes
-        back to its defaults. `client.preferences.update` reads the stored
-        settings first and changes only what it is given."""
-        body, rid = self._object(
-            native_req.replace_preferences_request(
-                email=email, notifications=notifications, locale=locale
-            )
-        )
-        return Preferences.from_dict(body, request_id=rid)
-
     def change_password(self, current_password: str, new_password: str) -> PasswordChanged:
         """`POST /api/me/password`. **Not with an API key**: a key is refused
         with a 403, because its owner's password is not the key's to change;
@@ -197,7 +148,7 @@ class Account(_Sync):
         body, rid = self._object(native_req.change_password_request(current_password, new_password))
         return PasswordChanged.from_dict(body, request_id=rid)
 
-    def email_state(self) -> EmailChangeState:
+    def email_change_state(self) -> EmailChangeState:
         """`GET /api/me/email`: the sign-in address and any change still
         waiting for its code, so a client can come back to the code step
         after a reload. A person's token or a session, never a key."""
@@ -230,20 +181,20 @@ class Account(_Sync):
         body, rid = self._object(native_req.cancel_email_change_request())
         return EmailChangeCancelled.from_dict(body, request_id=rid)
 
-    def resend_email_change_code(self) -> EmailChangeStarted:
+    def resend_email_change(self) -> EmailChangeStarted:
         """`POST /api/me/email/resend`: a fresh code for the pending
         address. Refused with a 409 when nothing is pending. A person's
         token or a session, never a key."""
         body, rid = self._object(native_req.resend_email_change_request())
         return EmailChangeStarted.from_dict(body, request_id=rid)
 
-    def onboarding_complete(self) -> OnboardingCompleted:
+    def complete_onboarding(self) -> OnboardingCompleted:
         """`POST /api/me/onboarding/complete`: the first-run walkthrough was
         finished or skipped -- both count. Idempotent."""
-        body, rid = self._object(native_req.onboarding_complete_request())
+        body, rid = self._object(native_req.complete_onboarding_request())
         return OnboardingCompleted.from_dict(body, request_id=rid)
 
-    def delete(self, confirm: str = native_req.DELETE_ACCOUNT_PHRASE) -> DeletedAccount:
+    def delete(self, *, confirm: str) -> DeletedAccount:
         """`DELETE /api/me`: **delete the account, for good.**
 
         Every conversation the caller owns is soft-deleted (rows now, bytes
@@ -276,47 +227,13 @@ class AsyncAccount(_Async):
         body, rid = await self._object(req.enforcement_request())
         return Enforcement.from_dict(body, request_id=rid)
 
-    async def rename(self, name: str) -> UpdatedName:
-        body, rid = await self._object(native_req.rename_account_request(name))
-        return UpdatedName.from_dict(body, request_id=rid)
-
-    async def sessions(self) -> SessionList:
-        body, rid = await self._object(req.list_sessions_request())
-        return SessionList.from_dict(body, request_id=rid)
-
-    async def revoke_session(self, session_id: str) -> RevokedSession:
-        body, rid = await self._object(req.revoke_session_request(session_id))
-        return RevokedSession.from_dict(body, request_id=rid)
-
-    async def logout_others(self) -> RevokedSessions:
-        body, rid = await self._object(req.revoke_other_sessions_request())
-        return RevokedSessions.from_dict(body, request_id=rid)
-
-    async def preferences(self) -> Preferences:
-        body, rid = await self._object(req.get_preferences_request())
-        return Preferences.from_dict(body, request_id=rid)
-
-    async def update_preferences(
-        self,
-        *,
-        email: Mapping[str, Any] | None = None,
-        notifications: Mapping[str, Any] | None = None,
-        locale: str | None = None,
-    ) -> Preferences:
-        body, rid = await self._object(
-            native_req.replace_preferences_request(
-                email=email, notifications=notifications, locale=locale
-            )
-        )
-        return Preferences.from_dict(body, request_id=rid)
-
     async def change_password(self, current_password: str, new_password: str) -> PasswordChanged:
         body, rid = await self._object(
             native_req.change_password_request(current_password, new_password)
         )
         return PasswordChanged.from_dict(body, request_id=rid)
 
-    async def email_state(self) -> EmailChangeState:
+    async def email_change_state(self) -> EmailChangeState:
         body, rid = await self._object(native_req.email_change_state_request())
         return EmailChangeState.from_dict(body, request_id=rid)
 
@@ -334,15 +251,15 @@ class AsyncAccount(_Async):
         body, rid = await self._object(native_req.cancel_email_change_request())
         return EmailChangeCancelled.from_dict(body, request_id=rid)
 
-    async def resend_email_change_code(self) -> EmailChangeStarted:
+    async def resend_email_change(self) -> EmailChangeStarted:
         body, rid = await self._object(native_req.resend_email_change_request())
         return EmailChangeStarted.from_dict(body, request_id=rid)
 
-    async def onboarding_complete(self) -> OnboardingCompleted:
-        body, rid = await self._object(native_req.onboarding_complete_request())
+    async def complete_onboarding(self) -> OnboardingCompleted:
+        body, rid = await self._object(native_req.complete_onboarding_request())
         return OnboardingCompleted.from_dict(body, request_id=rid)
 
-    async def delete(self, confirm: str = native_req.DELETE_ACCOUNT_PHRASE) -> DeletedAccount:
+    async def delete(self, *, confirm: str) -> DeletedAccount:
         """As `Account.delete`: the account, for good. Never with a key."""
         body, rid = await self._object(native_req.delete_account_request(confirm))
         return DeletedAccount.from_dict(body, request_id=rid)
@@ -456,10 +373,6 @@ class Exports(_Sync):
         body, rid = self._object(req.create_export_request())
         return AccountExport.from_dict(body, request_id=rid)
 
-    def start(self) -> AccountExport:
-        """`POST /api/me/export`, as `create`."""
-        return self.create()
-
     def get(self, export_id: str) -> AccountExport:
         """The export's state, with a fresh `download_url` once it is ready."""
         body, rid = self._object(req.get_export_request(export_id))
@@ -504,9 +417,6 @@ class AsyncExports(_Async):
         body, rid = await self._object(req.create_export_request())
         return AccountExport.from_dict(body, request_id=rid)
 
-    async def start(self) -> AccountExport:
-        return await self.create()
-
     async def get(self, export_id: str) -> AccountExport:
         body, rid = await self._object(req.get_export_request(export_id))
         return AccountExport.from_dict(body, request_id=rid)
@@ -548,10 +458,6 @@ class Imports(_Sync):
         body, rid = self._object(req.create_import_request(file, filename))
         return ImportJob.from_dict(body, request_id=rid)
 
-    def start(self, file: bytes | IO[bytes], filename: str) -> ImportJob:
-        """`POST /api/me/imports`, as `create`."""
-        return self.create(file, filename)
-
     def list(self) -> ImportJobList:
         body, rid = self._object(req.list_imports_request())
         return ImportJobList.from_dict(body, request_id=rid)
@@ -580,9 +486,6 @@ class AsyncImports(_Async):
     async def create(self, file: bytes | IO[bytes], filename: str) -> ImportJob:
         body, rid = await self._object(req.create_import_request(file, filename))
         return ImportJob.from_dict(body, request_id=rid)
-
-    async def start(self, file: bytes | IO[bytes], filename: str) -> ImportJob:
-        return await self.create(file, filename)
 
     async def list(self) -> ImportJobList:
         body, rid = await self._object(req.list_imports_request())
@@ -660,16 +563,6 @@ class Billing(_Sync):
         body, rid = self._object(req.billing_status_request())
         return BillingStatus.from_dict(body, request_id=rid)
 
-    def plans(self) -> PlanCatalog:
-        """`GET /api/plans`, as `client.plans.list`: the public catalog,
-        cheapest first, with the price table; no credential is sent."""
-        body, rid = self._object(req.list_plans_request())
-        return PlanCatalog.from_dict(body, request_id=rid)
-
-    def switch_plan(self, plan: str, *, reason: str | None = None) -> Entitlements:
-        """`PUT /api/plan`, as `change_plan`."""
-        return self.change_plan(plan, reason=reason)
-
     def checkout(self, plan: str, *, annual: bool = False) -> BillingLink:
         """`POST /api/billing/checkout`: a Stripe Checkout page for `plan`;
         the plan changes once Stripe confirms the payment. `ConflictError`
@@ -706,13 +599,6 @@ class AsyncBilling(_Async):
     async def status(self) -> BillingStatus:
         body, rid = await self._object(req.billing_status_request())
         return BillingStatus.from_dict(body, request_id=rid)
-
-    async def plans(self) -> PlanCatalog:
-        body, rid = await self._object(req.list_plans_request())
-        return PlanCatalog.from_dict(body, request_id=rid)
-
-    async def switch_plan(self, plan: str, *, reason: str | None = None) -> Entitlements:
-        return await self.change_plan(plan, reason=reason)
 
     async def checkout(self, plan: str, *, annual: bool = False) -> BillingLink:
         body, rid = await self._object(org_req.checkout_request(plan, annual))

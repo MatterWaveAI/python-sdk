@@ -41,6 +41,7 @@ def test_the_sdist_carries_the_changelog_docs_and_licence(dist: Path) -> None:
         "CHANGELOG.md",
         "VERSIONING.md",
         "LICENSE",
+        "NOTICE",
         "README.md",
         "docs/mcp.md",
         "src/matterwave_sdk/py.typed",
@@ -56,5 +57,6 @@ def test_the_metadata_names_the_pythons_and_the_licence(dist: Path) -> None:
     classifiers = message.get_all("Classifier") or []
     for minor in (10, 11, 12, 13):
         assert f"Programming Language :: Python :: 3.{minor}" in classifiers
-    assert message["License-Expression"] == "MIT"
+    assert message["License-Expression"] == "Apache-2.0"
+    assert sorted(message.get_all("License-File") or []) == ["LICENSE", "NOTICE"]
     assert message["Requires-Python"] == ">=3.10"

@@ -1,4 +1,4 @@
-"""The billing resource (`client.billing`) against the fake API: the public
+"""The billing resources (`client.billing`, `client.plans`) against the fake API: the public
 plan catalog, the move to Free, the billing trail and the Stripe surface.
 Each test answers with the body the route in matterwave-app sends and
 checks the request the client made.
@@ -134,7 +134,7 @@ CATALOG = {
 
 def test_plans_catalog_is_cheapest_first_with_the_price_table(api, client: MatterWave) -> None:
     route = api.get("/api/plans").respond(200, json=CATALOG, headers=H)
-    catalog = client.billing.plans()
+    catalog = client.plans.list()
     assert [plan.code for plan in catalog] == ["free", "team"]
     assert catalog.default_model == "grt-nano"
     team = catalog.data[1]
@@ -145,7 +145,7 @@ def test_plans_catalog_is_cheapest_first_with_the_price_table(api, client: Matte
     assert route.called
 
 
-def test_switch_plan_moves_to_free_and_carries_the_reason(api, client: MatterWave) -> None:
+def test_change_plan_moves_to_free_and_carries_the_reason(api, client: MatterWave) -> None:
     route = api.put("/api/plan").respond(
         200,
         json={
@@ -172,13 +172,13 @@ def test_switch_plan_moves_to_free_and_carries_the_reason(api, client: MatterWav
         },
         headers=H,
     )
-    entitlements = client.billing.switch_plan("free", reason="offboarding")
+    entitlements = client.billing.change_plan("free", reason="offboarding")
     assert body_of(route) == {"plan": "free", "reason": "offboarding"}
     assert entitlements.plan == "free" and entitlements.writes_blocked is False
     with pytest.raises(ValueError, match="plan"):
-        client.billing.switch_plan("")
+        client.billing.change_plan("")
     with pytest.raises(ValueError, match="500"):
-        client.billing.switch_plan("free", reason="x" * 501)
+        client.billing.change_plan("free", reason="x" * 501)
     assert route.call_count == 1
     # A paid code here is the 402 pointing at checkout (a plain APIError;
     # the error table has no 402 class of its own).
@@ -192,7 +192,7 @@ def test_switch_plan_moves_to_free_and_carries_the_reason(api, client: MatterWav
         headers=H,
     )
     with pytest.raises(APIError, match="subscription"):
-        client.billing.switch_plan("team")
+        client.billing.change_plan("team")
 
 
 def test_plan_history_is_the_append_only_trail(api, client: MatterWave) -> None:
@@ -400,8 +400,8 @@ async def test_async_billing_makes_the_same_requests(api, async_client: AsyncMat
     )
     api.get("/api/billing/invoices").respond(200, json={"data": []}, headers=H)
     async with async_client as c:
-        assert (await c.billing.plans()).data[1].code == "team"
-        moved = await c.billing.switch_plan("free")
+        assert (await c.plans.list()).data[1].code == "team"
+        moved = await c.billing.change_plan("free")
         assert moved.writes_blocked is True  # the data stays, writes stop
         assert len(await c.billing.plan_history()) == 0
         assert (await c.billing.checkout("team", annual=True)).url

@@ -130,7 +130,7 @@ def test_close_requires_the_name_and_reports_each_side_effect(api, client: Matte
         },
         headers=H,
     )
-    closed = client.org.close("Acme")
+    closed = client.org.close(confirm="Acme")
     assert body_of(route) == {"confirm": "Acme"}
     assert closed.status == "closed" and closed.already_closed is False
     assert closed.conversations_deleted == 42 and closed.retention_days == 30
@@ -147,7 +147,7 @@ def test_close_requires_the_name_and_reports_each_side_effect(api, client: Matte
     from matterwave_sdk import MatterWaveError
 
     with pytest.raises(MatterWaveError, match="legal hold"):
-        client.org.close("Acme")
+        client.org.close(confirm="Acme")
 
 
 # --- the model allow-list ----------------------------------------------------------------
@@ -432,10 +432,10 @@ def test_idp_list_never_carries_a_secret(api, client: MatterWave) -> None:
 def test_idp_attach_is_https_only_and_detach_removes(api, client: MatterWave) -> None:
     route = api.post("/api/org/idp").respond(201, json=idp_body(), headers=H)
     attached = client.org.idps.attach(
-        "Acme SSO",
-        "https://id.example.test/",
-        "client-123",
-        "secret-value",
+        name="Acme SSO",
+        issuer="https://id.example.test/",
+        client_id="client-123",
+        client_secret="secret-value",
         scopes=["openid", "profile"],
     )
     assert body_of(route) == {
@@ -448,7 +448,9 @@ def test_idp_attach_is_https_only_and_detach_removes(api, client: MatterWave) ->
     }
     assert attached.issuer == "https://id.example.test"
     with pytest.raises(ValueError, match="https"):
-        client.org.idps.attach("Bad", "http://id.example.test", "c", "s")
+        client.org.idps.attach(
+            name="Bad", issuer="http://id.example.test", client_id="c", client_secret="s"
+        )
     detach = api.delete(f"/api/org/idp/{PROVIDER}").respond(204)
     assert client.org.idps.detach(PROVIDER) is None
     assert detach.called
@@ -559,7 +561,7 @@ async def test_async_org_makes_the_same_requests(api, async_client: AsyncMatterW
     async with async_client as c:
         assert (await c.org.get()).role == "owner"
         assert (await c.org.rename("Acme Ltd")).name == "Acme Ltd"
-        closed = await c.org.close("Acme")
+        closed = await c.org.close(confirm="Acme")
         assert closed.already_closed is True and closed.identity_removed is False
         assert closed.api_keys_revoked is None  # a step that could not be confirmed
         assert len(await c.org.models()) == 2
@@ -577,7 +579,10 @@ async def test_async_org_makes_the_same_requests(api, async_client: AsyncMatterW
         assert (await c.org.domains.verify(DOMAIN)).verified is True
         assert await c.org.domains.release(DOMAIN) is None
         assert (await c.org.idps.list()).data[0].kind == "oidc"
-        assert (await c.org.idps.attach("Acme SSO", "https://id.example.test", "c", "s")).name
+        attached = await c.org.idps.attach(
+            name="Acme SSO", issuer="https://id.example.test", client_id="c", client_secret="s"
+        )
+        assert attached.name
         assert await c.org.idps.detach(PROVIDER) is None
         assert (await c.org.mfa()).mfa_required is True
         assert (await c.org.set_mfa(True)).mfa_required is True

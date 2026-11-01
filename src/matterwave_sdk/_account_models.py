@@ -109,11 +109,6 @@ class SessionList(Wire):
     sessions: list[Session]
     request_id: str | None = field(default=None, compare=False)
 
-    @property
-    def data(self) -> list[Session]:
-        """The sessions, under the name the other lists use."""
-        return self.sessions
-
     def __iter__(self) -> Any:
         return iter(self.sessions)
 

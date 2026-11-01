@@ -2428,7 +2428,7 @@ class EmailChangeCancelled:
 
 @dataclass(frozen=True)
 class OnboardingCompleted:
-    """The answer to `account.onboarding_complete`. Idempotent: a second
+    """The answer to `account.complete_onboarding`. Idempotent: a second
     call keeps the first `completed_at`."""
 
     onboarding_completed: bool
@@ -2534,7 +2534,7 @@ class PasskeyList:
 class PasskeyStart:
     """`POST /api/me/passkeys/start`: the id to register under and the
     creation options for `navigator.credentials.create`. Nothing is live
-    until `passkeys.verify` takes the attestation back."""
+    until `passkeys.verify_registration` takes the attestation back."""
 
     passkey_id: str
     options: dict[str, Any]
@@ -2612,7 +2612,7 @@ class MfaState:
 class TotpEnrolment:
     """`POST /api/me/mfa/totp/start`: the secret, the otpauth URI and its
     QR as a `data:image/svg+xml` URI. Nothing is live until the first code
-    confirms it with `totp_confirm`."""
+    confirms it with `confirm_totp`."""
 
     secret: str = field(repr=False)
     uri: str = field(repr=False)
@@ -2631,7 +2631,7 @@ class TotpEnrolment:
 
 @dataclass(frozen=True)
 class TotpConfirmed:
-    """The answer to `mfa.totp_confirm` and `mfa.recovery_reissue`: the ten
+    """The answer to `mfa.confirm_totp` and `mfa.reissue_recovery_codes`: the ten
     recovery codes, shown once -- only their hashes exist after this
     response. Store them now."""
 
@@ -2653,7 +2653,7 @@ class TotpConfirmed:
 
 @dataclass(frozen=True)
 class TotpRemoved:
-    """The answer to `mfa.totp_remove`: the authenticator and its recovery
+    """The answer to `mfa.remove_totp`: the authenticator and its recovery
     codes are gone."""
 
     totp_enrolled: bool
@@ -2665,6 +2665,43 @@ class TotpRemoved:
         return cls(
             totp_enrolled=data.get("totp_enrolled") is True,
             recovery_codes_left=_int(data.get("recovery_codes_left")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class MfaVerified:
+    """The answer to `mfa.verify_login`: the redirect that finishes the
+    sign-in, and, when a recovery code was spent, how many are left."""
+
+    redirect: str
+    recovery_codes_left: int | None = None
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> MfaVerified:
+        return cls(
+            redirect=_str(data.get("redirect")),
+            recovery_codes_left=_opt_int(data.get("recovery_codes_left")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class MfaEnrolConfirmed:
+    """The answer to `mfa.confirm_login_enrolment`: the recovery codes,
+    shown once, and a fresh `challenge` that `mfa.verify_login` takes with
+    the next code."""
+
+    recovery_codes: list[str] = field(repr=False, default_factory=list)
+    challenge: str = field(repr=False, default="")
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> MfaEnrolConfirmed:
+        return cls(
+            recovery_codes=_strs(data.get("recovery_codes")),
+            challenge=_str(data.get("challenge")),
             request_id=request_id,
         )
 

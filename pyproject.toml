@@ -4,8 +4,8 @@ dynamic = ["version"]
 description = "Python client for the MatterWave API (the OpenAI-compatible /v1 surface)"
 readme = "README.md"
 requires-python = ">=3.10"
-license = "MIT"
-license-files = ["LICENSE"]
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "MatterWave AI Contributors" }]
 keywords = ["matterwave", "openai", "api", "client", "llm", "chat", "streaming"]
 dependencies = [
@@ -62,6 +62,7 @@ include = [
     "/CHANGELOG.md",
     "/VERSIONING.md",
     "/LICENSE",
+    "/NOTICE",
 ]
 
 [tool.pytest.ini_options]
