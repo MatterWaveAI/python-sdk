@@ -43,6 +43,7 @@ from ._resources import (
     AsyncAttachments,
     AsyncAudit,
     AsyncBilling,
+    AsyncBrowserAccounts,
     AsyncBudgetClient,
     AsyncEntitlementsClient,
     AsyncExports,
@@ -50,14 +51,18 @@ from ._resources import (
     AsyncKeys,
     AsyncLibraryClient,
     AsyncMembers,
+    AsyncMfa,
     AsyncNotifications,
     AsyncOrg,
+    AsyncPasskeys,
     AsyncShares,
+    AsyncSpeech,
     AsyncUsageClient,
     AsyncWebhooks,
     Attachments,
     Audit,
     Billing,
+    BrowserAccounts,
     BudgetClient,
     EntitlementsClient,
     Exports,
@@ -65,9 +70,12 @@ from ._resources import (
     Keys,
     LibraryClient,
     Members,
+    Mfa,
     Notifications,
     Org,
+    Passkeys,
     Shares,
+    Speech,
     UsageClient,
     Webhooks,
 )
@@ -1211,6 +1219,10 @@ class MatterWave:
         self.members = Members(self)
         self.org = Org(self)
         self.billing = Billing(self)
+        self.passkeys = Passkeys(self)
+        self.mfa = Mfa(self)
+        self.accounts = BrowserAccounts(self)
+        self.speech = Speech(self)
         self.mcp = Mcp(self)
 
     @property
@@ -1879,6 +1891,10 @@ class AsyncMatterWave:
         self.members = AsyncMembers(self)
         self.org = AsyncOrg(self)
         self.billing = AsyncBilling(self)
+        self.passkeys = AsyncPasskeys(self)
+        self.mfa = AsyncMfa(self)
+        self.accounts = AsyncBrowserAccounts(self)
+        self.speech = AsyncSpeech(self)
         self.mcp = AsyncMcp(self)
 
     @property

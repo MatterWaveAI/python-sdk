@@ -1249,3 +1249,175 @@ def invoices_request() -> Request:
     return Request("GET", "/api/billing/invoices", None, keyed=True, stream=False)
 
 
+# --- passkeys ------------------------------------------------------------------------------
+
+
+PASSKEY_NAME_MAX = 64
+
+
+def _passkey_path(passkey_id: str, suffix: str = "") -> str:
+    return f"/api/me/passkeys/{_segment('passkey_id', passkey_id)}{suffix}"
+
+
+def list_passkeys_request() -> Request:
+    return Request("GET", "/api/me/passkeys", None, keyed=True, stream=False)
+
+
+def start_passkey_request() -> Request:
+    return Request("POST", "/api/me/passkeys/start", None, keyed=True, stream=False)
+
+
+def verify_passkey_request(passkey_id: str, credential: Mapping[str, Any], name: str) -> Request:
+    value = " ".join(name.split())
+    if not value:
+        raise ValueError("give the passkey a name, like the device it lives on")
+    if len(value) > PASSKEY_NAME_MAX:
+        raise ValueError(f"name must be at most {PASSKEY_NAME_MAX} characters")
+    if not isinstance(credential, Mapping) or not credential:
+        raise ValueError("credential must be the browser's attestation object")
+    return Request(
+        "POST",
+        _passkey_path(passkey_id, "/verify"),
+        {"credential": dict(credential), "name": value},
+        keyed=True,
+        stream=False,
+    )
+
+
+def rename_passkey_request(passkey_id: str, name: str) -> Request:
+    value = " ".join(name.split())
+    if not value:
+        raise ValueError("give the passkey a name, like the device it lives on")
+    if len(value) > PASSKEY_NAME_MAX:
+        raise ValueError(f"name must be at most {PASSKEY_NAME_MAX} characters")
+    return Request("PATCH", _passkey_path(passkey_id), {"name": value}, keyed=True, stream=False)
+
+
+def remove_passkey_request(passkey_id: str) -> Request:
+    return Request("DELETE", _passkey_path(passkey_id), None, keyed=True, stream=False)
+
+
+def start_passkey_login_request(email: str, auth_request: str) -> Request:
+    if not auth_request:
+        raise ValueError("auth_request must be non-empty")
+    return Request(
+        "POST",
+        "/api/auth/passkey/start",
+        {"email": _email_address(email), "auth_request": auth_request},
+        keyed=False,
+        stream=False,
+    )
+
+
+def finish_passkey_login_request(challenge: str, credential: Mapping[str, Any]) -> Request:
+    if not challenge:
+        raise ValueError("challenge must be non-empty")
+    if not isinstance(credential, Mapping) or not credential:
+        raise ValueError("credential must be the browser's assertion object")
+    return Request(
+        "POST",
+        "/api/auth/passkey/finish",
+        {"challenge": challenge, "credential": dict(credential)},
+        keyed=False,
+        stream=False,
+    )
+
+
+# --- MFA --------------------------------------------------------------------------------------
+
+
+def _totp_code(code: str) -> str:
+    """Six (or eight) digits, as every authenticator app shows them; spaces
+    people type between the two halves are not a wrong code."""
+    digits = "".join(code.split())
+    if not digits.isdigit() or len(digits) not in (6, 8):
+        raise ValueError("must be the six digits from your authenticator")
+    return digits
+
+
+def mfa_state_request() -> Request:
+    return Request("GET", "/api/me/mfa", None, keyed=True, stream=False)
+
+
+def mfa_totp_start_request() -> Request:
+    return Request("POST", "/api/me/mfa/totp/start", None, keyed=True, stream=False)
+
+
+def mfa_totp_confirm_request(code: str) -> Request:
+    return Request(
+        "POST", "/api/me/mfa/totp/confirm", {"code": _totp_code(code)}, keyed=True, stream=False
+    )
+
+
+def mfa_totp_remove_request(code: str | None, recovery_code: str | None) -> Request:
+    """A code OR a recovery code: the session cookie alone is not proof
+    enough to remove the factor that protects it."""
+    body: dict[str, Any] = {}
+    if code is not None:
+        body["code"] = _totp_code(code)
+    if recovery_code is not None:
+        if not recovery_code or len(recovery_code) > 32:
+            raise ValueError("recovery_code must be 1 to 32 characters")
+        body["recovery_code"] = recovery_code
+    if not body:
+        raise ValueError("prove it with a code or a recovery_code")
+    return Request("DELETE", "/api/me/mfa/totp", body, keyed=True, stream=False)
+
+
+def mfa_recovery_reissue_request(code: str) -> Request:
+    return Request(
+        "POST", "/api/me/mfa/recovery-codes", {"code": _totp_code(code)}, keyed=True, stream=False
+    )
+
+
+# --- account switching --------------------------------------------------------------------------
+
+
+def list_browser_accounts_request() -> Request:
+    """Cookie routes: the browser's sessions are the credential, so no key
+    is sent."""
+    return Request("GET", "/api/accounts", None, keyed=False, stream=False)
+
+
+def switch_account_request(slot: int) -> Request:
+    if not 1 <= slot <= 3:
+        raise ValueError("slot must be 1 to 3: slot 0 is the account already acting")
+    return Request("POST", "/api/accounts/switch", {"slot": slot}, keyed=False, stream=False)
+
+
+def logout_browser_account_request(slot: int) -> Request:
+    if not 1 <= slot <= 3:
+        raise ValueError("slot must be 1 to 3: sign the acting account out with logout_all")
+    return Request("POST", f"/api/accounts/{slot}/logout", None, keyed=False, stream=False)
+
+
+def logout_all_accounts_request() -> Request:
+    return Request("POST", "/api/accounts/logout-all", None, keyed=False, stream=False)
+
+
+# --- speech ----------------------------------------------------------------------------------------
+
+
+def transcribe_request(
+    file: bytes | IO[bytes], filename: str, content_type: str, language: str | None
+) -> Request:
+    """One clip, multipart, with the optional BCP 47 language hint as a
+    form field. The media type is checked here, with the route's own list,
+    so a refusal names the formats before the bytes are spent."""
+    media_type = content_type.split(";")[0].strip().lower()
+    if media_type not in SPEECH_AUDIO_TYPES:
+        raise ValueError(f"content_type must be one of {', '.join(SPEECH_AUDIO_TYPES)}")
+    if language is not None and (not language.strip() or len(language) > 35):
+        raise ValueError("language must be a BCP 47 tag of at most 35 characters")
+    data = file if isinstance(file, bytes) else file.read()
+    return Request(
+        "POST",
+        "/api/speech/transcribe",
+        None,
+        keyed=True,
+        stream=False,
+        files={"file": (filename, data, media_type)},
+        data={"language": language.strip()} if language is not None else None,
+    )
+
+

@@ -244,6 +244,24 @@ APP_OPERATIONS: dict[str, tuple[str, str]] = {
     "billing.portal": ("POST", "/api/billing/portal"),
     "billing.status": ("GET", "/api/billing/status"),
     "billing.invoices": ("GET", "/api/billing/invoices"),
+    # --- passkeys, MFA, account switching, speech (T-228) --------------------------
+    "passkeys.list": ("GET", "/api/me/passkeys"),
+    "passkeys.start": ("POST", "/api/me/passkeys/start"),
+    "passkeys.verify": ("POST", "/api/me/passkeys/{passkey_id}/verify"),
+    "passkeys.rename": ("PATCH", "/api/me/passkeys/{passkey_id}"),
+    "passkeys.remove": ("DELETE", "/api/me/passkeys/{passkey_id}"),
+    "passkeys.login_start": ("POST", "/api/auth/passkey/start"),
+    "passkeys.login_finish": ("POST", "/api/auth/passkey/finish"),
+    "mfa.state": ("GET", "/api/me/mfa"),
+    "mfa.totp_start": ("POST", "/api/me/mfa/totp/start"),
+    "mfa.totp_confirm": ("POST", "/api/me/mfa/totp/confirm"),
+    "mfa.totp_remove": ("DELETE", "/api/me/mfa/totp"),
+    "mfa.recovery_reissue": ("POST", "/api/me/mfa/recovery-codes"),
+    "accounts.list": ("GET", "/api/accounts"),
+    "accounts.switch": ("POST", "/api/accounts/switch"),
+    "accounts.logout": ("POST", "/api/accounts/{slot}/logout"),
+    "accounts.logout_all": ("POST", "/api/accounts/logout-all"),
+    "speech.transcribe": ("POST", "/api/speech/transcribe"),
 }
 
 Role = Literal["system", "user", "assistant", "tool"]

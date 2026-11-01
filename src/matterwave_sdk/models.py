@@ -3720,3 +3720,300 @@ class InvoiceList:
         )
 
 
+# --- passkeys, MFA, account switching, speech -----------------------------------------
+
+
+@dataclass(frozen=True)
+class Passkey:
+    """One registered passkey, as the Security pane lists it. The
+    credential itself lives at the identity provider; this is the name and
+    the date."""
+
+    id: str
+    name: str
+    created_at: str
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> Passkey:
+        return cls(
+            id=_str(data.get("id")),
+            name=_str(data.get("name")),
+            created_at=_str(data.get("created_at")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class PasskeyList:
+    """`GET /api/me/passkeys`: the account's passkeys, the relying-party id
+    a browser registration is bound to, and the per-account maximum."""
+
+    data: list[Passkey]
+    rp_id: str
+    max: int
+    request_id: str | None = field(default=None, compare=False)
+
+    def __iter__(self) -> Any:
+        return iter(self.data)
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> PasskeyList:
+        return cls(
+            data=[Passkey.from_dict(p) for p in _dicts(data.get("passkeys"))],
+            rp_id=_str(data.get("rp_id")),
+            max=_int(data.get("max"), 10),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class PasskeyStart:
+    """`POST /api/me/passkeys/start`: the id to register under and the
+    creation options for `navigator.credentials.create`. Nothing is live
+    until `passkeys.verify` takes the attestation back."""
+
+    passkey_id: str
+    options: dict[str, Any]
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> PasskeyStart:
+        options = data.get("options")
+        return cls(
+            passkey_id=_str(data.get("passkey_id")),
+            options=dict(options) if isinstance(options, dict) else {},
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class PasskeyLoginStart:
+    """`POST /api/auth/passkey/start`: the request options for
+    `navigator.credentials.get` and the sealed `challenge` the finish step
+    takes back. The challenge carries the provider's session, sealed; it is
+    opaque to the caller and shown here as received."""
+
+    challenge: str = field(repr=False)
+    options: dict[str, Any]
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(
+        cls, data: dict[str, Any], *, request_id: str | None = None
+    ) -> PasskeyLoginStart:
+        options = data.get("options")
+        return cls(
+            challenge=_str(data.get("challenge")),
+            options=dict(options) if isinstance(options, dict) else {},
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class PasskeyLoginFinish:
+    """`POST /api/auth/passkey/finish`: the redirect that completes the
+    sign-in. A browser flow; an API client has little use for it, but the
+    route is here for parity."""
+
+    redirect: str
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(
+        cls, data: dict[str, Any], *, request_id: str | None = None
+    ) -> PasskeyLoginFinish:
+        return cls(redirect=_str(data.get("redirect")), request_id=request_id)
+
+
+@dataclass(frozen=True)
+class MfaState:
+    """`GET /api/me/mfa`: whether an authenticator is confirmed, how many
+    recovery codes are unspent, and whether the org insists on one (which
+    is why Remove is then unavailable)."""
+
+    totp_enrolled: bool
+    recovery_codes_left: int
+    org_requires_mfa: bool
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> MfaState:
+        return cls(
+            totp_enrolled=data.get("totp_enrolled") is True,
+            recovery_codes_left=_int(data.get("recovery_codes_left")),
+            org_requires_mfa=data.get("org_requires_mfa") is True,
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class TotpEnrolment:
+    """`POST /api/me/mfa/totp/start`: the secret, the otpauth URI and its
+    QR as a `data:image/svg+xml` URI. Nothing is live until the first code
+    confirms it with `totp_confirm`."""
+
+    secret: str = field(repr=False)
+    uri: str = field(repr=False)
+    qr_svg: str
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> TotpEnrolment:
+        return cls(
+            secret=_str(data.get("secret")),
+            uri=_str(data.get("uri")),
+            qr_svg=_str(data.get("qr_svg")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class TotpConfirmed:
+    """The answer to `mfa.totp_confirm` and `mfa.recovery_reissue`: the ten
+    recovery codes, shown once -- only their hashes exist after this
+    response. Store them now."""
+
+    recovery_codes: list[str] = field(repr=False, default_factory=list)
+    recovery_codes_left: int = 0
+    totp_enrolled: bool | None = None
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> TotpConfirmed:
+        enrolled = data.get("totp_enrolled")
+        return cls(
+            recovery_codes=_strs(data.get("recovery_codes")),
+            recovery_codes_left=_int(data.get("recovery_codes_left")),
+            totp_enrolled=enrolled if isinstance(enrolled, bool) else None,
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class TotpRemoved:
+    """The answer to `mfa.totp_remove`: the authenticator and its recovery
+    codes are gone."""
+
+    totp_enrolled: bool
+    recovery_codes_left: int
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> TotpRemoved:
+        return cls(
+            totp_enrolled=data.get("totp_enrolled") is True,
+            recovery_codes_left=_int(data.get("recovery_codes_left")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class BrowserAccount:
+    """One account signed in on a browser, as `GET /api/accounts` offers
+    them, acting one first. `slot` 0 is the acting account, 1 and up are
+    parked. Only what the session envelopes already told that browser --
+    never account data."""
+
+    slot: int
+    current: bool
+    subject: str
+    email: str | None = None
+    name: str | None = None
+    org_name: str | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> BrowserAccount:
+        return cls(
+            slot=_int(data.get("slot")),
+            current=data.get("current") is True,
+            subject=_str(data.get("subject")),
+            email=_opt_str(data.get("email")),
+            name=_opt_str(data.get("name")),
+            org_name=_opt_str(data.get("org_name")),
+        )
+
+
+@dataclass(frozen=True)
+class BrowserAccountList:
+    """`GET /api/accounts`: who is signed in on this browser, acting one
+    first, whether there is `room` for another, and the per-browser `max`."""
+
+    data: list[BrowserAccount]
+    max: int
+    room: bool
+    request_id: str | None = field(default=None, compare=False)
+
+    def __iter__(self) -> Any:
+        return iter(self.data)
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    @classmethod
+    def from_dict(
+        cls, data: dict[str, Any], *, request_id: str | None = None
+    ) -> BrowserAccountList:
+        return cls(
+            data=[BrowserAccount.from_dict(a) for a in _dicts(data.get("accounts"))],
+            max=_int(data.get("max"), 4),
+            room=data.get("room") is True,
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class AccountSwitched:
+    """The answer to `accounts.switch`: which account now acts."""
+
+    status: str
+    subject: str
+    email: str | None
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> AccountSwitched:
+        return cls(
+            status=_str(data.get("status"), "ok"),
+            subject=_str(data.get("subject")),
+            email=_opt_str(data.get("email")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class LoggedOut:
+    """The answer to `accounts.logout` and `accounts.logout_all`.
+    `end_session_endpoint` is the identity provider's, when there is one,
+    for the browser to finish at."""
+
+    status: str
+    end_session_endpoint: str | None = None
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> LoggedOut:
+        return cls(
+            status=_str(data.get("status"), "ok"),
+            end_session_endpoint=_opt_str(data.get("end_session_endpoint")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class Transcription:
+    """`POST /api/speech/transcribe`: one clip's words. The audio is held
+    for the length of the request and nowhere else -- not logged, not
+    stored."""
+
+    text: str
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> Transcription:
+        return cls(text=_str(data.get("text")), request_id=request_id)
+
+

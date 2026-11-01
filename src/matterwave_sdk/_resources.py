@@ -38,6 +38,7 @@ from . import _base
 from . import _native as req
 from ._base import UNSET, Request
 from .models import (
+    AccountSwitched,
     AdminAnnouncement,
     AdminAnnouncementList,
     AnnouncementList,
@@ -47,6 +48,7 @@ from .models import (
     AttachmentLimits,
     AuditPage,
     BillingStatus,
+    BrowserAccountList,
     Budget,
     CheckoutLink,
     Conversation,
@@ -75,11 +77,13 @@ from .models import (
     InvoiceList,
     Library,
     LinkPreview,
+    LoggedOut,
     MemberBudget,
     MemberBudgetList,
     MemberList,
     Membership,
     MfaPolicy,
+    MfaState,
     ModelPolicy,
     NameUpdated,
     Notification,
@@ -90,6 +94,11 @@ from .models import (
     OrgInfo,
     OrgShareList,
     OrgUsage,
+    Passkey,
+    PasskeyList,
+    PasskeyLoginFinish,
+    PasskeyLoginStart,
+    PasskeyStart,
     PasswordChanged,
     PlanCatalog,
     PlanHistory,
@@ -108,6 +117,10 @@ from .models import (
     SsoSettings,
     Tag,
     TermsAccepted,
+    TotpConfirmed,
+    TotpEnrolment,
+    TotpRemoved,
+    Transcription,
     UsageBalance,
     WebhookDelivery,
     WebhookDeliveryList,
@@ -2016,5 +2029,264 @@ class AsyncBilling(_Async):
     async def invoices(self) -> InvoiceList:
         body, rid = await self._object(req.invoices_request())
         return InvoiceList.from_dict(body, request_id=rid)
+
+
+# --- passkeys (T-228) ------------------------------------------------------------------------------
+
+
+class Passkeys(_Sync):
+    """Passkeys (WebAuthn), relayed through the identity provider: the
+    names and the list are the platform's, the credential is the provider's.
+    Registration and listing are the signed-in person's (a session -- the
+    routes take `session_principal`, and an API key is refused); the login
+    half is the browser ceremony, anonymous by nature, kept for parity."""
+
+    def list(self) -> PasskeyList:
+        """`GET /api/me/passkeys`: the account's passkeys, the
+        relying-party id and the per-account maximum."""
+        body, rid = self._object(req.list_passkeys_request())
+        return PasskeyList.from_dict(body, request_id=rid)
+
+    def start(self) -> PasskeyStart:
+        """`POST /api/me/passkeys/start`: the creation options for
+        `navigator.credentials.create`. Nothing is live until `verify`
+        takes the attestation back."""
+        body, rid = self._object(req.start_passkey_request())
+        return PasskeyStart.from_dict(body, request_id=rid)
+
+    def verify(self, passkey_id: str, credential: Mapping[str, Any], name: str) -> Passkey:
+        """`POST /api/me/passkeys/{id}/verify` (201): the browser's
+        attestation, back to the provider; on acceptance, the row that
+        names it."""
+        body, rid = self._object(req.verify_passkey_request(passkey_id, credential, name))
+        return Passkey.from_dict(body, request_id=rid)
+
+    def rename(self, passkey_id: str, name: str) -> Passkey:
+        """`PATCH /api/me/passkeys/{id}`."""
+        body, rid = self._object(req.rename_passkey_request(passkey_id, name))
+        return Passkey.from_dict(body, request_id=rid)
+
+    def remove(self, passkey_id: str) -> None:
+        """`DELETE /api/me/passkeys/{id}`: the provider first, then the
+        row, so the list never claims a credential that cannot sign in."""
+        self._none(req.remove_passkey_request(passkey_id))
+
+    def login_start(self, email: str, auth_request: str) -> PasskeyLoginStart:
+        """`POST /api/auth/passkey/start`: the request options for
+        `navigator.credentials.get` and the sealed `challenge`. An address
+        with no account and one with no passkey are the same 404, so the
+        answer says nothing about which addresses exist."""
+        body, rid = self._object(req.start_passkey_login_request(email, auth_request))
+        return PasskeyLoginStart.from_dict(body, request_id=rid)
+
+    def login_finish(self, challenge: str, credential: Mapping[str, Any]) -> PasskeyLoginFinish:
+        """`POST /api/auth/passkey/finish`: the assertion back; the answer
+        is the redirect that completes the sign-in."""
+        body, rid = self._object(req.finish_passkey_login_request(challenge, credential))
+        return PasskeyLoginFinish.from_dict(body, request_id=rid)
+
+
+class AsyncPasskeys(_Async):
+    """As `Passkeys`; every method a coroutine."""
+
+    async def list(self) -> PasskeyList:
+        body, rid = await self._object(req.list_passkeys_request())
+        return PasskeyList.from_dict(body, request_id=rid)
+
+    async def start(self) -> PasskeyStart:
+        body, rid = await self._object(req.start_passkey_request())
+        return PasskeyStart.from_dict(body, request_id=rid)
+
+    async def verify(self, passkey_id: str, credential: Mapping[str, Any], name: str) -> Passkey:
+        body, rid = await self._object(req.verify_passkey_request(passkey_id, credential, name))
+        return Passkey.from_dict(body, request_id=rid)
+
+    async def rename(self, passkey_id: str, name: str) -> Passkey:
+        body, rid = await self._object(req.rename_passkey_request(passkey_id, name))
+        return Passkey.from_dict(body, request_id=rid)
+
+    async def remove(self, passkey_id: str) -> None:
+        await self._none(req.remove_passkey_request(passkey_id))
+
+    async def login_start(self, email: str, auth_request: str) -> PasskeyLoginStart:
+        body, rid = await self._object(req.start_passkey_login_request(email, auth_request))
+        return PasskeyLoginStart.from_dict(body, request_id=rid)
+
+    async def login_finish(self, challenge: str, credential: Mapping[str, Any]) -> PasskeyLoginFinish:
+        body, rid = await self._object(req.finish_passkey_login_request(challenge, credential))
+        return PasskeyLoginFinish.from_dict(body, request_id=rid)
+
+
+# --- MFA (T-228) -------------------------------------------------------------------------------------
+
+
+class Mfa(_Sync):
+    """The second factor, signed-in side: enrol an authenticator, prove it,
+    keep the recovery codes. The login-side code step (the sealed-challenge
+    flow the password form drives) is browser ceremony and is not here.
+    Every code check is rate-limited per person server-side: a six-digit
+    code is guessable in a million tries, and nothing offers a million
+    tries. These routes take a session; an API key is refused."""
+
+    def state(self) -> MfaState:
+        """`GET /api/me/mfa`: enrolled, codes left, and whether the org
+        insists (which is why Remove is then unavailable)."""
+        body, rid = self._object(req.mfa_state_request())
+        return MfaState.from_dict(body, request_id=rid)
+
+    def totp_start(self) -> TotpEnrolment:
+        """`POST /api/me/mfa/totp/start`: the secret, the otpauth URI and
+        its QR. Nothing is live until the first code confirms it."""
+        body, rid = self._object(req.mfa_totp_start_request())
+        return TotpEnrolment.from_dict(body, request_id=rid)
+
+    def totp_confirm(self, code: str) -> TotpConfirmed:
+        """`POST /api/me/mfa/totp/confirm`: the first code makes the
+        authenticator live, and the ten recovery codes come back in the
+        same answer -- shown once; only their hashes exist after this
+        response."""
+        body, rid = self._object(req.mfa_totp_confirm_request(code))
+        return TotpConfirmed.from_dict(body, request_id=rid)
+
+    def totp_remove(self, *, code: str | None = None, recovery_code: str | None = None) -> TotpRemoved:
+        """`DELETE /api/me/mfa/totp`: remove the authenticator, on proof
+        of it (a code) or of a recovery code -- the session cookie alone is
+        not proof enough to remove the factor that protects it. Refused
+        outright for a member of an org that requires one: the policy is
+        the owner's to relax, not the member's to step around."""
+        body, rid = self._object(req.mfa_totp_remove_request(code, recovery_code))
+        return TotpRemoved.from_dict(body, request_id=rid)
+
+    def recovery_reissue(self, code: str) -> TotpConfirmed:
+        """`POST /api/me/mfa/recovery-codes`: ten new codes, the old ones
+        retired, on a code from the app -- the authenticator only, because
+        a lost sheet of codes must not be what authorises its own
+        replacement."""
+        body, rid = self._object(req.mfa_recovery_reissue_request(code))
+        return TotpConfirmed.from_dict(body, request_id=rid)
+
+
+class AsyncMfa(_Async):
+    """As `Mfa`; every method a coroutine."""
+
+    async def state(self) -> MfaState:
+        body, rid = await self._object(req.mfa_state_request())
+        return MfaState.from_dict(body, request_id=rid)
+
+    async def totp_start(self) -> TotpEnrolment:
+        body, rid = await self._object(req.mfa_totp_start_request())
+        return TotpEnrolment.from_dict(body, request_id=rid)
+
+    async def totp_confirm(self, code: str) -> TotpConfirmed:
+        body, rid = await self._object(req.mfa_totp_confirm_request(code))
+        return TotpConfirmed.from_dict(body, request_id=rid)
+
+    async def totp_remove(
+        self, *, code: str | None = None, recovery_code: str | None = None
+    ) -> TotpRemoved:
+        body, rid = await self._object(req.mfa_totp_remove_request(code, recovery_code))
+        return TotpRemoved.from_dict(body, request_id=rid)
+
+    async def recovery_reissue(self, code: str) -> TotpConfirmed:
+        body, rid = await self._object(req.mfa_recovery_reissue_request(code))
+        return TotpConfirmed.from_dict(body, request_id=rid)
+
+
+# --- account switching (T-228) --------------------------------------------------------------------------
+
+
+class BrowserAccounts(_Sync):
+    """Several accounts signed in on one browser, one of them acting. A
+    browser feature: the credentials are that browser's session cookies, no
+    key is sent, and an API client has little use for any of it -- these
+    four routes are here for parity, and answer account names only, never
+    account data."""
+
+    def list(self) -> BrowserAccountList:
+        """`GET /api/accounts`: who is signed in, acting one first."""
+        body, rid = self._object(req.list_browser_accounts_request())
+        return BrowserAccountList.from_dict(body, request_id=rid)
+
+    def switch(self, slot: int) -> AccountSwitched:
+        """`POST /api/accounts/switch`: make a parked account the acting
+        one. Both envelopes are verified before either cookie is written."""
+        body, rid = self._object(req.switch_account_request(slot))
+        return AccountSwitched.from_dict(body, request_id=rid)
+
+    def logout(self, slot: int) -> LoggedOut:
+        """`POST /api/accounts/{slot}/logout`: sign one *parked* account
+        out; the acting account signs out with `logout_all`."""
+        body, rid = self._object(req.logout_browser_account_request(slot))
+        return LoggedOut.from_dict(body, request_id=rid)
+
+    def logout_all(self) -> LoggedOut:
+        """`POST /api/accounts/logout-all`: every account on this browser,
+        acting and parked, each row revoked, each cookie cleared."""
+        body, rid = self._object(req.logout_all_accounts_request())
+        return LoggedOut.from_dict(body, request_id=rid)
+
+
+class AsyncBrowserAccounts(_Async):
+    """As `BrowserAccounts`; every method a coroutine."""
+
+    async def list(self) -> BrowserAccountList:
+        body, rid = await self._object(req.list_browser_accounts_request())
+        return BrowserAccountList.from_dict(body, request_id=rid)
+
+    async def switch(self, slot: int) -> AccountSwitched:
+        body, rid = await self._object(req.switch_account_request(slot))
+        return AccountSwitched.from_dict(body, request_id=rid)
+
+    async def logout(self, slot: int) -> LoggedOut:
+        body, rid = await self._object(req.logout_browser_account_request(slot))
+        return LoggedOut.from_dict(body, request_id=rid)
+
+    async def logout_all(self) -> LoggedOut:
+        body, rid = await self._object(req.logout_all_accounts_request())
+        return LoggedOut.from_dict(body, request_id=rid)
+
+
+# --- speech (T-228) -----------------------------------------------------------------------------------------
+
+
+class Speech(_Sync):
+    """Dictation's server route: one short clip in, its text out, nothing
+    kept. The audio is held in memory for the length of the request and
+    nowhere else -- not logged, not stored, on the success path or any
+    failure. Only where the deployment configured a transcriber; anywhere
+    else the route is a 404 saying so."""
+
+    def transcribe(
+        self,
+        file: bytes | IO[bytes],
+        filename: str,
+        *,
+        content_type: str = "audio/webm",
+        language: str | None = None,
+    ) -> Transcription:
+        """`POST /api/speech/transcribe`: up to 10 MiB of audio, 30 clips
+        a minute per person, an optional BCP 47 `language` hint. The
+        content type is checked here, with the route's own list."""
+        body, rid = self._object(
+            req.transcribe_request(file, filename, content_type, language)
+        )
+        return Transcription.from_dict(body, request_id=rid)
+
+
+class AsyncSpeech(_Async):
+    """As `Speech`; every method a coroutine."""
+
+    async def transcribe(
+        self,
+        file: bytes | IO[bytes],
+        filename: str,
+        *,
+        content_type: str = "audio/webm",
+        language: str | None = None,
+    ) -> Transcription:
+        body, rid = await self._object(
+            req.transcribe_request(file, filename, content_type, language)
+        )
+        return Transcription.from_dict(body, request_id=rid)
 
 
