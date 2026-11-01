@@ -839,9 +839,7 @@ SLACK_SOURCE = {
 }
 
 
-def test_a_conversation_carries_its_preset_and_connector_source(
-    api, client: MatterWave
-) -> None:
+def test_a_conversation_carries_its_preset_and_connector_source(api, client: MatterWave) -> None:
     api.get(f"/api/conversations/{CONV}").mock(
         return_value=httpx.Response(
             200,
@@ -874,14 +872,14 @@ def test_a_conversation_a_person_started_has_no_preset_and_no_source(
     )
     conv = client.conversations.get(CONV)
     assert conv.preset_id is None and conv.preset is None and conv.source is None
-    api.get(f"/api/conversations/{CONV}").mock(return_value=httpx.Response(200, json=conversation()))
+    api.get(f"/api/conversations/{CONV}").mock(
+        return_value=httpx.Response(200, json=conversation())
+    )
     conv = client.conversations.get(CONV)
     assert conv.preset_id is None and conv.preset is None and conv.source is None
 
 
-def test_a_send_into_a_connector_conversation_is_its_own_conflict(
-    api, client: MatterWave
-) -> None:
+def test_a_send_into_a_connector_conversation_is_its_own_conflict(api, client: MatterWave) -> None:
     # The app's shape for it: `detail` for people, `code` and the thread
     # beside it, so a client can point at where the answer will be.
     refusal = {

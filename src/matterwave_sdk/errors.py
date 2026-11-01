@@ -10,9 +10,10 @@ request id so a bug report can name the exact call the server logged.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from .models import ConversationSource
+if TYPE_CHECKING:
+    from .models import ConversationSource
 
 # The `code` the app puts beside `detail` on the 409 for a turn in a
 # conversation a connector opened.
