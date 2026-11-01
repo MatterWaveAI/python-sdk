@@ -343,7 +343,7 @@ print(answer.text)
 mode, the VS Code agent) share: the local tools a client offers the model on
 `/v1`, the approval modes that gate them, the paths those tools may touch, what
 the read tools and `run_shell` return, and the agent-mode system prompt. It is
-versioned (`agent.CONTRACT_VERSION`, `1.1.1`; the prompt carries its own
+versioned (`agent.CONTRACT_VERSION`, `1.2.0`; the prompt carries its own
 `agent.SYSTEM_PROMPT_VERSION`), and its one
 source is `src/matterwave_sdk/agent/contract.json`, from which the TypeScript
 SDK's copy is generated.
@@ -481,7 +481,7 @@ most shared to the most personal, the order of `agent.CONTEXT_FILES`
 (`MATTERWAVE.md`, `AGENTS.md`, then `MATTERWAVE.local.md`): where two disagree
 the later one wins, so the user's own file comes last.
 
-### Fixes in 1.1.1
+### Fixes in 1.2.0
 
 - Windows aliases count only below the root: a root inside `/x/con/` or
   `/x/a:b/` takes absolute paths (`windows_alias(path, root)`).

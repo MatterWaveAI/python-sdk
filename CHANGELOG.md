@@ -83,8 +83,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `PROTECTED` also covers what matters when the root is the home folder
     or above it: `.bashrc`, `.bash_profile`, `.profile`, `.zshrc`,
     `.zprofile`, `.ssh/`, `.aws/` and `.config/matterwave` at any depth.
-- Agent contract `1.1.1`, fixes from the clients' testing; each observable
-  one is a case in `CONTRACT["conformance"]`:
+- Agent contract `1.2.0`, fixes from the clients' testing. A minor version,
+  as the contract's own rule asks, since it adds the refusal `loop` and the
+  tool errors `invalid_glob`, `special_file` and `timeout`; a client with an
+  exhaustive map over refusals or tool errors must add them. Each
+  observable fix is a case in `CONTRACT["conformance"]`:
   - `confine` checks Windows aliases only in the names below the root, so a
     root inside `/x/con/`, `/x/a:b/` or `/x/x./` takes absolute paths into
     it again; `windows_alias(path, root)` is that check on its own.

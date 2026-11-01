@@ -464,7 +464,7 @@ def test_a_walk_does_not_follow_a_link_out(tmp_path: Path) -> None:
     assert agent.run_list_dir(root) == "again/\nsrc/"
 
 
-# --- 1.1.1 fixes -------------------------------------------------------------
+# --- 1.2.0 fixes -------------------------------------------------------------
 
 
 @pytest.mark.parametrize(

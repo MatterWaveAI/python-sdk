@@ -9,7 +9,7 @@ paths:
 
     from matterwave_sdk import agent
 
-    agent.CONTRACT_VERSION                    # "1.1.1"
+    agent.CONTRACT_VERSION                    # "1.2.0"
     tools = agent.tools_for_mode("plan")      # the `tools` for /v1: read-only
     agent.allowed("edit", "ask")              # "ask"
     prompt = agent.system_prompt("ask", root="/home/me/project")

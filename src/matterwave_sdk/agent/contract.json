@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.1.1",
+  "contract_version": "1.2.0",
   "about": "The MatterWave agent tool contract: the local tools a coding client offers the model, the approval modes that gate them, the paths they may touch and the agent-mode system prompt, the text the read tools and run_shell return, and the conformance cases every client must reproduce. This file is the one source; the TypeScript SDK's copy is generated from it by scripts/gen_agent_contract.py. Versioning: major when a tool, field or mode is removed or changes meaning, minor when one is added, patch when only text changes.",
   "tools": [
     {
