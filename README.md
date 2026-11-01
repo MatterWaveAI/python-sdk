@@ -293,6 +293,46 @@ for event in items_of(pages_of(lambda cursor: client.audit.list(event="org.sso",
     print(event.occurred_at, event.action)
 ```
 
+## Your account and your data
+
+The caller's own account, with a key (as its owner) or a person's token:
+
+```python
+client.account.update(full_name="Ada Lovelace")
+client.account.accept_terms("2026-10")          # a version other than the current one is a 422
+held = client.account.enforcement()              # state "none", or the warning or limit and why
+client.preferences.update(product_updates=True)  # reads, changes what was passed, writes back
+for session in client.sessions.list():
+    print(session.user_agent, session.last_seen_at)
+client.sessions.revoke_others()
+
+# Everything the account holds, as one JSON document (needs chat:read).
+document = client.exports.create_and_download(timeout=600)
+
+# Conversations from ChatGPT's or Claude's data export (needs chat:write).
+job = client.imports.create(Path("conversations.json").read_bytes(), "conversations.json")
+print(client.imports.wait(job.id).conversations_created)
+
+said = client.speech.transcribe(Path("note.ogg").read_bytes(), "note.ogg", language="en")
+client.attachments.scan(attachment_id)          # poll until scan_status is "clean"
+data = client.attachments.view(attachment_id)   # the bytes, through the signed link the route mints
+
+status = client.billing.status()                # the plan, its limits, and dunning when late
+catalog = MatterWave(api_key=None).plans.list() # public: the price list and model prices
+```
+
+`account`: `update`, `accept_terms`, `enforcement`. `preferences`: `get`,
+`update` (the route replaces the whole object, so `update` reads it first; a
+field not passed keeps its value, `locale=None` clears the locale, and billing
+receipts cannot be turned off). `sessions`: `list` (a session's `id` is the
+cookie's own value, kept out of `repr`), `revoke`, `revoke_others`. `exports`:
+`create`, `get`, `wait`, `download`, `create_and_download`, and `document`,
+which builds the export inside the request. `imports`: `create`, `list`, `get`,
+`wait`. `speech.transcribe`, `attachments.scan` / `view`, `billing.status`,
+`plans.list` and `policy.stats` (the last two public, sent with no credential).
+`wait` raises `MatterWaveError` when the job failed or expired and
+`APITimeoutError` when `timeout` passes first.
+
 ## Receiving webhooks
 
 `client.webhooks` manages endpoints; `matterwave_sdk.webhooks` is the
@@ -385,10 +425,10 @@ platform's route document (the drift test holds the two together):
 
 | `CREDENTIALS` | Accepts | Methods |
 | --- | --- | --- |
-| `public` | nothing | `index`, `auth.device.start` / `poll`, `shares.view` |
-| `key` | any API key, or a person's token | `me`, `app_models`, `instructions.user` / `update_user`, `notifications`, `announcements.list`, `entitlements.get`, `messages.set_feedback` / `delete_feedback`, `keys.list`, `usage.get`, `attachments`, `library`, `shares.list_mine` / `revoke`, `budget.get` |
-| `key:chat:read` | a key with `chat:read`, or a person's token | `models`, the conversation reads, `messages.list_feedback`, `shares.list` |
-| `key:chat:write` | a key with `chat:write`, or a person's token | `chat.completions.create`, `embeddings.create`, the conversation writes and turns, `shares.create` |
+| `public` | nothing | `index`, `auth.device.start` / `poll`, `shares.view`, `plans.list`, `policy.stats` |
+| `key` | any API key, or a person's token | `me`, `account`, `preferences`, `sessions`, `speech`, `billing.status`, `app_models`, `instructions.user` / `update_user`, `notifications`, `announcements.list`, `entitlements.get`, `messages.set_feedback` / `delete_feedback`, `keys.list`, `usage.get`, `attachments`, `library`, `shares.list_mine` / `revoke`, `budget.get` |
+| `key:chat:read` | a key with `chat:read`, or a person's token | `models`, `exports`, the conversation reads, `messages.list_feedback`, `shares.list` |
+| `key:chat:write` | a key with `chat:write`, or a person's token | `imports`, `chat.completions.create`, `embeddings.create`, the conversation writes and turns, `shares.create` |
 | `key:keys:manage` | a key with `keys:manage`, or a person's token | `keys.create` / `update` / `rotate` / `revoke` |
 | `key:usage:read` | a key with `usage:read`, or a person's token | `usage.org`, `usage.export_csv` |
 | `key:webhooks:manage` | a key with `webhooks:manage`, or a person's token | `webhooks` |

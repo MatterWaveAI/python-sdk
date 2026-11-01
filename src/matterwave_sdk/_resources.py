@@ -29,8 +29,10 @@ from collections.abc import AsyncIterator, Iterator, Sequence
 from datetime import datetime
 from typing import IO, TYPE_CHECKING, Any
 
+from . import _account_requests as account_req
 from . import _base
 from . import _native as req
+from ._account_models import AttachmentScan
 from ._base import UNSET, Request
 from ._pagination import async_items_of, async_pages_of, items_of, pages_of
 from .models import (
@@ -576,6 +578,18 @@ class Attachments(_Sync):
         body, rid = self._object(req.attachment_limits_request())
         return AttachmentLimits.from_dict(body, request_id=rid)
 
+    def scan(self, attachment_id: str) -> AttachmentScan:
+        """`GET /api/attachments/{id}/scan`: where the malware scan is, the
+        cheap read to poll after an upload until it is `clean`."""
+        body, rid = self._object(account_req.attachment_scan_request(attachment_id))
+        return AttachmentScan.from_dict(body, request_id=rid)
+
+    def view(self, attachment_id: str) -> bytes:
+        """The file's bytes by id: the route answers with a ten-minute
+        signed link, which the client follows with its credential.
+        `NotFoundError` until the file has scanned clean."""
+        return self._client._send(account_req.view_attachment_request(attachment_id)).content
+
 
 class AsyncAttachments(_Async):
     async def upload(
@@ -602,6 +616,14 @@ class AsyncAttachments(_Async):
     async def limits(self) -> AttachmentLimits:
         body, rid = await self._object(req.attachment_limits_request())
         return AttachmentLimits.from_dict(body, request_id=rid)
+
+    async def scan(self, attachment_id: str) -> AttachmentScan:
+        body, rid = await self._object(account_req.attachment_scan_request(attachment_id))
+        return AttachmentScan.from_dict(body, request_id=rid)
+
+    async def view(self, attachment_id: str) -> bytes:
+        response = await self._client._send(account_req.view_attachment_request(attachment_id))
+        return response.content
 
 
 # --- library -------------------------------------------------------------------

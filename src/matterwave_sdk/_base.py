@@ -176,6 +176,27 @@ APP_OPERATIONS: dict[str, tuple[str, str]] = {
     "budget.members": ("GET", "/api/budget/members"),
     "budget.set_member_default_cap": ("PUT", "/api/budget/members"),
     "budget.set_member_cap": ("PUT", "/api/budget/members/{subject}"),
+    "account.update": ("PATCH", "/api/me"),
+    "account.accept_terms": ("POST", "/api/me/accept-terms"),
+    "account.enforcement": ("GET", "/api/me/enforcement"),
+    "preferences.get": ("GET", "/api/me/preferences"),
+    "preferences.update": ("PUT", "/api/me/preferences"),
+    "sessions.list": ("GET", "/api/me/sessions"),
+    "sessions.revoke": ("DELETE", "/api/me/sessions/{session_id}"),
+    "sessions.revoke_others": ("POST", "/api/me/sessions/revoke-others"),
+    "exports.document": ("GET", "/api/me/export"),
+    "exports.create": ("POST", "/api/me/export"),
+    "exports.get": ("GET", "/api/me/export/{export_id}"),
+    "exports.download": ("GET", "/api/me/export/{export_id}/download"),
+    "imports.create": ("POST", "/api/me/imports"),
+    "imports.list": ("GET", "/api/me/imports"),
+    "imports.get": ("GET", "/api/me/imports/{import_id}"),
+    "speech.transcribe": ("POST", "/api/speech/transcribe"),
+    "attachments.scan": ("GET", "/api/attachments/{attachment_id}/scan"),
+    "attachments.view": ("GET", "/api/attachments/{attachment_id}/view"),
+    "billing.status": ("GET", "/api/billing/status"),
+    "plans.list": ("GET", "/api/plans"),
+    "policy.stats": ("GET", "/api/policy/stats"),
 }
 
 
@@ -282,6 +303,27 @@ CREDENTIALS: dict[str, str] = {
     "budget.members": "person",
     "budget.set_member_default_cap": "person",
     "budget.set_member_cap": "person",
+    "account.update": "key",
+    "account.accept_terms": "key",
+    "account.enforcement": "key",
+    "preferences.get": "key",
+    "preferences.update": "key",
+    "sessions.list": "key",
+    "sessions.revoke": "key",
+    "sessions.revoke_others": "key",
+    "exports.document": "key:chat:read",
+    "exports.create": "key:chat:read",
+    "exports.get": "key:chat:read",
+    "exports.download": "key:chat:read",
+    "imports.create": "key:chat:write",
+    "imports.list": "key:chat:write",
+    "imports.get": "key:chat:write",
+    "speech.transcribe": "key",
+    "attachments.scan": "key",
+    "attachments.view": "key",
+    "billing.status": "key",
+    "plans.list": "public",
+    "policy.stats": "public",
 }
 
 # What the platform answers an API key on a "person" route.
@@ -366,6 +408,11 @@ class Request:
     # This request's timeout, where the client's default is wrong for it:
     # an MCP tool that runs a whole model turn takes minutes, not seconds.
     timeout: float | None = None
+    # Form fields sent beside `files` in the same multipart body.
+    form: Mapping[str, str] | None = None
+    # Follow a redirect to the same origin, credential and all: a route that
+    # answers with a signed link to the bytes, rather than the bytes.
+    follow_redirects: bool = False
 
 
 def index_request() -> Request:

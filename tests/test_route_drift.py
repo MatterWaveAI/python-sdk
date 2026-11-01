@@ -123,9 +123,15 @@ def test_each_operation_names_the_credential_its_route_accepts() -> None:
     wrong = {}
     for name, (method, path) in sdk_routes().items():
         operation = DOCUMENT["paths"].get(path, {}).get(method.lower())
-        # The internal routes the SDK calls are the operator console's,
-        # which take the operator's own session or token.
-        expected = credential_of(operation["security"]) if operation else "person"
+        if operation:
+            expected = credential_of(operation["security"])
+        elif name.startswith("admin."):
+            # The operator console's routes take the operator's own session or token.
+            expected = "person"
+        else:
+            # The other internal routes the SDK calls (the enforcement banner,
+            # the public policy counts) are not in the document to compare.
+            continue
         if CREDENTIALS.get(name) != expected:
             wrong[name] = (CREDENTIALS.get(name), expected)
     assert wrong == {}, "CREDENTIALS (SDK, document) disagree"

@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The account and data routes a key reaches, sync and async: `account`
+  (`update`, `accept_terms`, `enforcement`), `preferences` (`get`,
+  `update`), `sessions` (`list`, `revoke`, `revoke_others`), `exports`
+  (`create`, `get`, `wait`, `download`, `create_and_download`, `document`),
+  `imports` (`create`, `list`, `get`, `wait`), `speech.transcribe`,
+  `attachments.scan` / `view`, `billing.status`, and the public
+  `plans.list` and `policy.stats`. Their models read their fields through
+  one shared `from_dict` (`_wire.Wire`), with the rules the other models
+  follow.
 - Examples, each run by `tests/test_examples.py` against a fake API: `chat`,
   `streaming`, `structured_output`, `webhook_receiver`, `device_sign_in`
   (an API key or a person's token) and `pagination`.

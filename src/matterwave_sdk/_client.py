@@ -31,6 +31,26 @@ from typing import Any, Literal, TypeVar, cast, overload
 import httpx
 
 from . import _base
+from ._account import (
+    Account,
+    AsyncAccount,
+    AsyncBilling,
+    AsyncExports,
+    AsyncImports,
+    AsyncPlans,
+    AsyncPolicy,
+    AsyncPreferencesClient,
+    AsyncSessions,
+    AsyncSpeech,
+    Billing,
+    Exports,
+    Imports,
+    Plans,
+    Policy,
+    PreferencesClient,
+    Sessions,
+    Speech,
+)
 from ._base import EmbeddingInput, Message, Request, Tool, ToolChoice
 from ._mcp import AsyncMcp, Mcp
 from ._pagination import async_items_of, async_pages_of, items_of, pages_of
@@ -173,6 +193,7 @@ class _Config:
             self.base_url + request.path,
             json=request.json,
             files=dict(request.files) if request.files else None,
+            data=dict(request.form) if request.form else None,
             params=dict(request.params) or None,
             headers=headers,
             timeout=effective if effective is not None else self.timeout,
@@ -1269,6 +1290,15 @@ class MatterWave:
         self.entitlements = EntitlementsClient(self)
         self.admin = Admin(self)
         self.mcp = Mcp(self)
+        self.account = Account(self)
+        self.preferences = PreferencesClient(self)
+        self.sessions = Sessions(self)
+        self.exports = Exports(self)
+        self.imports = Imports(self)
+        self.speech = Speech(self)
+        self.billing = Billing(self)
+        self.plans = Plans(self)
+        self.policy = Policy(self)
 
     @property
     def base_url(self) -> str:
@@ -1352,7 +1382,9 @@ class MatterWave:
                 self._on_request(request)
             http_request = self._config.build(request, self._http, timeout=timeout, bearer=bearer)
             try:
-                response = self._http.send(http_request, stream=request.stream)
+                response = self._http.send(
+                    http_request, stream=request.stream, follow_redirects=request.follow_redirects
+                )
             except httpx.HTTPError as exc:
                 if attempt >= attempt_limit:
                     raise _connection_error(exc, request) from exc
@@ -1929,6 +1961,15 @@ class AsyncMatterWave:
         self.entitlements = AsyncEntitlementsClient(self)
         self.admin = AsyncAdmin(self)
         self.mcp = AsyncMcp(self)
+        self.account = AsyncAccount(self)
+        self.preferences = AsyncPreferencesClient(self)
+        self.sessions = AsyncSessions(self)
+        self.exports = AsyncExports(self)
+        self.imports = AsyncImports(self)
+        self.speech = AsyncSpeech(self)
+        self.billing = AsyncBilling(self)
+        self.plans = AsyncPlans(self)
+        self.policy = AsyncPolicy(self)
 
     @property
     def base_url(self) -> str:
@@ -1996,7 +2037,9 @@ class AsyncMatterWave:
                 self._on_request(request)
             http_request = self._config.build(request, self._http, timeout=timeout, bearer=bearer)
             try:
-                response = await self._http.send(http_request, stream=request.stream)
+                response = await self._http.send(
+                    http_request, stream=request.stream, follow_redirects=request.follow_redirects
+                )
             except httpx.HTTPError as exc:
                 if attempt >= attempt_limit:
                     raise _connection_error(exc, request) from exc

@@ -9,33 +9,16 @@
     "/api/unsubscribe": "The email footer's one-click unsubscribe, keyed by the link's own token."
   },
   "routes": {
-    "GET /api/attachments/{attachment_id}/scan": "Not wrapped by the SDK.",
-    "GET /api/attachments/{attachment_id}/view": "Not wrapped by the SDK.",
     "POST /api/auth/device/approve": "Not wrapped by the SDK.",
     "POST /api/auth/device/deny": "Not wrapped by the SDK.",
     "POST /api/auth/device/lookup": "Not wrapped by the SDK.",
     "POST /api/billing/checkout": "Not wrapped by the SDK.",
     "GET /api/billing/invoices": "Not wrapped by the SDK.",
     "POST /api/billing/portal": "Not wrapped by the SDK.",
-    "GET /api/billing/status": "Not wrapped by the SDK.",
     "POST /api/join": "Not wrapped by the SDK.",
     "POST /api/join/lookup": "Not wrapped by the SDK.",
     "DELETE /api/me": "Closing one's own account: a person's decision, made signed in to the web app.",
-    "PATCH /api/me": "Not wrapped by the SDK.",
-    "POST /api/me/accept-terms": "Not wrapped by the SDK.",
-    "GET /api/me/export": "Not wrapped by the SDK.",
-    "POST /api/me/export": "Not wrapped by the SDK.",
-    "GET /api/me/export/{export_id}": "Not wrapped by the SDK.",
-    "GET /api/me/export/{export_id}/download": "Not wrapped by the SDK.",
-    "GET /api/me/imports": "Not wrapped by the SDK.",
-    "POST /api/me/imports": "Not wrapped by the SDK.",
-    "GET /api/me/imports/{import_id}": "Not wrapped by the SDK.",
     "POST /api/me/password": "The password form, behind the person's current password.",
-    "GET /api/me/preferences": "Not wrapped by the SDK.",
-    "PUT /api/me/preferences": "Not wrapped by the SDK.",
-    "GET /api/me/sessions": "Not wrapped by the SDK.",
-    "POST /api/me/sessions/revoke-others": "Not wrapped by the SDK.",
-    "DELETE /api/me/sessions/{session_id}": "Not wrapped by the SDK.",
     "GET /api/org": "Not wrapped by the SDK.",
     "PATCH /api/org": "Not wrapped by the SDK.",
     "POST /api/org/close": "Not wrapped by the SDK.",
@@ -71,8 +54,6 @@
     "POST /api/org/sso/recovery-code": "Not wrapped by the SDK.",
     "PUT /api/plan": "Not wrapped by the SDK.",
     "GET /api/plan/history": "Not wrapped by the SDK.",
-    "GET /api/plans": "Not wrapped by the SDK.",
-    "GET /api/share/{token}/attachments/{attachment_id}": "An attachment inside a shared snapshot, fetched by the page that renders the snapshot.",
-    "POST /api/speech/transcribe": "Not wrapped by the SDK."
+    "GET /api/share/{token}/attachments/{attachment_id}": "An attachment inside a shared snapshot, fetched by the page that renders the snapshot."
   }
 }
