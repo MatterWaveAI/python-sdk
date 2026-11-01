@@ -141,7 +141,7 @@ def test_tolerance_is_wideable_for_a_slow_receiver() -> None:
 
 # The Standard Webhooks specification's own test vector, which the platform's
 # sender is tested against too.
-STD_SECRET = "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw"
+STD_SECRET = "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw"  # gitleaks:allow
 STD_ID = "msg_p5jXN8AQM9LWM0D4loKWxJek"
 STD_T = 1614265330
 STD_BODY = b'{"test": 2432232314}'

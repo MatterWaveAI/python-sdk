@@ -100,7 +100,9 @@ def test_keys_create_sends_only_what_was_passed_and_returns_the_secret_once(
     api, client: MatterWave
 ) -> None:
     route = api.post("/api/keys").respond(
-        201, json=key_body(key="mw_ab12_secret", rpm_limit=30), headers=H
+        201,
+        json=key_body(key="mw_ab12_secret", rpm_limit=30),  # gitleaks:allow
+        headers=H,
     )
     key = client.keys.create(
         "deploy",
@@ -114,8 +116,8 @@ def test_keys_create_sends_only_what_was_passed_and_returns_the_secret_once(
         "expires_at": "2027-01-01T00:00:00+00:00",
         "rpm_limit": 30,
     }
-    assert key.key == "mw_ab12_secret"
-    assert "mw_ab12_secret" not in repr(key)
+    assert key.key == "mw_ab12_secret"  # gitleaks:allow
+    assert "mw_ab12_secret" not in repr(key)  # gitleaks:allow
 
 
 def test_keys_create_refuses_a_naive_expiry_and_both_expiries() -> None:
