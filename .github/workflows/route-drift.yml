@@ -1,0 +1,51 @@
+# Daily: hold a running deployment's routes to this SDK's route table and to
+# the vendored tests/openapi-full.json, and open (or update) an issue when
+# they drift. The pull-request suite already holds the SDK to the vendored
+# document; this is what notices the platform moving on after the pin.
+#
+# Set the repository variable MATTERWAVE_LIVE_OPENAPI_URL to the deployment's
+# /openapi.json; the job is skipped while it is unset. A deployment the
+# hosted runners cannot reach needs a runner that can: name its label in
+# ROUTE_DRIFT_RUNNER, and give that runner the deployment's CA through
+# SSL_CERT_FILE when the certificate is not publicly trusted.
+name: route-drift
+
+on:
+  schedule:
+    - cron: "23 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  live:
+    if: vars.MATTERWAVE_LIVE_OPENAPI_URL != ''
+    runs-on: ${{ vars.ROUTE_DRIFT_RUNNER || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - name: Compare the live routes with the SDK and the pinned document
+        id: check
+        continue-on-error: true
+        shell: bash
+        env:
+          OPENAPI_URL: ${{ vars.MATTERWAVE_LIVE_OPENAPI_URL }}
+        run: uv run python scripts/check_live_routes.py "$OPENAPI_URL" | tee drift.md
+      - name: Open or update the drift issue
+        if: steps.check.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: Route drift between the platform and the Python SDK
+        run: |
+          number=$(gh issue list --state open --search "in:title \"$TITLE\"" --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body-file drift.md
+          else
+            gh issue create --title "$TITLE" --body-file drift.md
+          fi
+          exit 1

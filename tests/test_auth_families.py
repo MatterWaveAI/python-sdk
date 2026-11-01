@@ -96,7 +96,8 @@ def passkey_body(**extra) -> dict:
 
 def test_passkeys_list_carries_the_rp_id_and_the_cap(api, client: MatterWave) -> None:
     route = api.get("/api/me/passkeys").respond(
-        200, json={"passkeys": [passkey_body()], "rp_id": "matterwave.test", "max": 10},
+        200,
+        json={"passkeys": [passkey_body()], "rp_id": "matterwave.test", "max": 10},
         headers=H,
     )
     passkeys = client.passkeys.list()
@@ -106,13 +107,13 @@ def test_passkeys_list_carries_the_rp_id_and_the_cap(api, client: MatterWave) ->
     assert passkeys.rp_id == "matterwave.test" and passkeys.max == 10
 
 
-def test_passkey_start_and_verify(api, client: MatterWave) -> None:
+def test_passkey_registration_start_and_verify(api, client: MatterWave) -> None:
     start = api.post("/api/me/passkeys/start").respond(
         200,
         json={"passkey_id": PASSKEY_ID, "options": {"challenge": "create-challenge"}},
         headers=H,
     )
-    started = client.passkeys.start()
+    started = client.passkeys.start_registration()
     assert sent(start).content == b""
     assert started.passkey_id == PASSKEY_ID
     assert started.options == {"challenge": "create-challenge"}
@@ -120,13 +121,13 @@ def test_passkey_start_and_verify(api, client: MatterWave) -> None:
         201, json=passkey_body(), headers=H
     )
     attestation = {"id": "abc", "rawId": "abc", "response": {}, "type": "public-key"}
-    registered = client.passkeys.verify(PASSKEY_ID, attestation, "  Work   laptop ")
+    registered = client.passkeys.verify_registration(PASSKEY_ID, attestation, "  Work   laptop ")
     assert body_of(verify) == {"credential": attestation, "name": "Work laptop"}
     assert registered.name == "Work laptop"
     with pytest.raises(ValueError, match="name"):
-        client.passkeys.verify(PASSKEY_ID, attestation, "  ")
+        client.passkeys.verify_registration(PASSKEY_ID, attestation, "  ")
     with pytest.raises(ValueError, match="credential"):
-        client.passkeys.verify(PASSKEY_ID, {}, "Work laptop")
+        client.passkeys.verify_registration(PASSKEY_ID, {}, "Work laptop")
     with pytest.raises(ValueError, match="passkey_id"):
         client.passkeys.rename("../keys", "X")
 
@@ -154,23 +155,23 @@ def test_passkey_login_is_anonymous_on_both_halves(api, client: MatterWave) -> N
         json={"challenge": "sealed-opaque", "options": {"challenge": "get-challenge"}},
         headers=H,
     )
-    started = client.passkeys.login_start("Ada@Example.test", "req-123")
+    started = client.passkeys.start_login("Ada@Example.test", "req-123")
     request = sent(start)
     assert "authorization" not in request.headers
     assert body_of(start) == {"email": "ada@example.test", "auth_request": "req-123"}
     assert started.challenge == "sealed-opaque"
     with pytest.raises(ValueError, match="email"):
-        client.passkeys.login_start("nope", "req-123")
+        client.passkeys.start_login("nope", "req-123")
     finish = api.post("/api/auth/passkey/finish").respond(
         200, json={"redirect": "/api/auth/callback?x=1"}, headers=H
     )
     assertion = {"id": "abc", "rawId": "abc", "response": {}, "type": "public-key"}
-    finished = client.passkeys.login_finish("sealed-opaque", assertion)
+    finished = client.passkeys.finish_login("sealed-opaque", assertion)
     assert "authorization" not in sent(finish).headers
     assert body_of(finish) == {"challenge": "sealed-opaque", "credential": assertion}
     assert finished.redirect.startswith("/api/auth/callback")
     with pytest.raises(ValueError, match="challenge"):
-        client.passkeys.login_finish("", assertion)
+        client.passkeys.finish_login("", assertion)
 
 
 # --- MFA ------------------------------------------------------------------------------
@@ -199,7 +200,7 @@ def test_mfa_enrol_round_trip_shows_the_codes_once(api, client: MatterWave) -> N
         },
         headers=H,
     )
-    enrolment = client.mfa.totp_start()
+    enrolment = client.mfa.start_totp()
     assert sent(start).content == b""
     assert enrolment.secret == "JBSWY3DPEHPK3PXP"
     assert "JBSWY3DPEHPK3PXP" not in repr(enrolment)
@@ -213,12 +214,12 @@ def test_mfa_enrol_round_trip_shows_the_codes_once(api, client: MatterWave) -> N
         },
         headers=H,
     )
-    confirmed = client.mfa.totp_confirm(" 123 456 ")
+    confirmed = client.mfa.confirm_totp(" 123 456 ")
     assert body_of(confirm) == {"code": "123456"}
     assert confirmed.recovery_codes == ["1111-2222", "3333-4444"]
     assert "1111-2222" not in repr(confirmed)  # shown once, kept out of reprs
     with pytest.raises(ValueError, match="six digits"):
-        client.mfa.totp_confirm("12ab56")
+        client.mfa.confirm_totp("12ab56")
 
 
 def test_mfa_remove_needs_a_proof(api, client: MatterWave) -> None:
@@ -228,12 +229,12 @@ def test_mfa_remove_needs_a_proof(api, client: MatterWave) -> None:
         )
     )
     with pytest.raises(ValueError, match="prove it"):
-        client.mfa.totp_remove()
+        client.mfa.remove_totp()
     assert route.call_count == 0
-    removed = client.mfa.totp_remove(code="123456")
+    removed = client.mfa.remove_totp(code="123456")
     assert body_of(route) == {"code": "123456"}
     assert removed.totp_enrolled is False
-    by_recovery = client.mfa.totp_remove(recovery_code="1111-2222")
+    by_recovery = client.mfa.remove_totp(recovery_code="1111-2222")
     assert body_of(route) == {"recovery_code": "1111-2222"}
     assert by_recovery.recovery_codes_left == 0
     # An org that requires one refuses the removal outright.
@@ -248,21 +249,74 @@ def test_mfa_remove_needs_a_proof(api, client: MatterWave) -> None:
     from matterwave_sdk import ConflictError
 
     with pytest.raises(ConflictError, match="requires an authenticator"):
-        client.mfa.totp_remove(code="123456")
+        client.mfa.remove_totp(code="123456")
 
 
-def test_mfa_recovery_reissue(api, client: MatterWave) -> None:
+def test_mfa_reissue_recovery_codes(api, client: MatterWave) -> None:
     route = api.post("/api/me/mfa/recovery-codes").respond(
         200,
         json={"recovery_codes": ["5555-6666"], "recovery_codes_left": 1},
         headers=H,
     )
-    reissued = client.mfa.recovery_reissue("654321")
+    reissued = client.mfa.reissue_recovery_codes("654321")
     assert body_of(route) == {"code": "654321"}
     assert reissued.recovery_codes == ["5555-6666"]
     assert reissued.totp_enrolled is None  # the route sends no such field here
     with pytest.raises(ValueError, match="six digits"):
-        client.mfa.recovery_reissue("1")
+        client.mfa.reissue_recovery_codes("1")
+
+
+def test_mfa_sign_in_code_step_is_anonymous(api, client: MatterWave) -> None:
+    route = api.post("/api/auth/mfa").respond(
+        200, json={"redirect": "/api/auth/callback?code=1"}, headers=H
+    )
+    verified = client.mfa.verify_login("sealed-01", code=" 123 456 ")
+    assert "authorization" not in sent(route).headers
+    assert body_of(route) == {"challenge": "sealed-01", "code": "123456"}
+    assert verified.redirect.startswith("/api/auth/callback")
+    assert verified.recovery_codes_left is None
+    api.post("/api/auth/mfa").respond(
+        200, json={"redirect": "/api/auth/callback?code=2", "recovery_codes_left": 4}, headers=H
+    )
+    by_recovery = client.mfa.verify_login("sealed-01", recovery_code="1111-2222")
+    assert body_of(route) == {"challenge": "sealed-01", "recovery_code": "1111-2222"}
+    assert by_recovery.recovery_codes_left == 4
+
+
+def test_mfa_sign_in_enrolment_runs_through_the_sealed_challenge(api, client: MatterWave) -> None:
+    start = api.post("/api/auth/mfa/enrol/start").respond(
+        200,
+        json={"secret": "JBSW", "uri": "otpauth://x", "qr_svg": "data:image/svg+xml;base64,y"},
+        headers=H,
+    )
+    started = client.mfa.start_login_enrolment("sealed-01")
+    assert "authorization" not in sent(start).headers
+    assert body_of(start) == {"challenge": "sealed-01"}
+    assert started.secret == "JBSW"
+    confirm = api.post("/api/auth/mfa/enrol/confirm").respond(
+        200, json={"recovery_codes": ["1256-8831"], "challenge": "sealed-02"}, headers=H
+    )
+    confirmed = client.mfa.confirm_login_enrolment("sealed-01", "123456")
+    assert "authorization" not in sent(confirm).headers
+    assert body_of(confirm) == {"challenge": "sealed-01", "code": "123456"}
+    assert confirmed.challenge == "sealed-02"
+    assert confirmed.recovery_codes == ["1256-8831"]
+    assert "1256-8831" not in repr(confirmed) and "sealed-02" not in repr(confirmed)
+
+
+def test_mfa_sign_in_shapes_are_checked_before_sending(api, client: MatterWave) -> None:
+    route = api.post("/api/auth/mfa").respond(200, json={"redirect": "/"}, headers=H)
+    with pytest.raises(ValueError, match="challenge"):
+        client.mfa.verify_login("", code="123456")
+    with pytest.raises(ValueError, match="prove it"):
+        client.mfa.verify_login("sealed-01")
+    with pytest.raises(ValueError, match="six digits"):
+        client.mfa.verify_login("sealed-01", code="1234567")
+    with pytest.raises(ValueError, match="challenge"):
+        client.mfa.start_login_enrolment("")
+    with pytest.raises(ValueError, match="six digits"):
+        client.mfa.confirm_login_enrolment("sealed-01", "12ab56")
+    assert route.call_count == 0
 
 
 # --- account switching --------------------------------------------------------------------
@@ -286,8 +340,7 @@ def test_accounts_list_offers_the_parked_ones(api, client: MatterWave) -> None:
         json={
             "accounts": [
                 account_body(),
-                account_body(slot=1, current=False, subject="user-0002",
-                             email="bob@example.test"),
+                account_body(slot=1, current=False, subject="user-0002", email="bob@example.test"),
             ],
             "max": 4,
             "room": True,
@@ -309,9 +362,7 @@ def test_accounts_switch_logout_and_logout_all(api, client: MatterWave) -> None:
     assert switched.subject == "user-0002"
     with pytest.raises(ValueError, match="slot"):
         client.accounts.switch(0)  # slot 0 is already acting
-    logout = api.post(f"/api/accounts/{SLOT}/logout").respond(
-        200, json={"status": "ok"}
-    )
+    logout = api.post(f"/api/accounts/{SLOT}/logout").respond(200, json={"status": "ok"})
     assert client.accounts.logout(SLOT).status == "ok"
     assert sent(logout).url.path == f"/api/accounts/{SLOT}/logout"
     logout_all = api.post("/api/accounts/logout-all").respond(
@@ -326,9 +377,7 @@ def test_accounts_switch_logout_and_logout_all(api, client: MatterWave) -> None:
 # --- speech ---------------------------------------------------------------------------------
 
 
-def test_speech_transcribe_posts_multipart_with_the_language_hint(
-    api, client: MatterWave
-) -> None:
+def test_speech_transcribe_posts_multipart_with_the_language_hint(api, client: MatterWave) -> None:
     route = api.post("/api/speech/transcribe").respond(
         200, json={"text": "Hello from the dictation test."}, headers=H
     )
@@ -343,12 +392,8 @@ def test_speech_transcribe_posts_multipart_with_the_language_hint(
     assert result.request_id == REQUEST_ID
 
 
-def test_speech_refuses_unknown_media_and_bad_language_here(
-    api, client: MatterWave
-) -> None:
-    route = api.post("/api/speech/transcribe").respond(
-        200, json={"text": "unreachable"}, headers=H
-    )
+def test_speech_refuses_unknown_media_and_bad_language_here(api, client: MatterWave) -> None:
+    route = api.post("/api/speech/transcribe").respond(200, json={"text": "unreachable"}, headers=H)
     with pytest.raises(ValueError, match="content_type"):
         client.speech.transcribe(b"x", "clip.txt", content_type="text/plain")
     with pytest.raises(ValueError, match="language"):
@@ -364,15 +409,14 @@ async def test_async_auth_families_make_the_same_requests(
     api, async_client: AsyncMatterWave
 ) -> None:
     api.get("/api/me/passkeys").respond(
-        200, json={"passkeys": [passkey_body()], "rp_id": "matterwave.test", "max": 10},
+        200,
+        json={"passkeys": [passkey_body()], "rp_id": "matterwave.test", "max": 10},
         headers=H,
     )
     api.post("/api/me/passkeys/start").respond(
         200, json={"passkey_id": PASSKEY_ID, "options": {}}, headers=H
     )
-    api.post(f"/api/me/passkeys/{PASSKEY_ID}/verify").respond(
-        201, json=passkey_body(), headers=H
-    )
+    api.post(f"/api/me/passkeys/{PASSKEY_ID}/verify").respond(201, json=passkey_body(), headers=H)
     api.patch(f"/api/me/passkeys/{PASSKEY_ID}").respond(
         200, json=passkey_body(name="Renamed"), headers=H
     )
@@ -384,15 +428,18 @@ async def test_async_auth_families_make_the_same_requests(
         200, json={"redirect": "/api/auth/callback"}, headers=H
     )
     api.get("/api/me/mfa").respond(
-        200, json={"totp_enrolled": False, "recovery_codes_left": 0,
-                   "org_requires_mfa": True}, headers=H,
+        200,
+        json={"totp_enrolled": False, "recovery_codes_left": 0, "org_requires_mfa": True},
+        headers=H,
     )
     api.post("/api/me/mfa/totp/start").respond(
-        200, json={"secret": "S", "uri": "otpauth://x", "qr_svg": "data:image/svg+xml;base64,x"},
+        200,
+        json={"secret": "S", "uri": "otpauth://x", "qr_svg": "data:image/svg+xml;base64,x"},
         headers=H,
     )
     api.post("/api/me/mfa/totp/confirm").respond(
-        200, json={"totp_enrolled": True, "recovery_codes": ["1-2"], "recovery_codes_left": 1},
+        200,
+        json={"totp_enrolled": True, "recovery_codes": ["1-2"], "recovery_codes_left": 1},
         headers=H,
     )
     api.delete("/api/me/mfa/totp").respond(
@@ -400,6 +447,15 @@ async def test_async_auth_families_make_the_same_requests(
     )
     api.post("/api/me/mfa/recovery-codes").respond(
         200, json={"recovery_codes": ["3-4"], "recovery_codes_left": 1}, headers=H
+    )
+    api.post("/api/auth/mfa").respond(200, json={"redirect": "/api/auth/callback"}, headers=H)
+    api.post("/api/auth/mfa/enrol/start").respond(
+        200,
+        json={"secret": "S", "uri": "otpauth://y", "qr_svg": "data:image/svg+xml;base64,y"},
+        headers=H,
+    )
+    api.post("/api/auth/mfa/enrol/confirm").respond(
+        200, json={"recovery_codes": ["5-6"], "challenge": "sealed-2"}, headers=H
     )
     api.get("/api/accounts").respond(
         200, json={"accounts": [account_body()], "max": 4, "room": False}
@@ -409,26 +465,30 @@ async def test_async_auth_families_make_the_same_requests(
     )
     api.post(f"/api/accounts/{SLOT}/logout").respond(200, json={"status": "ok"})
     api.post("/api/accounts/logout-all").respond(200, json={"status": "ok"})
-    api.post("/api/speech/transcribe").respond(
-        200, json={"text": "words"}, headers=H
-    )
+    api.post("/api/speech/transcribe").respond(200, json={"text": "words"}, headers=H)
     async with async_client as c:
         assert len(await c.passkeys.list()) == 1
-        assert (await c.passkeys.start()).passkey_id == PASSKEY_ID
+        assert (await c.passkeys.start_registration()).passkey_id == PASSKEY_ID
         assert (
-            await c.passkeys.verify(PASSKEY_ID, {"id": "a", "type": "public-key"}, "Key")
+            await c.passkeys.verify_registration(
+                PASSKEY_ID, {"id": "a", "type": "public-key"}, "Key"
+            )
         ).name == "Work laptop"
         assert (await c.passkeys.rename(PASSKEY_ID, "Renamed")).name == "Renamed"
         assert await c.passkeys.remove(PASSKEY_ID) is None
-        assert (await c.passkeys.login_start("a@x.test", "r")).challenge == "sealed"
-        assert (await c.passkeys.login_finish("sealed", {"id": "a"})).redirect
+        assert (await c.passkeys.start_login("a@x.test", "r")).challenge == "sealed"
+        assert (await c.passkeys.finish_login("sealed", {"id": "a"})).redirect
         state = await c.mfa.state()
         assert state.org_requires_mfa is True and state.totp_enrolled is False
-        assert (await c.mfa.totp_start()).uri.startswith("otpauth://")
-        confirmed = await c.mfa.totp_confirm("123456")
+        assert (await c.mfa.start_totp()).uri.startswith("otpauth://")
+        confirmed = await c.mfa.confirm_totp("123456")
         assert confirmed.recovery_codes == ["1-2"]
-        assert (await c.mfa.totp_remove(code="123456")).totp_enrolled is False
-        assert (await c.mfa.recovery_reissue("123456")).recovery_codes == ["3-4"]
+        assert (await c.mfa.remove_totp(code="123456")).totp_enrolled is False
+        assert (await c.mfa.reissue_recovery_codes("123456")).recovery_codes == ["3-4"]
+        assert (await c.mfa.verify_login("sealed", code="123456")).redirect
+        assert (await c.mfa.start_login_enrolment("sealed")).uri == "otpauth://y"
+        enrolled = await c.mfa.confirm_login_enrolment("sealed", "123456")
+        assert enrolled.challenge == "sealed-2"
         accounts = await c.accounts.list()
         assert accounts.room is False and len(accounts) == 1
         assert (await c.accounts.switch(SLOT)).email == "b@x.test"

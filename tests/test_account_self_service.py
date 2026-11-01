@@ -1,7 +1,8 @@
-"""The account self-service resource (`client.account`) against the fake
-API: the writes the Account and Preferences panes make. Each test answers
-with the body the route in api/matterwave sends and checks the request the
-client made (method, path, body) and what it parsed out of the answer.
+"""The account self-service routes (`client.account`, `client.sessions`,
+`client.preferences`) against the fake API: the writes the Account and
+Preferences panes make. Each test answers with the body the route in
+api/matterwave sends and checks the request the client made (method, path,
+body) and what it parsed out of the answer.
 """
 
 from __future__ import annotations
@@ -82,23 +83,10 @@ def test_every_account_operation_is_a_route_the_api_declares() -> None:
         assert (method, path) in routes, f"{key}: {method} {path} is not an API route"
 
 
-# --- rename, terms, onboarding -------------------------------------------------
+# --- terms, onboarding ---------------------------------------------------------
 
 
-def test_rename_collapses_whitespace_and_sends_full_name(api, client: MatterWave) -> None:
-    route = api.patch("/api/me").respond(200, json={"name": "Ada Lovelace"}, headers=H)
-    renamed = client.account.rename("  Ada   Lovelace ")
-    assert body_of(route) == {"full_name": "Ada Lovelace"}
-    assert renamed.name == "Ada Lovelace"
-    assert renamed.request_id == REQUEST_ID
-    with pytest.raises(ValueError, match="empty"):
-        client.account.rename("   ")
-    assert route.call_count == 1
-
-
-def test_accept_terms_sends_the_version_and_parses_the_receipt(
-    api, client: MatterWave
-) -> None:
+def test_accept_terms_sends_the_version_and_parses_the_receipt(api, client: MatterWave) -> None:
     route = api.post("/api/me/accept-terms").respond(
         200,
         json={
@@ -121,15 +109,13 @@ def test_accept_terms_sends_the_version_and_parses_the_receipt(
         client.account.accept_terms("")
 
 
-def test_onboarding_complete_is_idempotent_from_the_callers_side(
-    api, client: MatterWave
-) -> None:
+def test_complete_onboarding_is_idempotent_from_the_callers_side(api, client: MatterWave) -> None:
     route = api.post("/api/me/onboarding/complete").respond(
         200,
         json={"onboarding_completed": True, "completed_at": "2026-10-31T09:00:00+00:00"},
         headers=H,
     )
-    done = client.account.onboarding_complete()
+    done = client.account.complete_onboarding()
     assert sent(route).content == b""
     assert done.onboarding_completed and done.completed_at.endswith("+00:00")
 
@@ -137,9 +123,7 @@ def test_onboarding_complete_is_idempotent_from_the_callers_side(
 # --- password --------------------------------------------------------------------
 
 
-def test_change_password_sends_both_and_reports_the_revocations(
-    api, client: MatterWave
-) -> None:
+def test_change_password_sends_both_and_reports_the_revocations(api, client: MatterWave) -> None:
     route = api.post("/api/me/password").respond(
         200, json={"status": "changed", "revoked": 3}, headers=H
     )
@@ -164,9 +148,7 @@ def test_change_password_bounds_are_checked_here(api, client: MatterWave) -> Non
     assert route.call_count == 0
 
 
-def test_change_password_refusals_arrive_as_their_statuses(
-    api, client: MatterWave
-) -> None:
+def test_change_password_refusals_arrive_as_their_statuses(api, client: MatterWave) -> None:
     # A session only: an API key is refused before anything is checked.
     api.post("/api/me/password").respond(
         403,
@@ -196,7 +178,8 @@ def test_email_change_start_verifies_the_address_shape_and_mails_a_code(
     api, client: MatterWave
 ) -> None:
     route = api.post("/api/me/email").respond(
-        200, json={"status": "code_sent", "new_email": "ada@example.test", "mail_sent": True},
+        200,
+        json={"status": "code_sent", "new_email": "ada@example.test", "mail_sent": True},
         headers=H,
     )
     started = client.account.start_email_change("Ada@Example.test", "current-passphrase")
@@ -223,13 +206,10 @@ def test_email_change_refusals_keep_their_codes(api, client: MatterWave) -> None
         client.account.start_email_change("ada@example.test", "current-passphrase")
 
 
-def test_email_verify_moves_the_address_and_reports_the_aftermath(
-    api, client: MatterWave
-) -> None:
+def test_email_verify_moves_the_address_and_reports_the_aftermath(api, client: MatterWave) -> None:
     route = api.post("/api/me/email/verify").respond(
         200,
-        json={"status": "changed", "email": "ada@example.test", "revoked": 2,
-              "notice_sent": True},
+        json={"status": "changed", "email": "ada@example.test", "revoked": 2, "notice_sent": True},
         headers=H,
     )
     changed = client.account.verify_email_change(" 123456 ")
@@ -242,7 +222,7 @@ def test_email_cancel_and_state_round_trip(api, client: MatterWave) -> None:
     state = api.get("/api/me/email").respond(
         200, json={"email": "ada@example.test", "pending_email": "new@example.test"}, headers=H
     )
-    current = client.account.email_state()
+    current = client.account.email_change_state()
     assert sent(state).method == "GET"
     assert current.pending_email == "new@example.test"
     cancel = api.post("/api/me/email/cancel").respond(
@@ -252,10 +232,11 @@ def test_email_cancel_and_state_round_trip(api, client: MatterWave) -> None:
     assert sent(cancel).content == b""
     assert cancelled.status == "cancelled"
     resend = api.post("/api/me/email/resend").respond(
-        200, json={"status": "code_sent", "new_email": "new@example.test", "mail_sent": False},
+        200,
+        json={"status": "code_sent", "new_email": "new@example.test", "mail_sent": False},
         headers=H,
     )
-    client.account.resend_email_change_code()
+    client.account.resend_email_change()
     assert resend.called
 
 
@@ -286,37 +267,33 @@ def test_sessions_list_flags_the_current_one(api, client: MatterWave) -> None:
         },
         headers=H,
     )
-    sessions = client.account.sessions()
+    sessions = client.sessions.list()
     assert sent(route).headers["authorization"] == f"Bearer {API_KEY}"
     assert sessions.current_id == SESSION_ID
     assert len(sessions) == 2
-    assert sessions.data[0].current and sessions.data[1].ip is None
+    assert sessions.sessions[0].current and sessions.sessions[1].ip is None
 
 
-def test_revoke_session_answers_whether_it_was_the_callers_own(
-    api, client: MatterWave
-) -> None:
+def test_revoke_session_answers_whether_it_was_the_callers_own(api, client: MatterWave) -> None:
     route = api.delete(f"/api/me/sessions/{SESSION_ID}").respond(
         200, json={"status": "revoked", "current": True}, headers=H
     )
-    revoked = client.account.revoke_session(SESSION_ID)
+    revoked = client.sessions.revoke(SESSION_ID)
     assert revoked.current  # "sign out"
     assert route.called
     with pytest.raises(ValueError, match="session_id"):
-        client.account.revoke_session("../keys")
+        client.sessions.revoke("../keys")
     # Another person's id -- or one already gone -- is the same 404.
     api.delete("/api/me/sessions/sess-0002").respond(
         404, json={"detail": "No such session."}, headers=H
     )
     with pytest.raises(NotFoundError):
-        client.account.revoke_session("sess-0002")
+        client.sessions.revoke("sess-0002")
 
 
-def test_logout_others_counts_what_it_ended(api, client: MatterWave) -> None:
-    route = api.post("/api/me/sessions/revoke-others").respond(
-        200, json={"revoked": 4}, headers=H
-    )
-    assert client.account.logout_others().revoked == 4
+def test_revoke_others_counts_what_it_ended(api, client: MatterWave) -> None:
+    route = api.post("/api/me/sessions/revoke-others").respond(200, json={"revoked": 4}, headers=H)
+    assert client.sessions.revoke_others().revoked == 4
     assert sent(route).content == b""
 
 
@@ -332,32 +309,25 @@ PREFERENCES = {
 
 def test_preferences_read(api, client: MatterWave) -> None:
     route = api.get("/api/me/preferences").respond(200, json=PREFERENCES, headers=H)
-    prefs = client.account.preferences()
+    prefs = client.preferences.get()
     assert prefs.locale == "en-GB"
     assert prefs.email.usage_alerts and prefs.email.billing_receipts
     assert prefs.notifications.budget_warn is False
     assert route.called
 
 
-def test_preferences_update_always_sends_the_whole_shape(api, client: MatterWave) -> None:
+def test_preferences_update_keeps_what_it_was_not_given(api, client: MatterWave) -> None:
+    api.get("/api/me/preferences").respond(200, json=PREFERENCES, headers=H)
     saved_body = {
         **PREFERENCES,
         "email": {**PREFERENCES["email"], "product_updates": True},
     }
     route = api.put("/api/me/preferences").respond(200, json=saved_body, headers=H)
-    saved = client.account.update_preferences(
-        email={"product_updates": True}, notifications={"budget_warn": False}, locale="en-GB"
-    )
-    assert body_of(route) == {
-        "email": {"product_updates": True},
-        "notifications": {"budget_warn": False},
-        "locale": "en-GB",
-    }
+    saved = client.preferences.update(product_updates=True)
+    assert body_of(route) == saved_body
     assert saved.email.product_updates is True
-    # A group left out is the defaults, not "leave it alone" -- the route
-    # replaces the shape.
-    client.account.update_preferences(locale=None)
-    assert body_of(route) == {"email": {}, "notifications": {}, "locale": None}
+    client.preferences.update(locale=None)
+    assert body_of(route) == {**PREFERENCES, "locale": None}
     # An unknown locale is the server's 422, by its own validator.
     api.put("/api/me/preferences").respond(
         422,
@@ -365,7 +335,7 @@ def test_preferences_update_always_sends_the_whole_shape(api, client: MatterWave
         headers=H,
     )
     with pytest.raises(UnprocessableEntityError):
-        client.account.update_preferences(locale="not a locale")
+        client.preferences.update(locale="not a locale")
 
 
 # --- the account deletion ------------------------------------------------------------------
@@ -384,13 +354,13 @@ DELETION = {
 
 
 def test_delete_requires_the_phrase_before_anything_is_sent(api, client: MatterWave) -> None:
-    route = api.delete("/api/me").mock(
-        return_value=httpx.Response(200, json=DELETION, headers=H)
-    )
+    route = api.delete("/api/me").mock(return_value=httpx.Response(200, json=DELETION, headers=H))
     with pytest.raises(ValueError, match="delete my account"):
-        client.account.delete("yes")
+        client.account.delete(confirm="yes")
+    with pytest.raises(TypeError):
+        client.account.delete()  # type: ignore[call-arg]
     assert route.call_count == 0
-    deleted = client.account.delete()
+    deleted = client.account.delete(confirm="delete my account")
     assert body_of(route) == {"confirm": "delete my account"}
     assert deleted.status == "deleted"
     assert deleted.conversations_deleted == 12
@@ -398,14 +368,13 @@ def test_delete_requires_the_phrase_before_anything_is_sent(api, client: MatterW
     assert deleted.deletion_request_id == "del-0001"
 
 
-def test_delete_reports_a_login_the_provider_did_not_retire(
-    api, client: MatterWave
-) -> None:
+def test_delete_reports_a_login_the_provider_did_not_retire(api, client: MatterWave) -> None:
     api.delete("/api/me").respond(
-        200, json={**DELETION, "identity_removed": False, "deletion_request_id": "del-0002"},
+        200,
+        json={**DELETION, "identity_removed": False, "deletion_request_id": "del-0002"},
         headers=H,
     )
-    deleted = client.account.delete()
+    deleted = client.account.delete(confirm="delete my account")
     assert deleted.identity_removed is False
     # The last owner of an org with members is refused before anything goes.
     api.delete("/api/me").respond(
@@ -414,7 +383,7 @@ def test_delete_reports_a_login_the_provider_did_not_retire(
         headers=H,
     )
     with pytest.raises(Exception, match="ownership|close the organisation"):
-        client.account.delete()
+        client.account.delete(confirm="delete my account")
 
 
 # --- async --------------------------------------------------------------------------------
@@ -422,21 +391,22 @@ def test_delete_reports_a_login_the_provider_did_not_retire(
 
 @pytest.mark.asyncio
 async def test_async_account_makes_the_same_requests(api, async_client: AsyncMatterWave) -> None:
-    api.patch("/api/me").respond(200, json={"name": "Ada"}, headers=H)
     api.post("/api/me/accept-terms").respond(
         200,
         json={"terms_version": "2026-10", "terms_accepted_at": None, "terms_current": True},
         headers=H,
     )
     api.post("/api/me/password").respond(200, json={"status": "changed", "revoked": 1}, headers=H)
-    api.get("/api/me/email").respond(200, json={"email": "a@x.test", "pending_email": None},
-                                     headers=H)
+    api.get("/api/me/email").respond(
+        200, json={"email": "a@x.test", "pending_email": None}, headers=H
+    )
     api.post("/api/me/email").respond(
         200, json={"status": "code_sent", "new_email": "b@x.test", "mail_sent": True}, headers=H
     )
     api.post("/api/me/email/verify").respond(
-        200, json={"status": "changed", "email": "b@x.test", "revoked": 0,
-                   "notice_sent": False}, headers=H,
+        200,
+        json={"status": "changed", "email": "b@x.test", "revoked": 0, "notice_sent": False},
+        headers=H,
     )
     api.post("/api/me/email/cancel").respond(
         200, json={"status": "cancelled", "email": "a@x.test"}, headers=H
@@ -458,25 +428,24 @@ async def test_async_account_makes_the_same_requests(api, async_client: AsyncMat
         headers=H,
     )
     api.post("/api/me/onboarding/complete").respond(
-        200, json={"onboarding_completed": True, "completed_at": "2026-10-31T09:00:00+00:00"},
+        200,
+        json={"onboarding_completed": True, "completed_at": "2026-10-31T09:00:00+00:00"},
         headers=H,
     )
     api.delete("/api/me").respond(200, json=DELETION, headers=H)
     async with async_client as c:
-        assert (await c.account.rename("Ada")).name == "Ada"
         assert (await c.account.accept_terms("2026-10")).terms_current
         assert (await c.account.change_password("cur", "a better twelve+")).revoked == 1
-        assert (await c.account.email_state()).email == "a@x.test"
+        assert (await c.account.email_change_state()).email == "a@x.test"
         assert (await c.account.start_email_change("b@x.test", "cur")).status == "code_sent"
         assert (await c.account.verify_email_change("123456")).email == "b@x.test"
         assert (await c.account.cancel_email_change()).status == "cancelled"
-        assert (await c.account.resend_email_change_code()).status == "code_sent"
-        assert len(await c.account.sessions()) == 1
-        assert (await c.account.revoke_session(SESSION_ID)).current is False
-        assert (await c.account.logout_others()).revoked == 2
-        assert (await c.account.preferences()).locale == "en-GB"
-        assert (
-            await c.account.update_preferences(email={"product_updates": True})
-        ).email.product_updates is True
-        assert (await c.account.onboarding_complete()).onboarding_completed
-        assert (await c.account.delete()).conversations_deleted == 12
+        assert (await c.account.resend_email_change()).status == "code_sent"
+        assert len(await c.sessions.list()) == 1
+        assert (await c.sessions.revoke(SESSION_ID)).current is False
+        assert (await c.sessions.revoke_others()).revoked == 2
+        assert (await c.preferences.get()).locale == "en-GB"
+        assert (await c.preferences.update(product_updates=True)).email.product_updates is True
+        assert (await c.account.complete_onboarding()).onboarding_completed
+        deleted = await c.account.delete(confirm="delete my account")
+        assert deleted.conversations_deleted == 12

@@ -693,8 +693,7 @@ def update_admin_announcement_request(
         body["end_now"] = True
     if not body:
         raise ValueError(
-            "update needs one of message, severity, link, starts_at, ends_at, dismissible, "
-            "end_now"
+            "update needs one of message, severity, link, starts_at, ends_at, dismissible, end_now"
         )
     return Request(
         "PATCH", _admin_announcement_path(announcement_id), body, keyed=True, stream=False
@@ -716,7 +715,7 @@ def entitlements_request() -> Request:
     return Request("GET", "/api/entitlements", None, keyed=True, stream=False)
 
 
-# --- account self-service ---------------------------------------------------------
+# --- the account: password, email, deletion, onboarding --------------------------
 
 
 DELETE_ACCOUNT_PHRASE = "delete my account"
@@ -726,44 +725,7 @@ reachable by a bare delete, whatever the client is."""
 
 PASSWORD_MIN_LENGTH = 12
 PASSWORD_MAX_LENGTH = 256
-NAME_MAX_LENGTH = 120
 EMAIL_MAX_LENGTH = 254
-TERMS_VERSION_MAX_LENGTH = 32
-
-SPEECH_AUDIO_TYPES = (
-    "audio/webm",
-    "audio/ogg",
-    "audio/mp4",
-    "audio/mpeg",
-    "audio/mp3",
-    "audio/wav",
-    "audio/x-wav",
-    "audio/wave",
-    "audio/flac",
-    "audio/x-m4a",
-    "audio/m4a",
-    "audio/aac",
-    "video/webm",
-    "video/mp4",
-)
-
-
-def rename_account_request(name: str) -> Request:
-    """The Account pane's rename. The server collapses whitespace and
-    bounds the result; the shape is checked here so a name of only spaces
-    is refused before the request is spent."""
-    value = " ".join(name.split())
-    if not value:
-        raise ValueError("a name must not be empty")
-    if len(value) > NAME_MAX_LENGTH:
-        raise ValueError(f"a name must be at most {NAME_MAX_LENGTH} characters")
-    return Request("PATCH", "/api/me", {"full_name": value}, keyed=True, stream=False)
-
-
-def accept_terms_request(version: str) -> Request:
-    if not version or len(version) > TERMS_VERSION_MAX_LENGTH:
-        raise ValueError(f"version must be 1 to {TERMS_VERSION_MAX_LENGTH} characters")
-    return Request("POST", "/api/me/accept-terms", {"version": version}, keyed=True, stream=False)
 
 
 def _password(value: str, name: str) -> str:
@@ -832,46 +794,6 @@ def resend_email_change_request() -> Request:
     return Request("POST", "/api/me/email/resend", None, keyed=True, stream=False)
 
 
-def list_sessions_request() -> Request:
-    return Request("GET", "/api/me/sessions", None, keyed=True, stream=False)
-
-
-def revoke_session_request(session_id: str) -> Request:
-    path = f"/api/me/sessions/{_segment('session_id', session_id)}"
-    return Request("DELETE", path, None, keyed=True, stream=False)
-
-
-def logout_others_request() -> Request:
-    return Request("POST", "/api/me/sessions/revoke-others", None, keyed=True, stream=False)
-
-
-def get_preferences_request() -> Request:
-    return Request("GET", "/api/me/preferences", None, keyed=True, stream=False)
-
-
-def put_preferences_request(
-    *,
-    email: Mapping[str, Any] | None,
-    notifications: Mapping[str, Any] | None,
-    locale: str | None,
-) -> Request:
-    """The whole shape, always: the route replaces it, so a group left out
-    is sent as its default rather than left alone. The server validates the
-    result (an unknown locale is its 422); `billing_receipts` is
-    transactional mail and may not be turned off."""
-    return Request(
-        "PUT",
-        "/api/me/preferences",
-        {
-            "email": dict(email or {}),
-            "notifications": dict(notifications or {}),
-            "locale": locale,
-        },
-        keyed=True,
-        stream=False,
-    )
-
-
 def delete_account_request(confirm: str) -> Request:
     """The typed confirmation, enforced here as well as in the route: the
     phrase, compared the way the server compares it."""
@@ -880,373 +802,8 @@ def delete_account_request(confirm: str) -> Request:
     return Request("DELETE", "/api/me", {"confirm": confirm}, keyed=True, stream=False)
 
 
-def onboarding_complete_request() -> Request:
+def complete_onboarding_request() -> Request:
     return Request("POST", "/api/me/onboarding/complete", None, keyed=True, stream=False)
-
-
-# --- export and import jobs --------------------------------------------------------
-
-
-def start_export_request() -> Request:
-    return Request("POST", "/api/me/export", None, keyed=True, stream=False)
-
-
-def _export_path(export_id: str, suffix: str = "") -> str:
-    return f"/api/me/export/{_segment('export_id', export_id)}{suffix}"
-
-
-def export_status_request(export_id: str) -> Request:
-    return Request("GET", _export_path(export_id), None, keyed=True, stream=False)
-
-
-def export_download_request(download_url: str) -> Request:
-    """The signed path an export's `download_url` carries, fetched with the
-    key: the signature and the caller are both wanted, so a forwarded link
-    is useless to anyone not signed in as the owner."""
-    parts = urlsplit(download_url)
-    segments = parts.path.strip("/").split("/")
-    if len(segments) != 5 or segments[:3] != ["api", "me", "export"] or segments[4] != "download":
-        raise ValueError(f"not an export download URL: {download_url!r}")
-    return Request(
-        "GET",
-        _export_path(segments[3], "/download"),
-        None,
-        keyed=True,
-        stream=False,
-        headers={"Accept": "*/*"},
-        params=dict(parse_qsl(parts.query)),
-    )
-
-
-def start_import_request(file: bytes | IO[bytes], filename: str) -> Request:
-    """The whole file, read here so a retried upload sends the same bytes
-    again. The server decides ChatGPT from Claude from the contents; it
-    refuses an export it cannot read with a 422."""
-    if not filename:
-        raise ValueError("filename must be non-empty")
-    data = file if isinstance(file, bytes) else file.read()
-    return Request(
-        "POST",
-        "/api/me/imports",
-        None,
-        keyed=True,
-        stream=False,
-        files={"file": (filename, data, "application/octet-stream")},
-    )
-
-
-def list_imports_request() -> Request:
-    return Request("GET", "/api/me/imports", None, keyed=True, stream=False)
-
-
-def import_status_request(import_id: str) -> Request:
-    path = f"/api/me/imports/{_segment('import_id', import_id)}"
-    return Request("GET", path, None, keyed=True, stream=False)
-
-
-# --- members, invites, invite links, join -------------------------------------------
-
-
-ORG_ROLES = ("owner", "admin", "member", "viewer")
-LINK_MAX_USES = 500
-LINK_MAX_DAYS = 30
-
-
-def _role(role: str) -> str:
-    if role not in ORG_ROLES:
-        raise ValueError(f"role must be one of {', '.join(ORG_ROLES)}, got {role!r}")
-    return role
-
-
-def _member_path(subject: str, suffix: str = "") -> str:
-    return f"/api/org/members/{_segment('subject', subject)}{suffix}"
-
-
-def list_members_request() -> Request:
-    return Request("GET", "/api/org/members", None, keyed=True, stream=False)
-
-
-def set_member_role_request(subject: str, role: str) -> Request:
-    return Request(
-        "PUT", _member_path(subject, "/role"), {"role": _role(role)}, keyed=True, stream=False
-    )
-
-
-def transfer_ownership_request(subject: str) -> Request:
-    return Request(
-        "POST", _member_path(subject, "/transfer-ownership"), None, keyed=True, stream=False
-    )
-
-
-def remove_member_request(subject: str) -> Request:
-    return Request("DELETE", _member_path(subject), None, keyed=True, stream=False)
-
-
-def list_invites_request() -> Request:
-    return Request("GET", "/api/org/invites", None, keyed=True, stream=False)
-
-
-def create_invite_request(email: str, role: str) -> Request:
-    return Request(
-        "POST",
-        "/api/org/invites",
-        {"email": _email_address(email), "role": _role(role)},
-        keyed=True,
-        stream=False,
-    )
-
-
-def _invite_path(invite_id: str, suffix: str = "") -> str:
-    return f"/api/org/invites/{_segment('invite_id', invite_id)}{suffix}"
-
-
-def resend_invite_request(invite_id: str) -> Request:
-    return Request("POST", _invite_path(invite_id, "/resend"), None, keyed=True, stream=False)
-
-
-def revoke_invite_request(invite_id: str) -> Request:
-    return Request("DELETE", _invite_path(invite_id), None, keyed=True, stream=False)
-
-
-def lookup_invite_request(token: str) -> Request:
-    """What a join page asks before it renders. Anonymous: the token is the
-    credential, and a POST so it stays out of access logs."""
-    if not token or len(token) > 256:
-        raise ValueError("token must be 1 to 256 characters")
-    return Request("POST", "/api/org/invites/lookup", {"token": token}, keyed=False, stream=False)
-
-
-def accept_invite_request(token: str) -> Request:
-    if not token or len(token) > 256:
-        raise ValueError("token must be 1 to 256 characters")
-    return Request("POST", "/api/org/invites/accept", {"token": token}, keyed=True, stream=False)
-
-
-def list_invite_links_request() -> Request:
-    return Request("GET", "/api/org/invite-links", None, keyed=True, stream=False)
-
-
-def create_invite_link_request(role: str, max_uses: int, expires_in_days: int) -> Request:
-    """A link is pasted where the org cannot see who reads it, so both
-    bounds are finite: a month at most, and a team's worth of uses. Never an
-    owner link -- ownership goes to a person someone chose, and the route
-    422s one asked for."""
-    if role == "owner":
-        raise ValueError("an invite link is never an owner link")
-    _role(role)
-    if not 1 <= max_uses <= LINK_MAX_USES:
-        raise ValueError(f"max_uses must be 1 to {LINK_MAX_USES}, got {max_uses}")
-    if not 1 <= expires_in_days <= LINK_MAX_DAYS:
-        raise ValueError(f"expires_in_days must be 1 to {LINK_MAX_DAYS}, got {expires_in_days}")
-    return Request(
-        "POST",
-        "/api/org/invite-links",
-        {"role": role, "max_uses": max_uses, "expires_in_days": expires_in_days},
-        keyed=True,
-        stream=False,
-    )
-
-
-def revoke_invite_link_request(link_id: str) -> Request:
-    path = f"/api/org/invite-links/{_segment('link_id', link_id)}"
-    return Request("DELETE", path, None, keyed=True, stream=False)
-
-
-def lookup_invite_link_request(token: str) -> Request:
-    if not token or len(token) > 256:
-        raise ValueError("token must be 1 to 256 characters")
-    return Request("POST", "/api/join/lookup", {"token": token}, keyed=False, stream=False)
-
-
-def join_by_link_request(token: str) -> Request:
-    if not token or len(token) > 256:
-        raise ValueError("token must be 1 to 256 characters")
-    return Request("POST", "/api/join", {"token": token}, keyed=True, stream=False)
-
-
-# --- org management ------------------------------------------------------------------
-
-
-def get_org_request() -> Request:
-    return Request("GET", "/api/org", None, keyed=True, stream=False)
-
-
-def rename_org_request(name: str) -> Request:
-    value = name.strip()
-    if not value:
-        raise ValueError("an organisation must have a name")
-    return Request("PATCH", "/api/org", {"name": value}, keyed=True, stream=False)
-
-
-def close_org_request(confirm: str) -> Request:
-    """The organisation's name, typed exactly, is the confirmation."""
-    if not confirm or len(confirm) > 140:
-        raise ValueError("confirm must be the organisation's name")
-    return Request("POST", "/api/org/close", {"confirm": confirm}, keyed=True, stream=False)
-
-
-def get_model_policy_request() -> Request:
-    return Request("GET", "/api/org/models", None, keyed=True, stream=False)
-
-
-def put_model_policy_request(allowed: Sequence[str] | None) -> Request:
-    """The allow-list: the ids members may use, or None to lift the
-    restriction. The house model is added back whatever is sent, so it
-    never has to be listed; an id the plan does not permit is the server's
-    422 naming it."""
-    if allowed is not None and not allowed:
-        raise ValueError("allowed must name at least one model, or None to lift the restriction")
-    return Request(
-        "PUT", "/api/org/models", {"allowed": list(allowed) if allowed else None}, True, False
-    )
-
-
-def get_sharing_request() -> Request:
-    return Request("GET", "/api/org/sharing", None, keyed=True, stream=False)
-
-
-def put_sharing_request(enabled: bool) -> Request:
-    return Request("PUT", "/api/org/sharing", {"enabled": enabled}, keyed=True, stream=False)
-
-
-def list_org_shares_request() -> Request:
-    return Request("GET", "/api/org/shares", None, keyed=True, stream=False)
-
-
-def revoke_org_share_request(share_id: str) -> Request:
-    path = f"/api/org/shares/{_segment('share_id', share_id)}"
-    return Request("DELETE", path, None, keyed=True, stream=False)
-
-
-def get_sso_request() -> Request:
-    return Request("GET", "/api/org/sso", None, keyed=True, stream=False)
-
-
-def put_sso_request(sso_required: bool) -> Request:
-    return Request("PUT", "/api/org/sso", {"sso_required": sso_required}, keyed=True, stream=False)
-
-
-def mint_sso_recovery_code_request() -> Request:
-    return Request("POST", "/api/org/sso/recovery-code", None, keyed=True, stream=False)
-
-
-def list_domains_request() -> Request:
-    return Request("GET", "/api/org/domains", None, keyed=True, stream=False)
-
-
-def claim_domain_request(domain: str) -> Request:
-    return Request("POST", "/api/org/domains", {"domain": _domain(domain)}, keyed=True, stream=False)
-
-
-def _domain(domain: str) -> str:
-    value = domain.strip().lower().rstrip(".")
-    labels = value.split(".")
-    if len(labels) < 2 or not all(labels) or any(" " in label for label in labels):
-        raise ValueError(f"not a domain like example.com: {domain!r}")
-    return value
-
-
-def _domain_path(domain: str, suffix: str = "") -> str:
-    return f"/api/org/domains/{_segment('domain', _domain(domain))}{suffix}"
-
-
-def domain_challenge_request(domain: str) -> Request:
-    return Request("GET", _domain_path(domain, "/challenge"), None, keyed=True, stream=False)
-
-
-def verify_domain_request(domain: str) -> Request:
-    return Request("POST", _domain_path(domain, "/verify"), None, keyed=True, stream=False)
-
-
-def release_domain_request(domain: str) -> Request:
-    return Request("DELETE", _domain_path(domain), None, keyed=True, stream=False)
-
-
-def list_idps_request() -> Request:
-    return Request("GET", "/api/org/idp", None, keyed=True, stream=False)
-
-
-def attach_idp_request(
-    name: str, issuer: str, client_id: str, client_secret: str, scopes: Sequence[str] | None
-) -> Request:
-    """OIDC only in this slice: a plaintext issuer is refused here (no
-    provider accepts one) and the trailing slash is trimmed, as the route's
-    own validator does."""
-    if not name.strip():
-        raise ValueError("name must not be blank")
-    if not issuer.strip():
-        raise ValueError("issuer must not be blank")
-    if not issuer.strip().startswith("https://"):
-        raise ValueError("issuer must be an https:// URL")
-    if not client_id.strip():
-        raise ValueError("client_id must not be blank")
-    if not client_secret:
-        raise ValueError("client_secret must not be blank")
-    body: dict[str, Any] = {
-        "kind": "oidc",
-        "name": name.strip(),
-        "issuer": issuer.strip().rstrip("/"),
-        "client_id": client_id.strip(),
-        "client_secret": client_secret,
-    }
-    if scopes is not None:
-        body["scopes"] = list(scopes)
-    return Request("POST", "/api/org/idp", body, keyed=True, stream=False)
-
-
-def detach_idp_request(provider: str) -> Request:
-    path = f"/api/org/idp/{_segment('provider', provider)}"
-    return Request("DELETE", path, None, keyed=True, stream=False)
-
-
-def get_org_mfa_request() -> Request:
-    return Request("GET", "/api/org/mfa", None, keyed=True, stream=False)
-
-
-def put_org_mfa_request(mfa_required: bool) -> Request:
-    return Request("PUT", "/api/org/mfa", {"mfa_required": mfa_required}, keyed=True, stream=False)
-
-
-# --- plans and billing ------------------------------------------------------------------
-
-
-def list_plans_request() -> Request:
-    return Request("GET", "/api/plans", None, keyed=True, stream=False)
-
-
-def switch_plan_request(plan: str, reason: str | None) -> Request:
-    if not plan or len(plan) > 64:
-        raise ValueError("plan must be 1 to 64 characters")
-    body: dict[str, Any] = {"plan": plan}
-    if reason is not None:
-        if len(reason) > 500:
-            raise ValueError("reason must be 500 characters or fewer")
-        body["reason"] = reason
-    return Request("PUT", "/api/plan", body, keyed=True, stream=False)
-
-
-def plan_history_request() -> Request:
-    return Request("GET", "/api/plan/history", None, keyed=True, stream=False)
-
-
-def checkout_request(plan: str, annual: bool) -> Request:
-    if not plan or len(plan) > 64:
-        raise ValueError("plan must be 1 to 64 characters")
-    return Request(
-        "POST", "/api/billing/checkout", {"plan": plan, "annual": annual}, keyed=True, stream=False
-    )
-
-
-def portal_request() -> Request:
-    return Request("POST", "/api/billing/portal", None, keyed=True, stream=False)
-
-
-def billing_status_request() -> Request:
-    return Request("GET", "/api/billing/status", None, keyed=True, stream=False)
-
-
-def invoices_request() -> Request:
-    return Request("GET", "/api/billing/invoices", None, keyed=True, stream=False)
 
 
 # --- passkeys ------------------------------------------------------------------------------
@@ -1339,17 +896,17 @@ def mfa_state_request() -> Request:
     return Request("GET", "/api/me/mfa", None, keyed=True, stream=False)
 
 
-def mfa_totp_start_request() -> Request:
+def mfa_start_totp_request() -> Request:
     return Request("POST", "/api/me/mfa/totp/start", None, keyed=True, stream=False)
 
 
-def mfa_totp_confirm_request(code: str) -> Request:
+def mfa_confirm_totp_request(code: str) -> Request:
     return Request(
         "POST", "/api/me/mfa/totp/confirm", {"code": _totp_code(code)}, keyed=True, stream=False
     )
 
 
-def mfa_totp_remove_request(code: str | None, recovery_code: str | None) -> Request:
+def mfa_remove_totp_request(code: str | None, recovery_code: str | None) -> Request:
     """A code OR a recovery code: the session cookie alone is not proof
     enough to remove the factor that protects it."""
     body: dict[str, Any] = {}
@@ -1364,9 +921,52 @@ def mfa_totp_remove_request(code: str | None, recovery_code: str | None) -> Requ
     return Request("DELETE", "/api/me/mfa/totp", body, keyed=True, stream=False)
 
 
-def mfa_recovery_reissue_request(code: str) -> Request:
+def mfa_reissue_recovery_codes_request(code: str) -> Request:
     return Request(
         "POST", "/api/me/mfa/recovery-codes", {"code": _totp_code(code)}, keyed=True, stream=False
+    )
+
+
+def _challenge(challenge: str) -> str:
+    if not challenge:
+        raise ValueError("challenge must be non-empty")
+    return challenge
+
+
+def mfa_verify_login_request(
+    challenge: str, code: str | None, recovery_code: str | None
+) -> Request:
+    """The code step of a sign-in. Anonymous: the sealed challenge the
+    password step handed out names who is signing in."""
+    body: dict[str, Any] = {"challenge": _challenge(challenge)}
+    if code is not None:
+        body["code"] = _totp_code(code)
+    if recovery_code is not None:
+        if not recovery_code or len(recovery_code) > 32:
+            raise ValueError("recovery_code must be 1 to 32 characters")
+        body["recovery_code"] = recovery_code
+    if len(body) == 1:
+        raise ValueError("prove it with a code or a recovery_code")
+    return Request("POST", "/api/auth/mfa", body, keyed=False, stream=False)
+
+
+def mfa_start_login_enrolment_request(challenge: str) -> Request:
+    return Request(
+        "POST",
+        "/api/auth/mfa/enrol/start",
+        {"challenge": _challenge(challenge)},
+        keyed=False,
+        stream=False,
+    )
+
+
+def mfa_confirm_login_enrolment_request(challenge: str, code: str) -> Request:
+    return Request(
+        "POST",
+        "/api/auth/mfa/enrol/confirm",
+        {"challenge": _challenge(challenge), "code": _totp_code(code)},
+        keyed=False,
+        stream=False,
     )
 
 
@@ -1393,32 +993,6 @@ def logout_browser_account_request(slot: int) -> Request:
 
 def logout_all_accounts_request() -> Request:
     return Request("POST", "/api/accounts/logout-all", None, keyed=False, stream=False)
-
-
-# --- speech ----------------------------------------------------------------------------------------
-
-
-def transcribe_request(
-    file: bytes | IO[bytes], filename: str, content_type: str, language: str | None
-) -> Request:
-    """One clip, multipart, with the optional BCP 47 language hint as a
-    form field. The media type is checked here, with the route's own list,
-    so a refusal names the formats before the bytes are spent."""
-    media_type = content_type.split(";")[0].strip().lower()
-    if media_type not in SPEECH_AUDIO_TYPES:
-        raise ValueError(f"content_type must be one of {', '.join(SPEECH_AUDIO_TYPES)}")
-    if language is not None and (not language.strip() or len(language) > 35):
-        raise ValueError("language must be a BCP 47 tag of at most 35 characters")
-    data = file if isinstance(file, bytes) else file.read()
-    return Request(
-        "POST",
-        "/api/speech/transcribe",
-        None,
-        keyed=True,
-        stream=False,
-        files={"file": (filename, data, media_type)},
-        data={"language": language.strip()} if language is not None else None,
-    )
 
 
 # --- edge pairing and sync ----------------------------------------------------------------------------

@@ -7,9 +7,7 @@ the route in api/matterwave sends and checks the request the client made
 from __future__ import annotations
 
 import json
-import re
 from datetime import datetime, timezone
-from pathlib import Path
 
 import httpx
 import pytest
@@ -24,7 +22,6 @@ from matterwave_sdk import (
     PermissionDeniedError,
 )
 
-ROUTES = Path(__file__).resolve().parents[3] / "api" / "matterwave"
 NATIVE = ("keys", "usage", "audit", "webhooks", "attachments", "library", "shares", "budget")
 
 KEY_ID = "key-0001"
@@ -63,26 +60,7 @@ def test_every_native_operation_names_a_method_on_both_clients() -> None:
             assert callable(target)
 
 
-def _api_routes() -> set[tuple[str, str]]:
-    """Every (method, path) the app's routers declare, read from the source
-    so the check needs none of the app's dependencies."""
-    found: set[tuple[str, str]] = set()
-    for source in ROUTES.glob("routes_*.py"):
-        text = source.read_text(encoding="utf-8")
-        prefixes = dict(re.findall(r'(\w+)\s*=\s*APIRouter\([^)]*prefix="([^"]*)"', text))
-        for router, method, path in re.findall(
-            r'@(\w+)\.(get|post|put|patch|delete)\(\s*"([^"]*)"', text
-        ):
-            found.add((method.upper(), prefixes.get(router, "") + path))
-    return found
-
-
-def test_every_native_operation_is_a_route_the_api_declares() -> None:
-    if not ROUTES.is_dir():
-        pytest.skip("api/matterwave is not beside the SDK in this checkout")
-    routes = _api_routes()
-    for key, (method, path) in _native_operations().items():
-        assert (method, path) in routes, f"{key}: {method} {path} is not an API route"
+# Each route is held to the platform's route document in test_route_drift.py.
 
 
 # --- keys ---------------------------------------------------------------------
@@ -122,7 +100,9 @@ def test_keys_create_sends_only_what_was_passed_and_returns_the_secret_once(
     api, client: MatterWave
 ) -> None:
     route = api.post("/api/keys").respond(
-        201, json=key_body(key="mw_ab12_secret", rpm_limit=30), headers=H
+        201,
+        json=key_body(key="mw_ab12_secret", rpm_limit=30),  # gitleaks:allow
+        headers=H,
     )
     key = client.keys.create(
         "deploy",
@@ -136,8 +116,8 @@ def test_keys_create_sends_only_what_was_passed_and_returns_the_secret_once(
         "expires_at": "2027-01-01T00:00:00+00:00",
         "rpm_limit": 30,
     }
-    assert key.key == "mw_ab12_secret"
-    assert "mw_ab12_secret" not in repr(key)
+    assert key.key == "mw_ab12_secret"  # gitleaks:allow
+    assert "mw_ab12_secret" not in repr(key)  # gitleaks:allow
 
 
 def test_keys_create_refuses_a_naive_expiry_and_both_expiries() -> None:
@@ -154,7 +134,9 @@ def test_keys_update_sends_null_to_clear_and_leaves_out_what_was_not_passed(
     route = api.patch(f"/api/keys/{KEY_ID}").respond(
         200, json=key_body(name="renamed", allowed_cidrs=["203.0.113.0/24"]), headers=H
     )
-    key = client.keys.update(KEY_ID, name="renamed", allowed_cidrs=["203.0.113.0/24"], expires_at=None)
+    key = client.keys.update(
+        KEY_ID, name="renamed", allowed_cidrs=["203.0.113.0/24"], expires_at=None
+    )
     assert body_of(route) == {
         "name": "renamed",
         "allowed_cidrs": ["203.0.113.0/24"],
@@ -371,7 +353,7 @@ AUDIT_PAGE = {
 
 AUDIT_CSV = (
     "occurred_at,actor_email,actor_subject,action,target,detail\r\n"
-    '2026-10-30T08:00:00+00:00,a@example.test,user-1,org.sso.enforced,org-1,'
+    "2026-10-30T08:00:00+00:00,a@example.test,user-1,org.sso.enforced,org-1,"
     '"{""recovery_code"":""rec-1""}"\r\n'
 )
 
@@ -611,7 +593,7 @@ def test_attachments_upload_retries_with_the_same_bytes(api, client: MatterWave,
 
     route = api.post("/api/attachments")
     route.side_effect = [
-        httpx.Response(503, json={"detail": "busy"}),
+        httpx.Response(429, json={"detail": "busy"}),
         httpx.Response(201, json=attachment_body(), headers=H),
     ]
     client.attachments.upload(io.BytesIO(b"hello"), "notes.txt")
@@ -843,9 +825,7 @@ def member_budget_body(**extra) -> dict:
     }
 
 
-def test_budget_get_reads_the_balance_and_the_callers_own_cap(
-    api, client: MatterWave
-) -> None:
+def test_budget_get_reads_the_balance_and_the_callers_own_cap(api, client: MatterWave) -> None:
     route = api.get("/api/budget").mock(
         return_value=httpx.Response(200, json=budget_body(), headers=H)
     )
@@ -861,9 +841,7 @@ def test_set_overage_cap_puts_the_number(api, client: MatterWave) -> None:
     route = api.put("/api/budget").mock(
         return_value=httpx.Response(
             200,
-            json=budget_body(
-                overage_cap_micros=10_000_000, member_default_cap_micros=None
-            ),
+            json=budget_body(overage_cap_micros=10_000_000, member_default_cap_micros=None),
             headers=H,
         )
     )
@@ -877,9 +855,7 @@ def test_set_overage_cap_puts_the_number(api, client: MatterWave) -> None:
     assert route.call_count == 1
 
 
-def test_budget_members_reads_rows_and_sets_the_default_cap(
-    api, client: MatterWave
-) -> None:
+def test_budget_members_reads_rows_and_sets_the_default_cap(api, client: MatterWave) -> None:
     listing = {
         "period_start": "2026-10-01",
         "member_default_cap_micros": None,
@@ -918,9 +894,7 @@ def test_budget_members_reads_rows_and_sets_the_default_cap(
     assert body_of(put) == {"member_default_cap_micros": None}
 
 
-def test_set_member_cap_addresses_the_subject_and_accepts_null(
-    api, client: MatterWave
-) -> None:
+def test_set_member_cap_addresses_the_subject_and_accepts_null(api, client: MatterWave) -> None:
     route = api.put("/api/budget/members/u-2").mock(
         return_value=httpx.Response(
             200,

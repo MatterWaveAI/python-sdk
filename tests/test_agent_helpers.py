@@ -125,7 +125,9 @@ def workspace(tmp_path: Path) -> Path:
 
 
 @pytest.mark.parametrize(
-    "case", CASES["confinement"]["cases"], ids=lambda c: f"{c['path'] or '<empty>'}{' (write)' if c.get('write') else ''}"
+    "case",
+    CASES["confinement"]["cases"],
+    ids=lambda c: f"{c['path'] or '<empty>'}{' (write)' if c.get('write') else ''}",
 )
 def test_confinement(workspace: Path, case: dict) -> None:
     write = case.get("write", False)
@@ -194,14 +196,18 @@ def test_a_symlinked_directory_out_of_the_root_is_refused(workspace: Path) -> No
 
 
 def test_a_symlinked_file_out_of_the_root_is_refused(workspace: Path) -> None:
-    _make_link(workspace.parent / "outside" / "secret.txt", workspace / "notes.txt", directory=False)
+    _make_link(
+        workspace.parent / "outside" / "secret.txt", workspace / "notes.txt", directory=False
+    )
     with pytest.raises(agent.PathRefused) as refused:
         agent.confine(workspace, "notes.txt")
     assert refused.value.reason == "symlink"
 
 
 def test_a_dangling_symlink_out_of_the_root_is_refused_for_a_write(workspace: Path) -> None:
-    _make_link(workspace.parent / "outside" / "planted.txt", workspace / "planted.txt", directory=False)
+    _make_link(
+        workspace.parent / "outside" / "planted.txt", workspace / "planted.txt", directory=False
+    )
     with pytest.raises(agent.PathRefused) as refused:
         agent.confine(workspace, "planted.txt", write=True)
     assert refused.value.reason == "symlink"
@@ -272,7 +278,10 @@ def test_a_failed_edit_leaves_the_text_alone() -> None:
 @pytest.mark.parametrize("case", CASES["diffs"], ids=lambda c: c["name"])
 def test_diff(case: dict) -> None:
     kwargs = {"context": case["context"]} if "context" in case else {}
-    assert agent.unified_diff(case["old"], case["new"], case.get("path", "file"), **kwargs) == case["expected"]
+    assert (
+        agent.unified_diff(case["old"], case["new"], case.get("path", "file"), **kwargs)
+        == case["expected"]
+    )
 
 
 _HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")

@@ -35,19 +35,13 @@ def main() -> int:
             tools = client.mcp.list_tools()
             print("tools:", ", ".join(tool.name for tool in tools))
 
-            created = client.mcp.call_tool(
-                "create_conversation", {"title": "From the MCP example"}
-            )
+            created = client.mcp.call_tool("create_conversation", {"title": "From the MCP example"})
             conversation_id = created.structured["conversation"]["id"]
 
-            answer = client.mcp.send_message(
-                conversation_id, f"Answer in one sentence: {question}"
-            )
+            answer = client.mcp.send_message(conversation_id, f"Answer in one sentence: {question}")
             print("answer:", answer.text)
 
-            found = client.mcp.call_tool(
-                "search_conversations", {"query": question, "limit": 5}
-            )
+            found = client.mcp.call_tool("search_conversations", {"query": question, "limit": 5})
             print("searched:", found.structured["query"])
             return 0
         except McpToolError as err:

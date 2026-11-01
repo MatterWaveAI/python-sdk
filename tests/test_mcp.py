@@ -35,7 +35,9 @@ TOOLS = {
             "description": "One page of the user's conversations, most recent first.",
             "inputSchema": {
                 "type": "object",
-                "properties": {"filter": {"type": "string", "enum": ["default", "all", "pinned", "archived"]}},
+                "properties": {
+                    "filter": {"type": "string", "enum": ["default", "all", "pinned", "archived"]}
+                },
                 "additionalProperties": False,
             },
             "annotations": {"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True},
@@ -46,11 +48,18 @@ TOOLS = {
             "description": "Append a user message to a conversation and return MatterWave's answer.",
             "inputSchema": {
                 "type": "object",
-                "properties": {"conversation_id": {"type": "string"}, "content": {"type": "string"}},
+                "properties": {
+                    "conversation_id": {"type": "string"},
+                    "content": {"type": "string"},
+                },
                 "required": ["conversation_id", "content"],
                 "additionalProperties": False,
             },
-            "annotations": {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False},
+            "annotations": {
+                "readOnlyHint": False,
+                "destructiveHint": False,
+                "idempotentHint": False,
+            },
         },
     ]
 }
@@ -92,13 +101,13 @@ def text_result(text: str, structured: dict[str, Any]) -> dict[str, Any]:
 # --- the handshake era ----------------------------------------------------------
 
 
-def test_the_handshake_precedes_the_first_call_and_is_not_repeated(
-    api, client: MatterWave
-) -> None:
+def test_the_handshake_precedes_the_first_call_and_is_not_repeated(api, client: MatterWave) -> None:
     route = mount(
         api,
         {
-            "initialize": {"result": {"protocolVersion": "2025-06-18", "serverInfo": {"name": "matterwave"}}},
+            "initialize": {
+                "result": {"protocolVersion": "2025-06-18", "serverInfo": {"name": "matterwave"}}
+            },
             "tools/list": {"result": TOOLS},
         },
     )
@@ -168,7 +177,12 @@ def test_list_tools_honours_the_key_s_scopes(api, client: MatterWave) -> None:
     tool = tools[0]
     assert isinstance(tool, McpTool)
     assert tool.title == "List conversations"
-    assert tool.input_schema["properties"]["filter"]["enum"] == ["default", "all", "pinned", "archived"]
+    assert tool.input_schema["properties"]["filter"]["enum"] == [
+        "default",
+        "all",
+        "pinned",
+        "archived",
+    ]
     assert tool.annotations["readOnlyHint"] is True
     assert body_of(route.calls.last.request)["method"] == "tools/list"
 
@@ -176,7 +190,11 @@ def test_list_tools_honours_the_key_s_scopes(api, client: MatterWave) -> None:
 def test_call_tool_returns_the_text_blocks_and_the_structured_content(
     api, client: MatterWave
 ) -> None:
-    page = {"conversations": [{"id": "c-1", "title": "Plans"}], "filter": "default", "next_cursor": None}
+    page = {
+        "conversations": [{"id": "c-1", "title": "Plans"}],
+        "filter": "default",
+        "next_cursor": None,
+    }
     route = mount(
         api,
         {
@@ -404,13 +422,17 @@ def test_initialize_refuses_a_modern_version(client: MatterWave) -> None:
 
 
 @pytest.mark.asyncio
-async def test_the_async_wrapper_speaks_the_same_protocol(api, async_client: AsyncMatterWave) -> None:
+async def test_the_async_wrapper_speaks_the_same_protocol(
+    api, async_client: AsyncMatterWave
+) -> None:
     route = mount(
         api,
         {
             "initialize": {"result": {"protocolVersion": "2025-06-18"}},
             "tools/call": {
-                "result": text_result("Created conversation c-2 · Fresh", {"conversation": {"id": "c-2"}})
+                "result": text_result(
+                    "Created conversation c-2 · Fresh", {"conversation": {"id": "c-2"}}
+                )
             },
         },
     )
@@ -436,7 +458,13 @@ async def test_the_async_send_message_reads_the_whole_answer(
             "tools/call": {
                 "result": text_result(
                     "Half an answer, cut by the limit.",
-                    {"conversation_id": "c-1", "message": None, "title": None, "notices": [], "truncated": True},
+                    {
+                        "conversation_id": "c-1",
+                        "message": None,
+                        "title": None,
+                        "notices": [],
+                        "truncated": True,
+                    },
                 )
             },
         },

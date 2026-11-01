@@ -96,14 +96,12 @@ def export_body(**extra) -> dict:
     }
 
 
-READY_URL = (
-    f"/api/me/export/{EXPORT_ID}/download?expires=1799000000&sig=abc123"
-)
+READY_URL = f"/api/me/export/{EXPORT_ID}/download?expires=1799000000&sig=abc123"
 
 
-def test_export_start_answers_at_once_with_a_pending_job(api, client: MatterWave) -> None:
+def test_export_create_answers_at_once_with_a_pending_job(api, client: MatterWave) -> None:
     route = api.post("/api/me/export").respond(202, json=export_body(), headers=H)
-    job = client.exports.start()
+    job = client.exports.create()
     assert sent(route).method == "POST"
     assert sent(route).headers["authorization"] == f"Bearer {API_KEY}"
     assert job.status == "pending" and job.download_url is None
@@ -129,9 +127,7 @@ def test_export_get_reports_readiness_with_a_fresh_link(api, client: MatterWave)
     with pytest.raises(ValueError, match="export_id"):
         client.exports.get("../keys")
     # Another person's export is the same 404 as none.
-    api.get("/api/me/export/exp-9999").respond(
-        404, json={"detail": "No such export."}, headers=H
-    )
+    api.get("/api/me/export/exp-9999").respond(404, json={"detail": "No such export."}, headers=H)
     with pytest.raises(NotFoundError):
         client.exports.get("exp-9999")
 
@@ -149,9 +145,9 @@ def test_export_download_sends_the_signature_and_the_callers_own_key(
         },
     )
     job = export_body(status="ready", download_url=READY_URL)
-    from matterwave_sdk import ExportJob
+    from matterwave_sdk import AccountExport
 
-    data = client.exports.download(ExportJob.from_dict(job))
+    data = client.exports.download(AccountExport.from_dict(job))
     request = sent(route)
     assert request.headers["authorization"] == f"Bearer {API_KEY}"
     assert request.url.params["expires"] == "1799000000"
@@ -160,7 +156,7 @@ def test_export_download_sends_the_signature_and_the_callers_own_key(
     # A bare URL works too.
     assert client.exports.download(READY_URL) == payload
     with pytest.raises(ValueError, match="download_url"):
-        client.exports.download(ExportJob.from_dict(export_body()))
+        client.exports.download(AccountExport.from_dict(export_body()))
     with pytest.raises(ValueError, match="not an export download URL"):
         client.exports.download("/api/attachments/att-1/content?sig=x")
 
@@ -191,21 +187,19 @@ def import_body(**extra) -> dict:
     }
 
 
-def test_import_start_uploads_the_file_and_counts_what_was_found(
-    api, client: MatterWave
-) -> None:
+def test_import_create_uploads_the_file_and_counts_what_was_found(api, client: MatterWave) -> None:
     route = api.post("/api/me/imports").respond(
         202,
         json=import_body(status="pending", conversations_total=7),
         headers=H,
     )
-    job = client.imports.start(b'{"conversations": []}', "conversations.json")
+    job = client.imports.create(b'{"conversations": []}', "conversations.json")
     request = sent(route)
     assert request.headers["content-type"].startswith("multipart/form-data")
     assert b"conversations.json" in request.content
     assert job.source == "chatgpt" and job.conversations_total == 7
     with pytest.raises(ValueError, match="filename"):
-        client.imports.start(b"x", "")
+        client.imports.create(b"x", "")
 
 
 def test_import_list_is_newest_first(api, client: MatterWave) -> None:
@@ -213,9 +207,12 @@ def test_import_list_is_newest_first(api, client: MatterWave) -> None:
         200,
         json={
             "data": [
-                import_body(id="imp-0002", status="completed",
-                            completed_at="2026-10-31T09:05:00+00:00",
-                            started_at="2026-10-31T09:04:00+00:00"),
+                import_body(
+                    id="imp-0002",
+                    status="completed",
+                    completed_at="2026-10-31T09:05:00+00:00",
+                    started_at="2026-10-31T09:04:00+00:00",
+                ),
                 import_body(id="imp-0003", status="failed", error="Malformed export"),
             ]
         },
@@ -266,12 +263,12 @@ async def test_async_job_resources_make_the_same_requests(
         200, json=import_body(status="completed", conversations_created=7), headers=H
     )
     async with async_client as c:
-        started = await c.exports.start()
+        started = await c.exports.create()
         assert started.status == "pending"
         ready = await c.exports.get(EXPORT_ID)
         assert ready.download_url == READY_URL
         assert await c.exports.download(ready) == b"[]"
-        imported = await c.imports.start(b"{}", "conversations.json")
+        imported = await c.imports.create(b"{}", "conversations.json")
         assert imported.filename == "conversations.json"
         assert len(await c.imports.list()) == 1
         assert (await c.imports.get(IMPORT_ID)).conversations_created == 7

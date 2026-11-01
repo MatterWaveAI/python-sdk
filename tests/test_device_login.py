@@ -16,7 +16,11 @@ START = {
     "expires_in": 600,
     "interval": 5,
 }
-TOKEN = {"token_type": "Bearer", "access_token": "mw_device_issued", "scopes": ["chat:read", "chat:write"]}
+TOKEN = {
+    "token_type": "Bearer",
+    "access_token": "mw_device_issued",
+    "scopes": ["chat:read", "chat:write"],
+}
 
 
 def _refusal(code: str, status: int = 400) -> httpx.Response:

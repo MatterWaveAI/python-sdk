@@ -1,0 +1,136 @@
+{
+  "platform_revision": "518e2a80d384376e6cb4770fd17e9082fc5ae593",
+  "source": "docs/developers/openapi-full.json",
+  "sha256": "cd4b86d63bb4cedf83a6435c16aee580b9474dd66ffe2b05e614571f8fefc7a9",
+  "internal_prefixes": {
+    "/api/admin/": "The operator console: the platform `admin` role, not a customer surface.",
+    "/api/sync/": "The edge mirror and its pairing: the box's worker and the Devices pane."
+  },
+  "internal_routes": [
+    [
+      "GET",
+      "/api/auth-config",
+      "The SPA's boot configuration."
+    ],
+    [
+      "GET",
+      "/api/auth/callback",
+      "The browser's OIDC callback."
+    ],
+    [
+      "GET",
+      "/api/auth/idp",
+      "The sign-in page's SSO lookup by email domain."
+    ],
+    [
+      "GET",
+      "/api/auth/login",
+      "The browser's OIDC redirect."
+    ],
+    [
+      "GET",
+      "/api/me/enforcement",
+      "The shell's enforcement banner."
+    ],
+    [
+      "GET",
+      "/api/policy/stats",
+      "The public policy page's aggregate counts."
+    ],
+    [
+      "GET",
+      "/healthz",
+      "Liveness probe."
+    ],
+    [
+      "GET",
+      "/readyz",
+      "Readiness probe."
+    ],
+    [
+      "POST",
+      "/api/auth/forgot",
+      "The password-reset page."
+    ],
+    [
+      "POST",
+      "/api/auth/mfa",
+      "The sign-in's second-factor step."
+    ],
+    [
+      "POST",
+      "/api/auth/mfa/enrol/confirm",
+      "The sign-in's forced authenticator enrolment."
+    ],
+    [
+      "POST",
+      "/api/auth/mfa/enrol/start",
+      "The sign-in's forced authenticator enrolment."
+    ],
+    [
+      "POST",
+      "/api/auth/password",
+      "The password sign-in form."
+    ],
+    [
+      "POST",
+      "/api/auth/reset",
+      "The password-reset page."
+    ],
+    [
+      "POST",
+      "/api/billing/webhook",
+      "Stripe's inbound events, verified by Stripe's signature."
+    ],
+    [
+      "POST",
+      "/api/enterprise/contact",
+      "The pricing page's enterprise contact form."
+    ],
+    [
+      "POST",
+      "/api/integrations/salesforce/events",
+      "Salesforce's contract events, verified by the shared HMAC secret."
+    ],
+    [
+      "POST",
+      "/api/logout",
+      "Ends the browser session."
+    ],
+    [
+      "POST",
+      "/api/me/onboarding/complete",
+      "The SPA's first-run tour."
+    ],
+    [
+      "POST",
+      "/api/org/invites/accept",
+      "The invite email's landing page."
+    ],
+    [
+      "POST",
+      "/api/org/invites/lookup",
+      "The invite email's landing page."
+    ],
+    [
+      "POST",
+      "/api/signup",
+      "The sign-up form."
+    ],
+    [
+      "POST",
+      "/api/signup/resend",
+      "The sign-up form's resend."
+    ],
+    [
+      "POST",
+      "/api/signup/verify",
+      "The sign-up form's email check."
+    ],
+    [
+      "POST",
+      "/api/v1/apps/versions",
+      "The operator publishing an app version."
+    ]
+  ]
+}

@@ -111,9 +111,7 @@ def test_org_get_is_any_members_and_rename_is_admins(api, client: MatterWave) ->
         client.org.rename("   ")
 
 
-def test_close_requires_the_name_and_reports_each_side_effect(
-    api, client: MatterWave
-) -> None:
+def test_close_requires_the_name_and_reports_each_side_effect(api, client: MatterWave) -> None:
     route = api.post("/api/org/close").respond(
         200,
         json={
@@ -132,7 +130,7 @@ def test_close_requires_the_name_and_reports_each_side_effect(
         },
         headers=H,
     )
-    closed = client.org.close("Acme")
+    closed = client.org.close(confirm="Acme")
     assert body_of(route) == {"confirm": "Acme"}
     assert closed.status == "closed" and closed.already_closed is False
     assert closed.conversations_deleted == 42 and closed.retention_days == 30
@@ -149,7 +147,7 @@ def test_close_requires_the_name_and_reports_each_side_effect(
     from matterwave_sdk import MatterWaveError
 
     with pytest.raises(MatterWaveError, match="legal hold"):
-        client.org.close("Acme")
+        client.org.close(confirm="Acme")
 
 
 # --- the model allow-list ----------------------------------------------------------------
@@ -186,7 +184,7 @@ def model_policy_body(**extra) -> dict:
 
 def test_model_policy_read(api, client: MatterWave) -> None:
     route = api.get("/api/org/models").respond(200, json=model_policy_body(), headers=H)
-    policy = client.org.models.get()
+    policy = client.org.models()
     assert policy.house_model == "grt-nano"
     assert len(policy) == 2
     assert policy.data[0].locked and policy.data[0].allowed
@@ -195,25 +193,23 @@ def test_model_policy_read(api, client: MatterWave) -> None:
     assert route.called
 
 
-def test_model_policy_put_sends_null_to_lift_and_list_to_restrict(
-    api, client: MatterWave
-) -> None:
+def test_model_policy_put_sends_null_to_lift_and_list_to_restrict(api, client: MatterWave) -> None:
     route = api.put("/api/org/models").mock(
         return_value=httpx.Response(200, json=model_policy_body(), headers=H)
     )
-    client.org.models.set(["grt-nano", "grt-large"])
+    client.org.set_models(["grt-nano", "grt-large"])
     assert body_of(route) == {"allowed": ["grt-nano", "grt-large"]}
-    client.org.models.set(None)
+    client.org.set_models(None)
     assert body_of(route) == {"allowed": None}
     with pytest.raises(ValueError, match="at least one"):
-        client.org.models.set([])
+        client.org.set_models([])
     assert route.call_count == 2
     # An id the plan does not permit is the server's 422 naming it.
     api.put("/api/org/models").respond(
         422, json={"detail": "Not available to this organisation: grt-preview."}, headers=H
     )
     with pytest.raises(UnprocessableEntityError, match="grt-preview"):
-        client.org.models.set(["grt-preview"])
+        client.org.set_models(["grt-preview"])
 
 
 # --- sharing ---------------------------------------------------------------------------
@@ -221,17 +217,15 @@ def test_model_policy_put_sends_null_to_lift_and_list_to_restrict(
 
 def test_sharing_get_and_set(api, client: MatterWave) -> None:
     got = api.get("/api/org/sharing").respond(200, json={"enabled": True}, headers=H)
-    assert client.org.sharing.get().enabled is True
+    assert client.org.sharing().enabled is True
     assert got.called
     put = api.put("/api/org/sharing").respond(200, json={"enabled": False}, headers=H)
-    off = client.org.sharing.set(False)
+    off = client.org.set_sharing(False)
     assert body_of(put) == {"enabled": False}
     assert off.enabled is False
 
 
-def test_org_shares_list_the_creator_and_revoke_answers(
-    api, client: MatterWave
-) -> None:
+def test_org_shares_list_the_creator_and_revoke_answers(api, client: MatterWave) -> None:
     listed = api.get("/api/org/shares").respond(
         200,
         json={
@@ -253,19 +247,17 @@ def test_org_shares_list_the_creator_and_revoke_answers(
         },
         headers=H,
     )
-    shares = client.org.shares.list()
+    shares = client.org.shares()
     assert shares.data[0].created_by == "user-0002"
     assert shares.data[0].include_attachments is True
-    api.delete(f"/api/org/shares/{SHARE_ID}").respond(
-        200, json={"status": "revoked"}, headers=H
-    )
-    assert client.org.shares.revoke(SHARE_ID).status == "revoked"
+    api.delete(f"/api/org/shares/{SHARE_ID}").respond(200, json={"status": "revoked"}, headers=H)
+    assert client.org.revoke_share(SHARE_ID).status == "revoked"
     # A link of another org and one that does not exist are the same 404.
     api.delete(f"/api/org/shares/{SHARE_ID}").respond(
         404, json={"detail": "No such share."}, headers=H
     )
     with pytest.raises(NotFoundError):
-        client.org.shares.revoke(SHARE_ID)
+        client.org.revoke_share(SHARE_ID)
     assert listed.called
 
 
@@ -288,22 +280,20 @@ def recovery_body(**extra) -> dict:
 def test_sso_read_carries_the_blockers(api, client: MatterWave) -> None:
     route = api.get("/api/org/sso").respond(
         200,
-        json={"sso_required": False, "blockers": [{"msg": "no verified domain"}]},
+        json={"sso_required": False, "blockers": ["no verified domain"]},
         headers=H,
     )
-    settings = client.org.sso.get()
+    settings = client.org.sso()
     assert settings.sso_required is False
-    assert settings.blockers == [{"msg": "no verified domain"}]
+    assert settings.blockers == ["no verified domain"]
     assert route.called
 
 
-def test_sso_enable_hands_back_the_break_glass_code_once(
-    api, client: MatterWave
-) -> None:
+def test_sso_enable_hands_back_the_break_glass_code_once(api, client: MatterWave) -> None:
     route = api.put("/api/org/sso").respond(
         200, json={"sso_required": True, "recovery": recovery_body()}, headers=H
     )
-    enforced = client.org.sso.set(True)
+    enforced = client.org.set_sso(True)
     assert body_of(route) == {"sso_required": True}
     assert enforced.sso_required is True
     assert enforced.recovery is not None
@@ -311,7 +301,7 @@ def test_sso_enable_hands_back_the_break_glass_code_once(
     assert "break-glass-1234" not in repr(enforced.recovery)
     # Disabling answers without a code.
     api.put("/api/org/sso").respond(200, json={"sso_required": False}, headers=H)
-    relaxed = client.org.sso.set(False)
+    relaxed = client.org.set_sso(False)
     assert relaxed.sso_required is False and relaxed.recovery is None
 
 
@@ -319,9 +309,9 @@ def test_sso_recovery_code_mint(api, client: MatterWave) -> None:
     route = api.post("/api/org/sso/recovery-code").respond(
         201, json={"recovery": recovery_body()}, headers=H
     )
-    code = client.org.sso.recovery_code()
+    code = client.org.mint_recovery_code()
     assert sent(route).content == b""
-    assert code.id == "rc-0001" and code.shown_once is True
+    assert code.recovery.id == "rc-0001" and code.recovery.shown_once is True
 
 
 # --- domains ---------------------------------------------------------------------------------
@@ -343,9 +333,7 @@ def test_domains_claim_list_and_release(api, client: MatterWave) -> None:
     claimed = client.org.domains.claim(" Example.TEST ")
     assert body_of(claim) == {"domain": "example.test"}
     assert claimed.verified is False
-    listed = api.get("/api/org/domains").respond(
-        200, json={"data": [domain_body()]}, headers=H
-    )
+    listed = api.get("/api/org/domains").respond(200, json={"data": [domain_body()]}, headers=H)
     assert len(client.org.domains.list()) == 1
     release = api.delete(f"/api/org/domains/{DOMAIN}").respond(204)
     assert client.org.domains.release(DOMAIN) is None
@@ -354,9 +342,7 @@ def test_domains_claim_list_and_release(api, client: MatterWave) -> None:
         client.org.domains.claim("not a domain")
 
 
-def test_domain_challenge_is_stable_and_verify_has_three_answers(
-    api, client: MatterWave
-) -> None:
+def test_domain_challenge_is_stable_and_verify_has_three_answers(api, client: MatterWave) -> None:
     challenge = api.get(f"/api/org/domains/{DOMAIN}/challenge").respond(
         200,
         json={
@@ -437,21 +423,19 @@ def idp_body(**extra) -> dict:
 
 def test_idp_list_never_carries_a_secret(api, client: MatterWave) -> None:
     route = api.get("/api/org/idp").respond(200, json={"data": [idp_body()]}, headers=H)
-    idps = client.org.idp.list()
+    idps = client.org.idps.list()
     assert idps.data[0].provider == PROVIDER
     assert "secret" not in str(idps)
     assert route.called
 
 
-def test_idp_attach_is_https_only_and_detach_removes(
-    api, client: MatterWave
-) -> None:
+def test_idp_attach_is_https_only_and_detach_removes(api, client: MatterWave) -> None:
     route = api.post("/api/org/idp").respond(201, json=idp_body(), headers=H)
-    attached = client.org.idp.attach(
-        "Acme SSO",
-        "https://id.example.test/",
-        "client-123",
-        "secret-value",
+    attached = client.org.idps.attach(
+        name="Acme SSO",
+        issuer="https://id.example.test/",
+        client_id="client-123",
+        client_secret="secret-value",
         scopes=["openid", "profile"],
     )
     assert body_of(route) == {
@@ -464,9 +448,11 @@ def test_idp_attach_is_https_only_and_detach_removes(
     }
     assert attached.issuer == "https://id.example.test"
     with pytest.raises(ValueError, match="https"):
-        client.org.idp.attach("Bad", "http://id.example.test", "c", "s")
+        client.org.idps.attach(
+            name="Bad", issuer="http://id.example.test", client_id="c", client_secret="s"
+        )
     detach = api.delete(f"/api/org/idp/{PROVIDER}").respond(204)
-    assert client.org.idp.detach(PROVIDER) is None
+    assert client.org.idps.detach(PROVIDER) is None
     assert detach.called
 
 
@@ -475,10 +461,10 @@ def test_idp_attach_is_https_only_and_detach_removes(
 
 def test_org_mfa_policy_get_and_set(api, client: MatterWave) -> None:
     got = api.get("/api/org/mfa").respond(200, json={"mfa_required": False}, headers=H)
-    assert client.org.mfa.get().mfa_required is False
+    assert client.org.mfa().mfa_required is False
     assert got.called
     put = api.put("/api/org/mfa").respond(200, json={"mfa_required": True}, headers=H)
-    required = client.org.mfa.set(True)
+    required = client.org.set_mfa(True)
     assert body_of(put) == {"mfa_required": True}
     assert required.mfa_required is True
 
@@ -492,7 +478,7 @@ def test_admin_scoping_is_what_the_server_answers(api, client: MatterWave) -> No
         headers=H,
     )
     with pytest.raises(PermissionDeniedError, match="owner role"):
-        client.org.models.get()
+        client.org.models()
 
 
 # --- async -----------------------------------------------------------------------------------------
@@ -525,12 +511,8 @@ async def test_async_org_makes_the_same_requests(api, async_client: AsyncMatterW
     api.get("/api/org/sharing").respond(200, json={"enabled": True}, headers=H)
     api.put("/api/org/sharing").respond(200, json={"enabled": False}, headers=H)
     api.get("/api/org/shares").respond(200, json={"data": []}, headers=H)
-    api.delete(f"/api/org/shares/{SHARE_ID}").respond(
-        200, json={"status": "revoked"}, headers=H
-    )
-    api.get("/api/org/sso").respond(
-        200, json={"sso_required": False, "blockers": []}, headers=H
-    )
+    api.delete(f"/api/org/shares/{SHARE_ID}").respond(200, json={"status": "revoked"}, headers=H)
+    api.get("/api/org/sso").respond(200, json={"sso_required": False, "blockers": []}, headers=H)
     api.put("/api/org/sso").respond(
         200, json={"sso_required": True, "recovery": recovery_body()}, headers=H
     )
@@ -579,25 +561,28 @@ async def test_async_org_makes_the_same_requests(api, async_client: AsyncMatterW
     async with async_client as c:
         assert (await c.org.get()).role == "owner"
         assert (await c.org.rename("Acme Ltd")).name == "Acme Ltd"
-        closed = await c.org.close("Acme")
+        closed = await c.org.close(confirm="Acme")
         assert closed.already_closed is True and closed.identity_removed is False
         assert closed.api_keys_revoked is None  # a step that could not be confirmed
-        assert len(await c.org.models.get()) == 2
-        assert (await c.org.models.set(None)).restricted
-        assert (await c.org.sharing.get()).enabled
-        assert (await c.org.sharing.set(False)).enabled is False
-        assert len(await c.org.shares.list()) == 0
-        assert (await c.org.shares.revoke(SHARE_ID)).status == "revoked"
-        assert (await c.org.sso.get()).blockers == []
-        assert (await c.org.sso.set(True)).recovery is not None
-        assert (await c.org.sso.recovery_code()).id == "rc-0001"
+        assert len(await c.org.models()) == 2
+        assert (await c.org.set_models(None)).restricted
+        assert (await c.org.sharing()).enabled
+        assert (await c.org.set_sharing(False)).enabled is False
+        assert len(await c.org.shares()) == 0
+        assert (await c.org.revoke_share(SHARE_ID)).status == "revoked"
+        assert (await c.org.sso()).blockers == []
+        assert (await c.org.set_sso(True)).recovery is not None
+        assert (await c.org.mint_recovery_code()).recovery.id == "rc-0001"
         assert len(await c.org.domains.list()) == 1
         assert (await c.org.domains.claim(DOMAIN)).verified is False
         assert (await c.org.domains.challenge(DOMAIN)).record.host == "_matterwave"
         assert (await c.org.domains.verify(DOMAIN)).verified is True
         assert await c.org.domains.release(DOMAIN) is None
-        assert (await c.org.idp.list()).data[0].kind == "oidc"
-        assert (await c.org.idp.attach("Acme SSO", "https://id.example.test", "c", "s")).name
-        assert await c.org.idp.detach(PROVIDER) is None
-        assert (await c.org.mfa.get()).mfa_required is True
-        assert (await c.org.mfa.set(True)).mfa_required is True
+        assert (await c.org.idps.list()).data[0].kind == "oidc"
+        attached = await c.org.idps.attach(
+            name="Acme SSO", issuer="https://id.example.test", client_id="c", client_secret="s"
+        )
+        assert attached.name
+        assert await c.org.idps.detach(PROVIDER) is None
+        assert (await c.org.mfa()).mfa_required is True
+        assert (await c.org.set_mfa(True)).mfa_required is True

@@ -64,13 +64,11 @@ def test_a_retried_call_leaves_the_final_response(api, sleeps) -> None:
     api.post("/v1/chat/completions").mock(
         side_effect=[
             httpx.Response(
-                500,
-                json={"error": {"message": "boom"}},
+                429,
+                json={"error": {"message": "slow down"}},
                 headers={"X-Request-Id": "req-first"},
             ),
-            httpx.Response(
-                200, json=completion_body(), headers={"X-Request-Id": "req-final"}
-            ),
+            httpx.Response(200, json=completion_body(), headers={"X-Request-Id": "req-final"}),
         ]
     )
     client = MatterWave(api_key="mw_test_key", base_url="https://matterwave.test")
