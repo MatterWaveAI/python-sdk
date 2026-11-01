@@ -884,3 +884,63 @@ def onboarding_complete_request() -> Request:
     return Request("POST", "/api/me/onboarding/complete", None, keyed=True, stream=False)
 
 
+# --- export and import jobs --------------------------------------------------------
+
+
+def start_export_request() -> Request:
+    return Request("POST", "/api/me/export", None, keyed=True, stream=False)
+
+
+def _export_path(export_id: str, suffix: str = "") -> str:
+    return f"/api/me/export/{_segment('export_id', export_id)}{suffix}"
+
+
+def export_status_request(export_id: str) -> Request:
+    return Request("GET", _export_path(export_id), None, keyed=True, stream=False)
+
+
+def export_download_request(download_url: str) -> Request:
+    """The signed path an export's `download_url` carries, fetched with the
+    key: the signature and the caller are both wanted, so a forwarded link
+    is useless to anyone not signed in as the owner."""
+    parts = urlsplit(download_url)
+    segments = parts.path.strip("/").split("/")
+    if len(segments) != 5 or segments[:3] != ["api", "me", "export"] or segments[4] != "download":
+        raise ValueError(f"not an export download URL: {download_url!r}")
+    return Request(
+        "GET",
+        _export_path(segments[3], "/download"),
+        None,
+        keyed=True,
+        stream=False,
+        headers={"Accept": "*/*"},
+        params=dict(parse_qsl(parts.query)),
+    )
+
+
+def start_import_request(file: bytes | IO[bytes], filename: str) -> Request:
+    """The whole file, read here so a retried upload sends the same bytes
+    again. The server decides ChatGPT from Claude from the contents; it
+    refuses an export it cannot read with a 422."""
+    if not filename:
+        raise ValueError("filename must be non-empty")
+    data = file if isinstance(file, bytes) else file.read()
+    return Request(
+        "POST",
+        "/api/me/imports",
+        None,
+        keyed=True,
+        stream=False,
+        files={"file": (filename, data, "application/octet-stream")},
+    )
+
+
+def list_imports_request() -> Request:
+    return Request("GET", "/api/me/imports", None, keyed=True, stream=False)
+
+
+def import_status_request(import_id: str) -> Request:
+    path = f"/api/me/imports/{_segment('import_id', import_id)}"
+    return Request("GET", path, None, keyed=True, stream=False)
+
+

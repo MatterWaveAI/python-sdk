@@ -2638,3 +2638,108 @@ class DeletedAccount:
         )
 
 
+# --- export and import jobs ----------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ExportJob:
+    """One account export (`POST` then `GET /api/me/export/{id}`). It is
+    built by the platform's worker; `download_url` appears with the status
+    `ready` and is a signed path that lasts until `expires_at`. The bytes
+    are only reachable by the owner: pass the job (or its URL) to
+    `exports.download`, which sends the caller's own credentials too."""
+
+    id: str
+    status: str
+    created_at: str
+    size_bytes: int | None = None
+    completed_at: str | None = None
+    expires_at: str | None = None
+    download_url: str | None = field(default=None, repr=False)
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> ExportJob:
+        return cls(
+            id=_str(data.get("id")),
+            status=_str(data.get("status")),
+            created_at=_str(data.get("created_at")),
+            size_bytes=_opt_int(data.get("size_bytes")),
+            completed_at=_opt_str(data.get("completed_at")),
+            expires_at=_opt_str(data.get("expires_at")),
+            download_url=_opt_str(data.get("download_url")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class ImportJob:
+    """One ChatGPT/Claude history import, from start to `completed` (or
+    `failed`, with `error`). The counts say what the worker found and what
+    it made; `branches_dropped` counts message branches the target's
+    linear model cannot hold."""
+
+    id: str
+    status: str
+    source: str
+    filename: str
+    size_bytes: int
+    conversations_total: int
+    conversations_done: int
+    conversations_created: int
+    conversations_existing: int
+    conversations_skipped: int
+    messages_created: int
+    attachments_skipped: int
+    branches_dropped: int
+    created_at: str
+    error: str | None = None
+    started_at: str | None = None
+    completed_at: str | None = None
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> ImportJob:
+        return cls(
+            id=_str(data.get("id")),
+            status=_str(data.get("status")),
+            source=_str(data.get("source")),
+            filename=_str(data.get("filename")),
+            size_bytes=_int(data.get("size_bytes")),
+            conversations_total=_int(data.get("conversations_total")),
+            conversations_done=_int(data.get("conversations_done")),
+            conversations_created=_int(data.get("conversations_created")),
+            conversations_existing=_int(data.get("conversations_existing")),
+            conversations_skipped=_int(data.get("conversations_skipped")),
+            messages_created=_int(data.get("messages_created")),
+            attachments_skipped=_int(data.get("attachments_skipped")),
+            branches_dropped=_int(data.get("branches_dropped")),
+            created_at=_str(data.get("created_at")),
+            error=_opt_str(data.get("error")),
+            started_at=_opt_str(data.get("started_at")),
+            completed_at=_opt_str(data.get("completed_at")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class ImportJobList:
+    """`GET /api/me/imports`: the caller's recent imports, newest first."""
+
+    data: list[ImportJob]
+    request_id: str | None = field(default=None, compare=False)
+
+    def __iter__(self) -> Any:
+        return iter(self.data)
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> ImportJobList:
+        return cls(
+            data=[ImportJob.from_dict(r) for r in _dicts(data.get("data"))],
+            request_id=request_id,
+        )
+
+

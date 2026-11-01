@@ -190,6 +190,13 @@ APP_OPERATIONS: dict[str, tuple[str, str]] = {
     "account.update_preferences": ("PUT", "/api/me/preferences"),
     "account.delete": ("DELETE", "/api/me"),
     "account.onboarding_complete": ("POST", "/api/me/onboarding/complete"),
+    # --- export and import jobs (T-208) ----------------------------------------
+    "exports.start": ("POST", "/api/me/export"),
+    "exports.get": ("GET", "/api/me/export/{export_id}"),
+    "exports.download": ("GET", "/api/me/export/{export_id}/download"),
+    "imports.start": ("POST", "/api/me/imports"),
+    "imports.list": ("GET", "/api/me/imports"),
+    "imports.get": ("GET", "/api/me/imports/{import_id}"),
 }
 
 Role = Literal["system", "user", "assistant", "tool"]

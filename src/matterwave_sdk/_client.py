@@ -44,6 +44,8 @@ from ._resources import (
     AsyncAudit,
     AsyncBudgetClient,
     AsyncEntitlementsClient,
+    AsyncExports,
+    AsyncImports,
     AsyncKeys,
     AsyncLibraryClient,
     AsyncNotifications,
@@ -54,6 +56,8 @@ from ._resources import (
     Audit,
     BudgetClient,
     EntitlementsClient,
+    Exports,
+    Imports,
     Keys,
     LibraryClient,
     Notifications,
@@ -1196,6 +1200,8 @@ class MatterWave:
         self.entitlements = EntitlementsClient(self)
         self.admin = Admin(self)
         self.account = Account(self)
+        self.exports = Exports(self)
+        self.imports = Imports(self)
         self.mcp = Mcp(self)
 
     @property
@@ -1859,6 +1865,8 @@ class AsyncMatterWave:
         self.entitlements = AsyncEntitlementsClient(self)
         self.admin = AsyncAdmin(self)
         self.account = AsyncAccount(self)
+        self.exports = AsyncExports(self)
+        self.imports = AsyncImports(self)
         self.mcp = AsyncMcp(self)
 
     @property

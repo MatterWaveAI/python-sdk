@@ -56,7 +56,10 @@ from .models import (
     EmailChangeStarted,
     EmailChangeState,
     Entitlements,
+    ExportJob,
     Folder,
+    ImportJob,
+    ImportJobList,
     Library,
     MemberBudget,
     MemberBudgetList,
@@ -1224,5 +1227,99 @@ class AsyncAccount(_Async):
         """As `Account.delete`: the account, for good. Session only."""
         body, rid = await self._object(req.delete_account_request(confirm))
         return DeletedAccount.from_dict(body, request_id=rid)
+
+
+# --- export and import jobs (T-208) ----------------------------------------------------
+
+
+class Exports(_Sync):
+    """The account's data leaving: the export the Settings -> Data pane
+    builds. `start` queues the platform's worker and answers at once; the
+    job is polled with `get` until `status` is `ready`, and `download`
+    fetches the bytes -- behind the link's signature *and* the caller's own
+    credentials, so a forwarded link is useless to anyone else. One pending
+    export per person (409 while one is running)."""
+
+    def start(self) -> ExportJob:
+        """`POST /api/me/export` (202): the job, `pending` until the worker
+        takes it. The person is told in-app and by mail when it is ready."""
+        body, rid = self._object(req.start_export_request())
+        return ExportJob.from_dict(body, request_id=rid)
+
+    def get(self, export_id: str) -> ExportJob:
+        """`GET /api/me/export/{id}`: where it stands, and a fresh signed
+        `download_url` once it is ready. Another person's export is the
+        same 404 as none."""
+        body, rid = self._object(req.export_status_request(export_id))
+        return ExportJob.from_dict(body, request_id=rid)
+
+    def download(self, job: ExportJob | str) -> bytes:
+        """The export's bytes, from a job's `download_url` (or the URL
+        itself), fetched with the caller's own key on top of the link's
+        signature. The URL lasts until `expires_at`; `get` mints a fresh
+        one."""
+        url = job if isinstance(job, str) else job.download_url
+        if not url:
+            raise ValueError("the export carries no download_url; fetch it with get()")
+        return self._client._send(req.export_download_request(url)).content
+
+
+class AsyncExports(_Async):
+    """As `Exports`; every method a coroutine."""
+
+    async def start(self) -> ExportJob:
+        body, rid = await self._object(req.start_export_request())
+        return ExportJob.from_dict(body, request_id=rid)
+
+    async def get(self, export_id: str) -> ExportJob:
+        body, rid = await self._object(req.export_status_request(export_id))
+        return ExportJob.from_dict(body, request_id=rid)
+
+    async def download(self, job: ExportJob | str) -> bytes:
+        url = job if isinstance(job, str) else job.download_url
+        if not url:
+            raise ValueError("the export carries no download_url; fetch it with get()")
+        return (await self._client._send(req.export_download_request(url))).content
+
+
+class Imports(_Sync):
+    """A ChatGPT or Claude history arriving: upload the export file, and
+    the platform's worker reads it, counts what it found and files the
+    conversations in. One import at a time per account (409 while one
+    runs); the file is parsed before anything is queued, so a non-export is
+    a 422 that started nothing."""
+
+    def start(self, file: bytes | IO[bytes], filename: str) -> ImportJob:
+        """`POST /api/me/imports` (202): the job with the counts as found.
+        Progress is on the same row; poll with `get`."""
+        body, rid = self._object(req.start_import_request(file, filename))
+        return ImportJob.from_dict(body, request_id=rid)
+
+    def list(self) -> ImportJobList:
+        """`GET /api/me/imports`: the recent imports, newest first."""
+        body, rid = self._object(req.list_imports_request())
+        return ImportJobList.from_dict(body, request_id=rid)
+
+    def get(self, import_id: str) -> ImportJob:
+        """`GET /api/me/imports/{id}`: where one stands. Another person's
+        import is the same 404 as none."""
+        body, rid = self._object(req.import_status_request(import_id))
+        return ImportJob.from_dict(body, request_id=rid)
+
+
+class AsyncImports(_Async):
+    """As `Imports`; every method a coroutine."""
+
+    async def start(self, file: bytes | IO[bytes], filename: str) -> ImportJob:
+        body, rid = await self._object(req.start_import_request(file, filename))
+        return ImportJob.from_dict(body, request_id=rid)
+
+    async def list(self) -> ImportJobList:
+        body, rid = await self._object(req.list_imports_request())
+        return ImportJobList.from_dict(body, request_id=rid)
+
+    async def get(self, import_id: str) -> ImportJob:
+        body, rid = await self._object(req.import_status_request(import_id))
+        return ImportJob.from_dict(body, request_id=rid)
 
 
