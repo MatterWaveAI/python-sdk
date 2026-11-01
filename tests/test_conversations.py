@@ -629,7 +629,7 @@ def test_update_renames_without_touching_the_model(api, client: MatterWave) -> N
 
 def test_update_refuses_an_empty_call_or_title_before_sending(api, client: MatterWave) -> None:
     route = api.patch(f"/api/conversations/{CONV}").mock(return_value=httpx.Response(200))
-    with pytest.raises(ValueError, match="title or a default_model"):
+    with pytest.raises(ValueError, match="a title, a default_model or a preset_id"):
         client.conversations.update(CONV)
     with pytest.raises(ValueError, match="non-empty"):
         client.conversations.update(CONV, title="   ")

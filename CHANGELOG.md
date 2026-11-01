@@ -9,7 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-<<<<<<< HEAD
+- `client.presets` (sync and async): the org's agent presets -- `list`
+  (`PresetListing`: `data`, `tools`, `limits`, `can_manage`), `get`,
+  `create`, `update` (`tools=None` goes back to the default set,
+  `welcome_message=None` drops it) and `delete`. Reading takes a key with
+  `chat:read`, writing one with `presets:manage`.
+- `conversations.create(preset_id=)` starts a conversation on a preset, and
+  `conversations.update(preset_id=)` puts one on a preset or, with None,
+  takes it off.
+- `client.connections` (sync and async), for an owner's or admin's person
+  token: `list` (`ConnectionList`, with the connectors on offer and the
+  notice, outcome and identity-status vocabularies), `get`, `create`
+  (`pending` without credentials), `update` (status, rate limit, config,
+  credentials), `delete`, `rotate_url` and `slack_manifest`;
+  `connections.routes` (`list`, `create`, `update`, `delete`);
+  `connections.identities` (`list`, `map`, `unmap`, `block`, `unblock`,
+  `for_member`); and `connections.events` (`list` by `outcome` and `since`,
+  `pages`, `items`). Credentials go in and never come out: no `Connection`
+  has a field for them.
+- `OrgUsage.by_connection` (`ConnectionUsage`): what each connector
+  connection's turns cost in the month.
+- `tests/openapi.json` and the vendored route document are refreshed to the
+  platform with presets and connectors, and a contract test holds each
+  preset, connection and route write to its request schema.
 - `Conversation.preset_id`, `Conversation.preset` (`ConversationPreset`:
   the id and name) and `Conversation.source` (`ConversationSource`: the
   `connector`, `connection_id`, `channel_label` and `url` of the thread a
@@ -21,7 +43,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `source` is the thread; a fork of the conversation takes messages.
 - An app-route refusal (`{"detail": ...}`) that carries a `code` beside
   the detail now has it on the error's `code`.
-=======
 - Examples, each run by `tests/test_examples.py` against a fake API: `chat`,
   `streaming`, `structured_output`, `webhook_receiver`, `device_sign_in`
   (an API key or a person's token) and `pagination`.
@@ -66,7 +87,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `pages_of(fetch)` / `items_of(pages)` and their async twins are the walk
   they share, exported for any list answering `{"data", "next_cursor"}`;
   `conversations.pages()` / `items()` now use it too.
->>>>>>> develop
 - `frequency_penalty` and `presence_penalty` on `chat.completions.create`
   (sync and async), relayed to the model as OpenAI defines them (-2 to 2);
   `None` leaves them out of the body.

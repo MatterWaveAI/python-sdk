@@ -26,6 +26,9 @@ password, sign-in email and deletion), `client.exports`/`client.imports`
 `client.invites` and `client.invite_links` (the organisation, for a
 person's token), `client.passkeys`, `client.mfa`, `client.accounts`
 (browser account switching) and `client.sync` (edge pairing and push).
+`client.presets` are the org's agent presets a conversation answers with,
+and `client.connections` its connectors to outside workspaces (Slack's),
+for a person's token.
 `matterwave_sdk.agent` is the agent tool contract the coding clients
 share, with its path, edit, diff and approval helpers.
 """
@@ -97,6 +100,33 @@ from ._client import (
     ConversationStream,
     MatterWave,
     Stream,
+)
+from ._connector_models import (
+    Connection,
+    ConnectionEvent,
+    ConnectionEventPage,
+    ConnectionIdentity,
+    ConnectionIdentityList,
+    ConnectionList,
+    ConnectionRoute,
+    ConnectionRouteList,
+    Preset,
+    PresetLimits,
+    PresetListing,
+    PresetTool,
+    SlackManifest,
+)
+from ._connectors import (
+    AsyncConnectionEvents,
+    AsyncConnectionIdentities,
+    AsyncConnectionRoutes,
+    AsyncConnections,
+    AsyncPresets,
+    ConnectionEvents,
+    ConnectionIdentities,
+    ConnectionRoutes,
+    Connections,
+    Presets,
 )
 from ._mcp import AsyncMcp, Mcp, McpTool, McpToolResult, SendMessageResult
 from ._org import (
@@ -263,6 +293,7 @@ from .models import (
     Choice,
     ChunkChoice,
     ChunkDelta,
+    ConnectionUsage,
     Conversation,
     ConversationContext,
     ConversationInstructions,
@@ -379,6 +410,10 @@ __all__ = [
     "AsyncBilling",
     "AsyncBrowserAccounts",
     "AsyncBudgetClient",
+    "AsyncConnectionEvents",
+    "AsyncConnectionIdentities",
+    "AsyncConnectionRoutes",
+    "AsyncConnections",
     "AsyncConversationStream",
     "AsyncDomains",
     "AsyncEntitlementsClient",
@@ -401,6 +436,7 @@ __all__ = [
     "AsyncPlans",
     "AsyncPolicy",
     "AsyncPreferencesClient",
+    "AsyncPresets",
     "AsyncSessions",
     "AsyncShares",
     "AsyncSpeech",
@@ -436,6 +472,19 @@ __all__ = [
     "CompactingFrame",
     "CompactionFrame",
     "ConflictError",
+    "Connection",
+    "ConnectionEvent",
+    "ConnectionEventPage",
+    "ConnectionEvents",
+    "ConnectionIdentities",
+    "ConnectionIdentity",
+    "ConnectionIdentityList",
+    "ConnectionList",
+    "ConnectionRoute",
+    "ConnectionRouteList",
+    "ConnectionRoutes",
+    "Connections",
+    "ConnectionUsage",
     "ConnectorConversationError",
     "ContextFrame",
     "Conversation",
@@ -588,6 +637,11 @@ __all__ = [
     "PolicyStats",
     "Preferences",
     "PreferencesClient",
+    "Preset",
+    "PresetLimits",
+    "PresetListing",
+    "Presets",
+    "PresetTool",
     "RateLimit",
     "RateLimitError",
     "RawResponse",
@@ -611,6 +665,7 @@ __all__ = [
     "ShareList",
     "Shares",
     "SharingPolicy",
+    "SlackManifest",
     "Speech",
     "SsoSettings",
     "Stability",

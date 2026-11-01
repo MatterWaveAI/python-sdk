@@ -1,9 +1,10 @@
 {
-  "platform_revision": "518e2a80d384376e6cb4770fd17e9082fc5ae593",
+  "platform_revision": "39f396672bd932998c111f0538b50a92ab3a65fe",
   "source": "docs/developers/openapi-full.json",
-  "sha256": "cd4b86d63bb4cedf83a6435c16aee580b9474dd66ffe2b05e614571f8fefc7a9",
+  "sha256": "ac50872eadef2f36a7101bffe4b82d7399b106d398777ca7576b07f757158239",
   "internal_prefixes": {
     "/api/admin/": "The operator console: the platform `admin` role, not a customer surface.",
+    "/api/hooks/": "Inbound connector events, verified by the provider's own signature.",
     "/api/sync/": "The edge mirror and its pairing: the box's worker and the Devices pane."
   },
   "internal_routes": [

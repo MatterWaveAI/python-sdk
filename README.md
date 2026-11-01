@@ -246,8 +246,10 @@ of every page), and `search(q)`, `get(id,
 full=)`, `tree(id)`, `set_active_leaf(id, message_id)`, `fork(id,
 message_id)`, `edit(id, message_id, content)` and `regenerate(id,
 message_id)` cover the rest of the sidebar and the branch switcher;
-`update(id, title=, default_model=)` renames the conversation and keeps the
-model its turns use (None clears the model); `context(id)` says how full the
+`update(id, title=, default_model=, preset_id=)` renames the conversation,
+keeps the model its turns use and puts it on one of the org's presets (None
+clears the model, or takes the conversation off its preset);
+`create(preset_id=)` starts one on a preset. `context(id)` says how full the
 model's window is, and `compact(id)` folds the earlier messages into a summary
 now (a `ConflictError` when there is nothing to fold yet). `client.me()` says
 who the key acts as.
@@ -428,6 +430,7 @@ name), `models` / `set_models`, `sharing` / `set_sharing`, `shares` /
 (`list`, `attach`, `detach`). `members`: `list`, `set_role`,
 `transfer_ownership`, `remove`. `invites`: `list`, `create`, `resend`, `revoke`,
 `lookup`, `accept`. `invite_links`: `list`, `create`, `revoke`, `lookup`, `join`.
+`connections` (see [Presets and connections](#presets-and-connections)).
 `billing`: `checkout`, `portal`, `invoices`, `change_plan` (or `switch_plan`),
 `plan_history` beside `status`, and the public `plans` (as `plans.list`).
 `members` answers the invite and link routes too: `list_invites`,
@@ -440,6 +443,58 @@ member's; the rest is an owner's or admin's, and closing the org, transferring
 ownership and requiring SSO or two-factor an owner's alone. One-time secrets --
 an invite link's `token` and `url`, an SSO recovery `code` -- are kept out of
 `repr`.
+
+## Presets and connections
+
+A preset is one of the org's agents: a name, a model, instructions, tools and
+a welcome message. Any member reads them -- an API key with `chat:read`, so a
+terminal can offer them in a picker -- and an owner or admin writes them, a key
+with `presets:manage`. A conversation started on one answers with it.
+
+```python
+listing = client.presets.list()  # data, tools, limits, can_manage
+support = next(p for p in listing if p.name == "Support")
+conv = client.conversations.create(preset_id=support.id)
+client.conversations.update(conv.id, preset_id=None)  # back to its own model and instructions
+
+preset = client.presets.create("Triage", "grt-nano", instructions="Sort, then route.", tools=[])
+client.presets.update(preset.id, tools=None)  # None goes back to the default tools
+client.presets.delete(preset.id)  # its conversations keep answering with it
+```
+
+A connection joins the org to an outside workspace (Slack's): the provider
+posts events to its ingress URL, and each channel routed to a preset is
+answered at a member's expense. Connecting a workspace is a person's decision,
+so `connections` takes a person's token from an owner or admin and refuses
+every API key. Credentials go in on `create` and `update`, are checked with the
+provider there, and never come back out: no `Connection` carries them.
+
+```python
+admin = MatterWave(access_token=signin.session(token))
+
+slack = admin.connections.create("slack", "Acme Slack")  # pending: no credentials yet
+manifest = admin.connections.slack_manifest(slack.id)  # send the admin to manifest.create_url
+admin.connections.update(slack.id, credentials={"bot_token": ..., "signing_secret": ...})
+
+admin.connections.routes.create(slack.id, "C0123", support.id, paying_subject=subject)
+for identity in admin.connections.identities.list(slack.id, status="unmapped"):
+    admin.connections.identities.map(slack.id, identity.id, subject)
+for event in admin.connections.events.items(slack.id, outcome="rate_limited"):
+    print(event.received_at, event.outcome, event.detail)
+print(admin.usage.org().by_connection)  # what each connection's turns cost this month
+```
+
+`presets`: `list`, `get`, `create`, `update`, `delete`. `connections`: `list`
+(with the connectors on offer and the outcome and status vocabularies), `get`,
+`create`, `update` (`status` `active` or `disabled`, the rate limit, `config`,
+new credentials), `delete`, `rotate_url` (a new ingress URL; the old one stops
+at once) and `slack_manifest`; `connections.routes`: `list`, `create`,
+`update`, `delete`; `connections.identities`: `list`, `map`, `unmap`, `block`,
+`unblock`, and `for_member` (one member's accounts across connections);
+`connections.events`: `list` (by `outcome` and `since`, a cursor page),
+`pages`, `items`. A deployment without connectors answers the connection
+routes 503, raised as `ServerError` with the server's message, which names the
+setting to make (`MW_CONNECTOR_SECRET_KEY`).
 
 ## Receiving webhooks
 
@@ -493,8 +548,8 @@ organisation; for those, sign the person in at the identity provider instead.
 ## Signing a person in
 
 The routes that manage the organisation -- members and invites, the org's
-settings, its billing, the audit trail, the org's instructions, budget caps, and
-the operator console -- gate on the caller's
+settings, its billing, the audit trail, the org's instructions, budget caps, its
+connections, and the operator console -- gate on the caller's
 membership, not a key scope, and answer every API key 403 "Membership is managed
 by a person, not an API key." A person's access token from the deployment's
 identity provider is what they take. Pass one as `access_token=`, the token
@@ -537,13 +592,14 @@ platform's route document (the drift test holds the two together):
 | --- | --- | --- |
 | `public` | nothing | `index`, `auth.device.start` / `poll`, `shares.view`, `plans.list`, `policy.stats`, `invites.lookup`, `invite_links.lookup`, `passkeys.login_start` / `login_finish`, `accounts`, `sync.pair` |
 | `key` | any API key, or a person's token | `me`, `account` (but the password, email and deletion methods), `preferences`, `sessions`, `speech`, `billing.status`, `app_models`, `instructions.user` / `update_user`, `notifications`, `announcements.list`, `entitlements.get`, `messages.set_feedback` / `delete_feedback`, `keys.list`, `usage.get`, `attachments`, `library`, `shares.list_mine` / `revoke`, `budget.get`, `sync.status` |
-| `key:chat:read` | a key with `chat:read`, or a person's token | `models`, `exports`, the conversation reads, `messages.list_feedback`, `shares.list` |
+| `key:chat:read` | a key with `chat:read`, or a person's token | `models`, `exports`, the conversation reads, `messages.list_feedback`, `shares.list`, `presets.list` / `get` |
 | `key:chat:write` | a key with `chat:write`, or a person's token | `imports`, `chat.completions.create`, `embeddings.create`, the conversation writes and turns, `shares.create` |
 | `key:keys:manage` | a key with `keys:manage`, or a person's token | `keys.create` / `update` / `rotate` / `revoke` |
 | `key:usage:read` | a key with `usage:read`, or a person's token | `usage.org`, `usage.export_csv` |
 | `key:webhooks:manage` | a key with `webhooks:manage`, or a person's token | `webhooks` |
+| `key:presets:manage` | a key with `presets:manage`, or a person's token | `presets.create` / `update` / `delete` |
 | `key:conversations:import` | the device key an edge box got from pairing | `sync.push` |
-| `person` | a person's token only | `audit`, `instructions.org` / `update_org`, `budget.members` / `set_overage_cap` / `set_member_default_cap` / `set_member_cap`, `org`, `members`, `invites` and `invite_links` (but their two `lookup`s), `billing` (but `status`), `auth.device.lookup` / `approve` / `deny`, `account.change_password` / `delete` and the email change, `passkeys` (but the two login steps), `mfa`, `sync.pairings`, `admin` |
+| `person` | a person's token only | `audit`, `instructions.org` / `update_org`, `budget.members` / `set_overage_cap` / `set_member_default_cap` / `set_member_cap`, `org`, `members`, `invites` and `invite_links` (but their two `lookup`s), `billing` (but `status`), `auth.device.lookup` / `approve` / `deny`, `account.change_password` / `delete` and the email change, `passkeys` (but the two login steps), `mfa`, `sync.pairings`, `connections`, `admin` |
 
 A scope never widens a role: the org routes still need the org role they ask of a
 person, whichever credential carries it.

@@ -1187,10 +1187,42 @@ class UsageTotals:
 
 
 @dataclass(frozen=True)
+class ConnectionUsage:
+    """One connector connection's share of the month: what the turns it
+    answered cost, biggest first. `connector` and `display_name` are None
+    once the connection is deleted; its spend keeps its id."""
+
+    connection_id: str
+    connector: str | None
+    display_name: str | None
+    weighted_tokens: int
+    tokens: int
+    cost_micros: int
+    turns: int
+    last_active: str | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ConnectionUsage:
+        return cls(
+            connection_id=_str(data.get("connection_id")),
+            connector=_opt_str(data.get("connector")),
+            display_name=_opt_str(data.get("display_name")),
+            weighted_tokens=_int(data.get("weighted_tokens")),
+            tokens=_int(data.get("tokens")),
+            cost_micros=_int(data.get("cost_micros")),
+            turns=_int(data.get("turns")),
+            last_active=_opt_str(data.get("last_active")),
+        )
+
+
+@dataclass(frozen=True)
 class OrgUsage:
     """`GET /api/org/usage`: one calendar month per member. `scope` is `org`
     for an owner or admin (every member) and `self` for anyone else (their
-    own row); `totals` are over the rows returned."""
+    own row); `totals` are over the rows returned. `by_connection` is the
+    part of those rows that connector turns made, per connection, scoped the
+    same way: every connection for an owner or admin, the ones a member paid
+    for otherwise. Chat and API turns are in no connection's row."""
 
     period: str
     period_start: str
@@ -1199,6 +1231,7 @@ class OrgUsage:
     scope: str
     data: list[MemberUsage]
     totals: UsageTotals
+    by_connection: list[ConnectionUsage] = field(default_factory=list)
     request_id: str | None = field(default=None, compare=False)
 
     def __iter__(self) -> Any:
@@ -1217,6 +1250,7 @@ class OrgUsage:
             scope=_str(data.get("scope")),
             data=[MemberUsage.from_dict(r) for r in _dicts(data.get("data"))],
             totals=UsageTotals.from_dict(_dict(data.get("totals"))),
+            by_connection=[ConnectionUsage.from_dict(r) for r in _dicts(data.get("by_connection"))],
             request_id=request_id,
         )
 

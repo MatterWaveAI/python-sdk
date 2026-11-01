@@ -4,6 +4,8 @@
     "/api/unsubscribe": "The email footer's one-click unsubscribe, keyed by the link's own token."
   },
   "routes": {
-    "GET /api/share/{token}/attachments/{attachment_id}": "An attachment inside a shared snapshot, fetched by the page that renders the snapshot."
+    "GET /api/share/{token}/attachments/{attachment_id}": "An attachment inside a shared snapshot, fetched by the page that renders the snapshot.",
+    "GET /api/org/agent-tools": "The org's switch for coding clients' local agent tools, set in the web app's settings; clients read it from `/api/me` (`local_agent_tools`).",
+    "PUT /api/org/agent-tools": "The org's switch for coding clients' local agent tools, set in the web app's settings; clients read it from `/api/me` (`local_agent_tools`)."
   }
 }

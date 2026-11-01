@@ -25,6 +25,20 @@
         "title": "ActiveLeaf",
         "type": "object"
       },
+      "AgentToolsPolicy": {
+        "description": "Whether members' coding clients may run their agent tools.",
+        "properties": {
+          "local_agent_tools": {
+            "title": "Local Agent Tools",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "local_agent_tools"
+        ],
+        "title": "AgentToolsPolicy",
+        "type": "object"
+      },
       "AnnouncementChanges": {
         "description": "Only the fields sent change. `end_now` sets `ends_at` to the server's\nclock rather than the operator's, which is what \"end now\" means.",
         "properties": {
@@ -1354,6 +1368,60 @@
         "title": "ConversationMessage",
         "type": "object"
       },
+      "CreateConnection": {
+        "description": "Without `credentials` the connection is made `pending`: its ingress\nURL exists for a provider whose app is built around it, and a PATCH\nwith the credentials activates it.",
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          },
+          "connector": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Connector",
+            "type": "string"
+          },
+          "credentials": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "minProperties": 1,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credentials"
+          },
+          "display_name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "rate_limit_per_minute": {
+            "anyOf": [
+              {
+                "maximum": 10000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Limit Per Minute"
+          }
+        },
+        "required": [
+          "connector",
+          "display_name"
+        ],
+        "title": "CreateConnection",
+        "type": "object"
+      },
       "CreateEndpoint": {
         "properties": {
           "description": {
@@ -1465,6 +1533,105 @@
           "name"
         ],
         "title": "CreateKey",
+        "type": "object"
+      },
+      "CreatePreset": {
+        "description": "`tools` omitted or null is the platform's default set; `[]` is none.",
+        "properties": {
+          "description": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Description",
+            "type": "string"
+          },
+          "instructions": {
+            "default": "",
+            "maxLength": 4000,
+            "title": "Instructions",
+            "type": "string"
+          },
+          "model": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "tools": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tools"
+          },
+          "welcome_message": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Welcome Message"
+          }
+        },
+        "required": [
+          "name",
+          "model"
+        ],
+        "title": "CreatePreset",
+        "type": "object"
+      },
+      "CreateRoute": {
+        "properties": {
+          "channel_label": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Channel Label",
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "external_channel_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "External Channel Id",
+            "type": "string"
+          },
+          "paying_subject": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Paying Subject",
+            "type": "string"
+          },
+          "preset_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Preset Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "external_channel_id",
+          "preset_id",
+          "paying_subject"
+        ],
+        "title": "CreateRoute",
         "type": "object"
       },
       "DecideDevice": {
@@ -2684,6 +2851,18 @@
       "Model": {
         "additionalProperties": false,
         "properties": {
+          "context_window": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Context Window"
+          },
           "created": {
             "title": "Created",
             "type": "integer"
@@ -2701,13 +2880,18 @@
             "const": "matterwave",
             "title": "Owned By",
             "type": "string"
+          },
+          "supports_tools": {
+            "title": "Supports Tools",
+            "type": "boolean"
           }
         },
         "required": [
           "id",
           "object",
           "created",
-          "owned_by"
+          "owned_by",
+          "supports_tools"
         ],
         "title": "Model",
         "type": "object"
@@ -2905,6 +3089,18 @@
       },
       "NewConversation": {
         "properties": {
+          "preset_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preset Id"
+          },
           "temporary": {
             "default": false,
             "title": "Temporary",
@@ -4568,8 +4764,81 @@
         "title": "Unsubscribed",
         "type": "object"
       },
+      "UpdateConnection": {
+        "description": "Every field optional: omitted means unchanged. An admin may switch a\nconnection on or off; `revoked` and `error` are the provider's to set,\nand switching one back on is `active`.",
+        "properties": {
+          "config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config"
+          },
+          "credentials": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "minProperties": 1,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credentials"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "rate_limit_per_minute": {
+            "anyOf": [
+              {
+                "maximum": 10000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Limit Per Minute"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "active",
+                  "disabled"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "title": "UpdateConnection",
+        "type": "object"
+      },
       "UpdateConversation": {
-        "description": "What PATCH may change: the title, the default model, or both.\n\n`default_model` is the picker's selection, persisted as the\nconversation's default. `null` clears it back to the configured default;\nomitting the field entirely is \"nothing to update\" -- `model_fields_set`\ntells the two apart, which a plain default of None cannot.\n\n`title` is the person's name for the conversation, 1-200 characters once\nthe surrounding whitespace is gone. There is no \"clear\" for it: a\nconversation always has a title, so `null` here is the same as leaving\nthe field out.",
+        "description": "What PATCH may change: the title, the default model, the preset.\n\n`default_model` is the picker's selection, persisted as the\nconversation's default. `null` clears it back to the configured default;\nomitting the field entirely is \"nothing to update\" -- `model_fields_set`\ntells the two apart, which a plain default of None cannot.\n\n`title` is the person's name for the conversation, 1-200 characters once\nthe surrounding whitespace is gone. There is no \"clear\" for it: a\nconversation always has a title, so `null` here is the same as leaving\nthe field out.\n\n`preset_id` puts the conversation on one of the org's live presets, and\n`null` takes it off again, back to its own model and instructions --\ntold apart from an omitted field the way `default_model` is.",
         "properties": {
           "default_model": {
             "anyOf": [
@@ -4582,6 +4851,18 @@
               }
             ],
             "title": "Default Model"
+          },
+          "preset_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preset Id"
           },
           "title": {
             "anyOf": [
@@ -4655,6 +4936,39 @@
           }
         },
         "title": "UpdateEndpoint",
+        "type": "object"
+      },
+      "UpdateIdentity": {
+        "description": "`map` names the member in `subject`; the others take none.",
+        "properties": {
+          "action": {
+            "enum": [
+              "map",
+              "unmap",
+              "block",
+              "unblock"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "subject": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "UpdateIdentity",
         "type": "object"
       },
       "UpdateKey": {
@@ -4742,6 +5056,142 @@
           }
         },
         "title": "UpdateKey",
+        "type": "object"
+      },
+      "UpdatePreset": {
+        "description": "Every field optional: omitted means unchanged. `tools: null` goes\nback to the default set and `welcome_message: null` drops the message;\n`model_fields_set` tells either from an omitted field.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "instructions": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instructions"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "tools": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tools"
+          },
+          "welcome_message": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Welcome Message"
+          }
+        },
+        "title": "UpdatePreset",
+        "type": "object"
+      },
+      "UpdateRoute": {
+        "properties": {
+          "channel_label": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel Label"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "paying_subject": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paying Subject"
+          },
+          "preset_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preset Id"
+          }
+        },
+        "title": "UpdateRoute",
         "type": "object"
       },
       "Usage": {
@@ -4945,7 +5395,7 @@
     },
     "securitySchemes": {
       "apiKey": {
-        "description": "A MatterWave API key (`mw_...`), created under Settings > API keys or by device login. A key carries scopes; an operation that needs one lists it, and an empty list means any key. `/api/conversations*` needs `chat:read` for a GET and `chat:write` otherwise; `/api/org/webhooks*` needs `webhooks:manage` and `/api/org/usage*` `usage:read`, on top of the owner's org role. Known scopes: `chat:read`, `chat:write`, `keys:manage`, `usage:read`, `webhooks:manage`.",
+        "description": "A MatterWave API key (`mw_...`), created under Settings > API keys or by device login. A key carries scopes; an operation that needs one lists it, and an empty list means any key. `/api/conversations*` needs `chat:read` for a GET and `chat:write` otherwise; `/api/org/webhooks*` needs `webhooks:manage`, `/api/org/usage*` `usage:read`, and `/api/org/presets*` `chat:read` for a GET and `presets:manage` otherwise, on top of the owner's org role. Known scopes: `chat:read`, `chat:write`, `keys:manage`, `presets:manage`, `usage:read`, `webhooks:manage`.",
         "scheme": "bearer",
         "type": "http"
       },
@@ -6590,7 +7040,7 @@
         ]
       },
       "patch": {
-        "description": "Rename the conversation, set or clear its default model, or both.\n\nThe tenancy check is the store's, same as every other conversation write;\na row the caller cannot see is a 404 for a rename exactly as for a\ndelete. Permission over WHICH models may be picked is not done here --\nthat is org policy, and per-org model policy does not exist yet.\n\nA rename is the person's choice, and the store records it as one so the\nauto-title never overwrites it. No webhook event: a title is the person's\ntext, and `conversation.created` deliberately carries none of it either.",
+        "description": "Rename the conversation, set or clear its default model, put it on a\npreset or take it off one -- any of them at once.\n\nThe tenancy check is the store's, same as every other conversation write;\na row the caller cannot see is a 404 for a rename exactly as for a\ndelete. Permission over WHICH models may be picked is not done here --\nthat is org policy, and per-org model policy does not exist yet.\n\nA rename is the person's choice, and the store records it as one so the\nauto-title never overwrites it. No webhook event: a title is the person's\ntext, and `conversation.created` deliberately carries none of it either.",
         "operationId": "update_conversation_api_conversations__conversation_id__patch",
         "parameters": [
           {
@@ -7182,7 +7632,7 @@
     },
     "/api/conversations/{conversation_id}/messages": {
       "post": {
-        "description": "Append a user message and stream the assistant's reply as SSE.\n\nPOST rather than GET because it creates state, which means the browser uses\n`fetch()` + ReadableStream rather than `EventSource`. That is fine, and it\nkeeps the request body available for the prompt. `fetch()` also loses\nEventSource's automatic reconnect -- deliberately, because silently\nre-sending a prompt would bill twice; a client that wants the rest of a\nturn re-presents `Last-Event-ID` instead.",
+        "description": "Append a user message and stream the assistant's reply as SSE.\n\nPOST rather than GET because it creates state, which means the browser uses\n`fetch()` + ReadableStream rather than `EventSource`. That is fine, and it\nkeeps the request body available for the prompt. `fetch()` also loses\nEventSource's automatic reconnect -- deliberately, because silently\nre-sending a prompt would bill twice; a client that wants the rest of a\nturn re-presents `Last-Event-ID` instead.\n\nThe turn itself is `open_turn`'s, shared with the connector job.",
         "operationId": "send_message_api_conversations__conversation_id__messages_post",
         "parameters": [
           {
@@ -10583,6 +11033,88 @@
         ]
       }
     },
+    "/api/org/agent-tools": {
+      "get": {
+        "description": "Whether members may use a coding client's agent mode, which reads\nand edits files and runs commands on the member's own machine. On\nuntil an owner or admin switches it off; with no Postgres there is\nnothing stored, and the answer is that default.",
+        "operationId": "get_agent_tools_policy_api_org_agent_tools_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Agent Tools Policy Api Org Agent Tools Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "idpToken": []
+          }
+        ],
+        "summary": "Get Agent Tools Policy",
+        "tags": [
+          "org"
+        ]
+      },
+      "put": {
+        "description": "Switch local agent tools on or off for the org. Audited: every\nmember's clients follow it. The clients read it from `/api/me` and\nenforce it themselves; the server never runs those tools, so there is\nno request here for it to refuse.",
+        "operationId": "put_agent_tools_policy_api_org_agent_tools_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentToolsPolicy"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Put Agent Tools Policy Api Org Agent Tools Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "idpToken": []
+          }
+        ],
+        "summary": "Put Agent Tools Policy",
+        "tags": [
+          "org"
+        ]
+      }
+    },
     "/api/org/audit": {
       "get": {
         "description": "One page of the org's trail, newest first, with the cursor for the\nnext. `actions` lists every action the trail holds so the pane's filter\noffers what exists rather than a list it would have to maintain.",
@@ -10881,6 +11413,898 @@
         "summary": "Close Org",
         "tags": [
           "org"
+        ]
+      }
+    },
+    "/api/org/connections": {
+      "get": {
+        "description": "The org's connections, the connectors this deployment can make one\nwith, and the vocabularies the pane offers: the events a connection may\nbe notified of and the outcomes the event log filters on.",
+        "operationId": "list_connections_api_org_connections_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Connections Api Org Connections Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "idpToken": []
+          }
+        ],
+        "summary": "List Connections",
+        "tags": [
+          "connectors"
+        ]
+      },
+      "post": {
+        "description": "Check the credentials with the provider, keep them encrypted, and\nanswer with the row and the ingress URL to give the provider; or,\ngiven none, the pending row and the URL alone.",
+        "operationId": "create_connection_api_org_connections_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateConnection"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Connection Api Org Connections Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "idpToken": []
+          }
+        ],
+        "summary": "Create Connection",
+        "tags": [
+          "connectors"
+        ]
+      }
+    },
+    "/api/org/connections/slack/manifest": {
+      "get": {
+        "description": "The Slack app manifest for one of the org's Slack connections, the\nrequest URL it names, Slack's create-from-manifest link carrying it,\nand whether that URL is one Slack can reach.",
+        "operationId": "slack_manifest_api_org_connections_slack_manifest_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Slack Manifest Api Org Connections Slack Manifest Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "idpToken": []
+          }
+        ],
+        "summary": "Slack Manifest",
+        "tags": [
+          "connectors"
+        ]
+      }
+    },
+    "/api/org/connections/{connection_id}": {
+      "delete": {
+        "description": "The connection with its routes, identities, thread map and log. The\nconversations it opened stay with their paying members.",
+        "operationId": "delete_connection_api_org_connections__connection_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "idpToken": []
+          }
+        ],
+        "summary": "Delete Connection",
+        "tags": [
+          "connectors"
+        ]
+      },
+      "get": {
+        "operationId": "get_connection_api_org_connections__connection_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Connection Api Org Connections  Connection Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "idpToken": []
+          }
+        ],
+        "summary": "Get Connection",
+        "tags": [
+          "connectors"
+        ]
+      },
+      "patch": {
+        "description": "Status, rate limit, config and credentials. Credentials are checked\nwith the provider first, like a create's, and activate a pending\nconnection.",
+        "operationId": "update_connection_api_org_connections__connection_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateConnection"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Update Connection Api Org Connections  Connection Id  Patch",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "idpToken": []
+          }
+        ],
+        "summary": "Update Connection",
+        "tags": [
+          "connectors"
+        ]
+      }
+    },
+    "/api/org/connections/{connection_id}/events": {
+      "get": {
+        "description": "What the connection received and what became of each event, newest\nfirst: ids and outcomes, never what anyone wrote. `next_cursor` fetches\nthe page after this one, null on the last.",
+        "operationId": "list_events_api_org_connections__connection_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "title": "Connection Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "outcome",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 32,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Outcome"
+            }
+          },
+          {
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Since"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Events Api Org Connections  Connection Id  Events Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "idpToken": []
+          }
+        ],
+        "summary": "List Events",
+        "tags": [
+          "connectors"
+        ]
+      }
+    },
+    "/api/org/connections/{connection_id}/identities": {
+      "get": {
+        "description": "Everyone this connection has heard from, and which member each is.",
+        "operationId": "list_identities_api_org_connections__connection_id__identities_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "title": "Connection Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Identities Api Org Connections  Connection Id  Identities Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "idpToken": []
+          }
+        ],
+        "summary": "List Identities",
+        "tags": [
+          "connectors"
+        ]
+      }
+    },
+    "/api/org/connections/{connection_id}/identities/{identity_id}": {
+      "patch": {
+        "description": "Map to a member, unmap, block or unblock. The admin's decision\nstands over the email match from then on.",
+        "operationId": "update_identity_api_org_connections__connection_id__identities__identity_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "title": "Connection Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "identity_id",
+            "required": true,
+            "schema": {
+              "title": "Identity Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateIdentity"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Update Identity Api Org Connections  Connection Id  Identities  Identity Id  Patch",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "idpToken": []
+          }
+        ],
+        "summary": "Update Identity",
+        "tags": [
+          "connectors"
+        ]
+      }
+    },
+    "/api/org/connections/{connection_id}/rotate-url": {
+      "post": {
+        "description": "A new ingress URL; the old one stops routing now.",
+        "operationId": "rotate_connection_url_api_org_connections__connection_id__rotate_url_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rotate Connection Url Api Org Connections  Connection Id  Rotate Url Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "idpToken": []
+          }
+        ],
+        "summary": "Rotate Connection Url",
+        "tags": [
+          "connectors"
+        ]
+      }
+    },
+    "/api/org/connections/{connection_id}/routes": {
+      "get": {
+        "description": "The channels this connection answers, each with its preset and\npaying member. A channel not listed is never answered.",
+        "operationId": "list_routes_api_org_connections__connection_id__routes_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Routes Api Org Connections  Connection Id  Routes Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "idpToken": []
+          }
+        ],
+        "summary": "List Routes",
+        "tags": [
+          "connectors"
+        ]
+      },
+      "post": {
+        "description": "422 for a preset that is not this org's or a paying member who is\nnot a current member; 409 for a channel that already has a route.",
+        "operationId": "create_route_api_org_connections__connection_id__routes_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRoute"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Route Api Org Connections  Connection Id  Routes Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "idpToken": []
+          }
+        ],
+        "summary": "Create Route",
+        "tags": [
+          "connectors"
+        ]
+      }
+    },
+    "/api/org/connections/{connection_id}/routes/{route_id}": {
+      "delete": {
+        "operationId": "delete_route_api_org_connections__connection_id__routes__route_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "title": "Connection Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "route_id",
+            "required": true,
+            "schema": {
+              "title": "Route Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "idpToken": []
+          }
+        ],
+        "summary": "Delete Route",
+        "tags": [
+          "connectors"
+        ]
+      },
+      "patch": {
+        "operationId": "update_route_api_org_connections__connection_id__routes__route_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "title": "Connection Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "route_id",
+            "required": true,
+            "schema": {
+              "title": "Route Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRoute"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Update Route Api Org Connections  Connection Id  Routes  Route Id  Patch",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "idpToken": []
+          }
+        ],
+        "summary": "Update Route",
+        "tags": [
+          "connectors"
+        ]
+      }
+    },
+    "/api/org/connector-identities": {
+      "get": {
+        "description": "The provider accounts mapped to one member, for the Members pane.",
+        "operationId": "identities_for_member_api_org_connector_identities_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "subject",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Subject",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Identities For Member Api Org Connector Identities Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "idpToken": []
+          }
+        ],
+        "summary": "Identities For Member",
+        "tags": [
+          "connectors"
         ]
       }
     },
@@ -11973,6 +13397,269 @@
         ]
       }
     },
+    "/api/org/presets": {
+      "get": {
+        "description": "The org's live presets, the tools a preset may name (with what each\ndoes, for the pane's checkboxes) and the limits. `can_manage` says\nwhether this caller may change them, so a member's pane shows the list\nwith nothing to press.",
+        "operationId": "list_presets_api_org_presets_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Presets Api Org Presets Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "chat:read"
+            ]
+          },
+          {
+            "sessionCookie": []
+          },
+          {
+            "idpToken": []
+          }
+        ],
+        "summary": "List Presets",
+        "tags": [
+          "presets"
+        ]
+      },
+      "post": {
+        "description": "409 for a name the org already uses (ignoring case) or at the cap.",
+        "operationId": "create_preset_api_org_presets_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePreset"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Preset Api Org Presets Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "presets:manage"
+            ]
+          },
+          {
+            "sessionCookie": []
+          },
+          {
+            "idpToken": []
+          }
+        ],
+        "summary": "Create Preset",
+        "tags": [
+          "presets"
+        ]
+      }
+    },
+    "/api/org/presets/{preset_id}": {
+      "delete": {
+        "description": "Soft: the conversations on it keep answering with it; nobody is\noffered it again.",
+        "operationId": "delete_preset_api_org_presets__preset_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "preset_id",
+            "required": true,
+            "schema": {
+              "title": "Preset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "presets:manage"
+            ]
+          },
+          {
+            "sessionCookie": []
+          },
+          {
+            "idpToken": []
+          }
+        ],
+        "summary": "Delete Preset",
+        "tags": [
+          "presets"
+        ]
+      },
+      "get": {
+        "description": "One preset, deleted ones included (`deleted_at` says so): a\nconversation already on a deleted preset still answers with it, and its\nmember may see what that is. The list never offers one.",
+        "operationId": "get_preset_api_org_presets__preset_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "preset_id",
+            "required": true,
+            "schema": {
+              "title": "Preset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Preset Api Org Presets  Preset Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "chat:read"
+            ]
+          },
+          {
+            "sessionCookie": []
+          },
+          {
+            "idpToken": []
+          }
+        ],
+        "summary": "Get Preset",
+        "tags": [
+          "presets"
+        ]
+      },
+      "patch": {
+        "description": "Change what the body names. A deleted preset is a 404: it is frozen\nat the settings its conversations answer with.",
+        "operationId": "update_preset_api_org_presets__preset_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "preset_id",
+            "required": true,
+            "schema": {
+              "title": "Preset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePreset"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Update Preset Api Org Presets  Preset Id  Patch",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "presets:manage"
+            ]
+          },
+          {
+            "sessionCookie": []
+          },
+          {
+            "idpToken": []
+          }
+        ],
+        "summary": "Update Preset",
+        "tags": [
+          "presets"
+        ]
+      }
+    },
     "/api/org/shares": {
       "get": {
         "description": "Every link the org's members made, newest first, with who made it.\nNever the tokens: the store does not hold them.",
@@ -12256,7 +13943,7 @@
     },
     "/api/org/usage": {
       "get": {
-        "description": "Tokens, list-price cost, turns and last activity per member for one\ncalendar month.\n\nOwners and admins see everyone; a member sees their own row, which is\nthe balance pane's number split no further. The totals are over the\nrows returned, so a member's totals are their own.",
+        "description": "Tokens, list-price cost, turns and last activity per member for one\ncalendar month, and the connector part of it per connection.\n\nOwners and admins see everyone; a member sees their own row, which is\nthe balance pane's number split no further. The totals are over the\nrows returned, so a member's totals are their own. `by_connection` is\nthe share of those rows that connector turns made, scoped the same way:\nevery connection for an owner or admin, the ones a member paid for\notherwise.",
         "operationId": "org_usage_api_org_usage_get",
         "parameters": [
           {
@@ -14494,7 +16181,7 @@
     },
     "/v1/chat/completions": {
       "post": {
-        "description": "Send a conversation and get the model's reply, as one `chat.completion`\nobject or, with `stream: true`, a stream of `chat.completion.chunk`\nevents. OpenAI's request and response shapes; `model` may be omitted for\nthe deployment's default.\n\nThe request's `messages` are the whole prompt. With\n`metadata.conversation_id` the turn is also recorded into that\nconversation, but stored history is never added to the prompt: the\ncaller owns the context, as every OpenAI client assumes.\n\n`tools`, `tool_choice` and `response_format` go to the model as sent and\nwhat comes back is relayed: tool calls arrive in `message.tool_calls` (or\nstreamed `delta.tool_calls`) for the caller to run, never run here. A\n`tool_choice` that demanded a call the model did not make is a 400\n`tool_calls_unsupported`, not prose parsed as an answer.",
+        "description": "Send a conversation and get the model's reply, as one `chat.completion`\nobject or, with `stream: true`, a stream of `chat.completion.chunk`\nevents. OpenAI's request and response shapes; `model` may be omitted for\nthe deployment's default.\n\nThe request's `messages` are the whole prompt. With\n`metadata.conversation_id` the turn is also recorded into that\nconversation, tool rounds included: the assistant's `tool_calls` and\nthe `tool` messages that answer them are stored as `tool_call` and\n`tool_result` parts of one assistant message, as the server's own tool\nturns are, and history a request repeats is not stored again. Stored\nhistory is never added to the prompt: the caller owns the context, as\nevery OpenAI client assumes.\n\n`tools`, `tool_choice` and `response_format` go to the model as sent and\nwhat comes back is relayed: tool calls arrive in `message.tool_calls` (or\nstreamed `delta.tool_calls`) for the caller to run, never run here. A\n`tool_choice` that demanded a call the model did not make is a 400\n`tool_calls_unsupported`, not prose parsed as an answer.",
         "operationId": "openai_chat_completions",
         "requestBody": {
           "content": {
@@ -15002,6 +16689,10 @@
       "name": "budget"
     },
     {
+      "description": "Connected chat workspaces: connections, the channels they answer and with which preset, the people they map to members, and their event log.",
+      "name": "connectors"
+    },
+    {
       "description": "Conversations, their message tree, and the streaming turn.",
       "name": "conversations"
     },
@@ -15056,6 +16747,10 @@
     {
       "description": "The caller's passkeys, and the passkey step of a sign-in.",
       "name": "passkeys"
+    },
+    {
+      "description": "Organisation agent presets: a named model, instructions and tool set to chat with.",
+      "name": "presets"
     },
     {
       "description": "Read-only share links to a conversation, and the public snapshot read.",

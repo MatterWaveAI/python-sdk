@@ -304,6 +304,48 @@ APP_OPERATIONS: dict[str, tuple[str, str]] = {
     "sync.pair": ("POST", "/api/sync/pair"),
     "sync.status": ("GET", "/api/sync/status"),
     "sync.push": ("POST", "/api/sync/conversations"),
+    # --- presets and connectors ------------------------------------------------
+    "presets.list": ("GET", "/api/org/presets"),
+    "presets.get": ("GET", "/api/org/presets/{preset_id}"),
+    "presets.create": ("POST", "/api/org/presets"),
+    "presets.update": ("PATCH", "/api/org/presets/{preset_id}"),
+    "presets.delete": ("DELETE", "/api/org/presets/{preset_id}"),
+    "connections.list": ("GET", "/api/org/connections"),
+    "connections.get": ("GET", "/api/org/connections/{connection_id}"),
+    "connections.create": ("POST", "/api/org/connections"),
+    "connections.update": ("PATCH", "/api/org/connections/{connection_id}"),
+    "connections.delete": ("DELETE", "/api/org/connections/{connection_id}"),
+    "connections.rotate_url": ("POST", "/api/org/connections/{connection_id}/rotate-url"),
+    "connections.slack_manifest": ("GET", "/api/org/connections/slack/manifest"),
+    "connections.routes.list": ("GET", "/api/org/connections/{connection_id}/routes"),
+    "connections.routes.create": ("POST", "/api/org/connections/{connection_id}/routes"),
+    "connections.routes.update": (
+        "PATCH",
+        "/api/org/connections/{connection_id}/routes/{route_id}",
+    ),
+    "connections.routes.delete": (
+        "DELETE",
+        "/api/org/connections/{connection_id}/routes/{route_id}",
+    ),
+    "connections.identities.list": ("GET", "/api/org/connections/{connection_id}/identities"),
+    "connections.identities.map": (
+        "PATCH",
+        "/api/org/connections/{connection_id}/identities/{identity_id}",
+    ),
+    "connections.identities.unmap": (
+        "PATCH",
+        "/api/org/connections/{connection_id}/identities/{identity_id}",
+    ),
+    "connections.identities.block": (
+        "PATCH",
+        "/api/org/connections/{connection_id}/identities/{identity_id}",
+    ),
+    "connections.identities.unblock": (
+        "PATCH",
+        "/api/org/connections/{connection_id}/identities/{identity_id}",
+    ),
+    "connections.identities.for_member": ("GET", "/api/org/connector-identities"),
+    "connections.events.list": ("GET", "/api/org/connections/{connection_id}/events"),
 }
 
 
@@ -509,6 +551,32 @@ CREDENTIALS: dict[str, str] = {
     "sync.pair": "public",
     "sync.status": "key",
     "sync.push": "key:conversations:import",
+    # Any member reads the presets, which is what a picker offers; writing
+    # them is an owner's or admin's. Connecting a workspace is a person's
+    # decision: no key scope admits an API key to the connection routes.
+    "presets.list": "key:chat:read",
+    "presets.get": "key:chat:read",
+    "presets.create": "key:presets:manage",
+    "presets.update": "key:presets:manage",
+    "presets.delete": "key:presets:manage",
+    "connections.list": "person",
+    "connections.get": "person",
+    "connections.create": "person",
+    "connections.update": "person",
+    "connections.delete": "person",
+    "connections.rotate_url": "person",
+    "connections.slack_manifest": "person",
+    "connections.routes.list": "person",
+    "connections.routes.create": "person",
+    "connections.routes.update": "person",
+    "connections.routes.delete": "person",
+    "connections.identities.list": "person",
+    "connections.identities.map": "person",
+    "connections.identities.unmap": "person",
+    "connections.identities.block": "person",
+    "connections.identities.unblock": "person",
+    "connections.identities.for_member": "person",
+    "connections.events.list": "person",
 }
 
 # What the platform answers an API key on a "person" route.
@@ -800,7 +868,10 @@ def search_conversations_request(q: str, limit: int | None) -> Request:
 
 
 def create_conversation_request(
-    title: str | None, model: str | None, temporary: bool | None = None
+    title: str | None,
+    model: str | None,
+    temporary: bool | None = None,
+    preset_id: str | None = None,
 ) -> Request:
     body: dict[str, Any] = {}
     if title is not None:
@@ -809,6 +880,10 @@ def create_conversation_request(
         body["model"] = model
     if temporary is not None:
         body["temporary"] = temporary
+    if preset_id is not None:
+        if not preset_id:
+            raise ValueError("preset_id must be a preset's id, or None for no preset")
+        body["preset_id"] = preset_id
     return Request("POST", "/api/conversations", body, keyed=True, stream=False)
 
 
@@ -838,11 +913,13 @@ def update_conversation_request(
     *,
     title: str | None = None,
     default_model: str | None = UNSET,
+    preset_id: str | None = UNSET,
 ) -> Request:
-    # `default_model` is sent whenever it was passed, None included: the
-    # server reads an absent key as "leave it" and null as "clear it", so a
-    # sentinel rather than None marks "not passed". A title is never cleared
-    # -- a conversation always has one -- so None there is simply "no rename".
+    # `default_model` and `preset_id` are sent whenever they were passed,
+    # None included: the server reads an absent key as "leave it" and null
+    # as "clear it", so a sentinel rather than None marks "not passed". A
+    # title is never cleared -- a conversation always has one -- so None
+    # there is simply "no rename".
     body: dict[str, Any] = {}
     if title is not None:
         if not title.strip():
@@ -850,8 +927,12 @@ def update_conversation_request(
         body["title"] = title
     if default_model is not UNSET:
         body["default_model"] = default_model
+    if preset_id is not UNSET:
+        if preset_id is not None and not preset_id:
+            raise ValueError("preset_id must be a preset's id, or None to take it off")
+        body["preset_id"] = preset_id
     if not body:
-        raise ValueError("update needs a title or a default_model")
+        raise ValueError("update needs a title, a default_model or a preset_id")
     return Request("PATCH", _conversation_path(conversation_id), body, True, False)
 
 
