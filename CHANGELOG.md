@@ -110,6 +110,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `actor` (the writer's subject), `actor_email` where one is resolved,
   `action`, `target` and the writer's `detail`.
 
+### Added in the account families (T-207 to T-229)
+
+- `client.account` (T-207) -- the Account and Preferences panes:
+  `rename`, `accept_terms`, `change_password` (session only; every other
+  session is ended and counted), the email-change cycle
+  (`start_email_change` / `verify_email_change` / `cancel_email_change` /
+  `resend_email_change_code` / `email_state`), `sessions`,
+  `revoke_session`, `logout_others`, `preferences` /
+  `update_preferences` (the route replaces the whole shape), and
+  `onboarding_complete`. `delete()` is `DELETE /api/me`: typed
+  `DeletedAccount`, the `"delete my account"` phrase checked here as well
+  as in the route, and documented as irreversible and session-only.
+- `client.exports` and `client.imports` (T-208) -- the Data pane's jobs:
+  export `start` / `get` / `download` (the bytes behind the signed link
+  *and* the caller's own key), import `start` / `list` / `get` over a
+  ChatGPT or Claude export file, with `ExportJob` and `ImportJob`
+  carrying the worker's counts.
+- `client.members` (T-209) -- `list` (with the caller's role and the
+  plan's `seats`), `set_role`, `transfer_ownership`, `remove`, and the
+  `invites` and `links` namespaces (`invites.lookup` is anonymous, the
+  token is the credential) plus `join_lookup` and `join`.
+- `client.org` (T-226) -- `get` / `rename` / `close` (owner; each side
+  effect reported, idempotent), `models.get` / `models.set` (the
+  allow-list; null lifts it), `sharing.get` / `sharing.set`, the org-wide
+  `shares.list` / `shares.revoke`, `sso.get` / `sso.set` (enforcing hands
+  back the break-glass code once) / `sso.recovery_code`, `domains`
+  (claim / challenge / verify / release), `idp` (list / attach / detach)
+  and `mfa.get` / `mfa.set`. Owner or admin by membership row, never a
+  token claim -- documented on each class; the audit trail remains
+  `client.audit`.
+- `client.billing` (T-227) -- `plans` (the public catalog with the price
+  table), `switch_plan` (the move to Free; a paid code is a 402 pointing
+  at checkout), `plan_history`, `checkout`, `portal`, `status` (any
+  member; `billing_enabled` and the dunning schedule included) and
+  `invoices`.
+- `client.passkeys`, `client.mfa`, `client.accounts` and
+  `client.speech` (T-228) -- WebAuthn registration and the login
+  ceremony's two halves, TOTP enrolment with the recovery codes shown
+  once and proof-of-factor removal and reissue, the browser account
+  switcher (`list` / `switch` / `logout` / `logout_all`; cookies are the
+  credential, so no key is sent), and transcription (multipart clip,
+  optional BCP 47 `language` hint).
+- `client.sync` (T-229) -- edge pairing and the mirror it buys:
+  `pairings.mint` / `pairings.devices` / `pairings.unpair` (owner or
+  admin by session), `pair` (anonymous redemption of a code for the
+  device key), `status`, and `push` (one export-shaped conversation,
+  upserted by id, with per-message `rejected`). The box is its own
+  client: build a `MatterWave` with the paired key and push.
+- `Request.data` for form fields beside a multipart upload (speech's
+  language hint), carried through `_Config.build`.
+- `ORG_ROLES` and the models for every new answer: `SessionInfo`,
+  `SessionList`, `SessionRevoked`, `SessionsLoggedOut`, `Preferences`,
+  `EmailPreferences`, `NotificationPreferences`, `NameUpdated`,
+  `TermsAccepted`, `PasswordChanged`, `EmailChangeStarted`,
+  `EmailChangeState`, `EmailChanged`, `EmailChangeCancelled`,
+  `OnboardingCompleted`, `DeletedAccount`, `ExportJob`, `ImportJob`,
+  `ImportJobList`, `Membership`, `MemberList`, `Seats`, `Invite`,
+  `SentInvite`, `InvitePreview`, `InviteLink`, `CreatedInviteLink`,
+  `LinkPreview`, `OrgInfo`, `OrgClosed`, `ModelPolicy`, `SharingPolicy`,
+  `OrgShare`, `RevokedOrgShare`, `SsoSettings`, `SsoPolicySet`,
+  `RecoveryCode`, `DnsRecord`, `DomainChallenge`, `DomainClaim`,
+  `DomainVerification`, `IdpConfig`, `MfaPolicy`, `Plan`, `PlanCatalog`,
+  `PlanHistory`, `CheckoutLink`, `BillingStatus`, `Invoice`,
+  `Passkey`, `PasskeyList`, `PasskeyStart`, `PasskeyLoginStart`,
+  `PasskeyLoginFinish`, `MfaState`, `TotpEnrolment`, `TotpConfirmed`,
+  `TotpRemoved`, `BrowserAccount`, `AccountSwitched`, `LoggedOut`,
+  `Transcription`, `PairingCode`, `EdgeDevice`, `PairedKey`,
+  `EdgeSyncStatus` and `SyncOutcome`.
+
 ### Documentation
 
 - "Connect your editor to MatterWave": a README section and a `docs/mcp.md`
