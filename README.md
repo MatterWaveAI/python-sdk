@@ -343,7 +343,7 @@ print(answer.text)
 mode, the VS Code agent) share: the local tools a client offers the model on
 `/v1`, the approval modes that gate them, the paths those tools may touch, what
 the read tools and `run_shell` return, and the agent-mode system prompt. It is
-versioned (`agent.CONTRACT_VERSION`, `1.1.0`; the prompt carries its own
+versioned (`agent.CONTRACT_VERSION`, `1.1.1`; the prompt carries its own
 `agent.SYSTEM_PROMPT_VERSION`), and its one
 source is `src/matterwave_sdk/agent/contract.json`, from which the TypeScript
 SDK's copy is generated.
@@ -476,7 +476,30 @@ Extra tools join the tool list and get a one-line description each; trusted
 context files follow as "Project instructions", each fenced between
 `<project-instructions path="...">` lines that its own text cannot close, and
 an untrusted file is left out. `tools_for_mode(mode, extra=[...])` adds the
-same `ExtraTool`s to the `tools` the mode offers.
+same `ExtraTool`s to the `tools` the mode offers. Pass context files from the
+most shared to the most personal, the order of `agent.CONTEXT_FILES`
+(`MATTERWAVE.md`, `AGENTS.md`, then `MATTERWAVE.local.md`): where two disagree
+the later one wins, so the user's own file comes last.
+
+### Fixes in 1.1.1
+
+- Windows aliases count only below the root: a root inside `/x/con/` or
+  `/x/a:b/` takes absolute paths (`windows_alias(path, root)`).
+- Ignore and deny files drop a leading byte-order mark and skip an invalid
+  line (a `[...]` range that runs backwards, such as `[z-a]`), as git does.
+  The same range in a glob is the `invalid_glob` ToolError (`GlobError` from
+  `glob_to_regex`).
+- A loop of links is `PathRefused` (`loop`). A pipe, socket or device is the
+  `special_file` ToolError and is never opened to wait on; searches leave it
+  out. `read_file` and grep read no more than their cap + 1 bytes.
+- `format_shell(output, ..., omitted=n)` takes the start and end a client
+  kept of a long output, `n` being the bytes it dropped, and gives the same
+  text as the whole output would. `fill`, `limit` and `check_lines` are
+  exported.
+- `run_grep(..., timeout_s=5)` stops waiting at the deadline and raises
+  `ToolError` (`timeout`). The search runs on a thread it abandons; CPython's
+  `re` cannot be interrupted inside one match, so a pattern that takes
+  exponential time on one line still holds the call until that match ends.
 
 To change the contract, edit `contract.json`, bump `contract_version` (major
 when a tool, field or mode goes or changes meaning, minor when one is added,

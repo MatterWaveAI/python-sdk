@@ -60,8 +60,10 @@ def allowed(
     denied: a model that invents one gets a refusal, not a prompt.
 
     `path`, the file a write tool would change (relative to the root),
-    turns an allow into ask when the path is protected (the deny file, the
-    agent's settings, a context file), in every mode."""
+    turns an allow into ask when the path is protected (`PROTECTED`: the
+    deny file, the agent's settings folder, a context file, a shell startup
+    file such as `.bashrc`, the `.ssh/` and `.aws/` folders, or
+    `.config/matterwave` at any depth), in every mode, yolo included."""
     m = mode(mode_name)
     decision: Decision
     contract_tool = TOOLS_BY_NAME.get(tool)
@@ -201,7 +203,10 @@ def system_prompt(
     description. `context_files` are the instruction files the client
     read; the trusted ones follow in a "Project instructions" section, in
     the order given (later wins), each fenced so its text cannot end it.
-    With neither, the prompt is the template alone."""
+    Give them from the most shared to the most personal, as
+    `CONTEXT_FILES` lists the project's (MATTERWAVE.md, AGENTS.md, then
+    MATTERWAVE.local.md), so the user's own file wins. With neither, the
+    prompt is the template alone."""
     m = mode(mode_name)
     shell, _ = shell_for(platform)
     extras = [_prompt_tool(t) for t in extra_tools]

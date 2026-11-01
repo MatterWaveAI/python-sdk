@@ -15,7 +15,7 @@ from collections.abc import Iterable, Mapping
 from functools import lru_cache
 
 from ._contract import LIMITS, OUTPUTS, TOOL_ERRORS, ToolFailure, fill
-from .confine import glob_to_regex
+from .confine import GlobError, glob_to_regex
 
 _GREP = OUTPUTS["grep"]
 _TRAILING_SPACE = " \t\r\f\v"
@@ -37,6 +37,22 @@ def limit(name: str, limits: Mapping[str, int] | None = None) -> int:
     if limits is not None and name in limits:
         return int(limits[name])
     return LIMITS[name]
+
+
+def _seconds(value: float) -> str:
+    """A number of seconds as the contract's messages print it: `5` for a
+    whole number, `0.5` otherwise."""
+    return str(int(value)) if float(value).is_integer() else str(value)
+
+
+def check_lines(start_line: int | None = None, end_line: int | None = None) -> None:
+    """The argument errors read_file checks before it looks at the file:
+    `bad_line` for a line number under 1, then `end_before_start`."""
+    for name, value in (("start_line", start_line), ("end_line", end_line)):
+        if value is not None and value < 1:
+            raise ToolError("bad_line", name=name, value=value)
+    if start_line is not None and end_line is not None and end_line < start_line:
+        raise ToolError("end_before_start", start_line=start_line, end_line=end_line)
 
 
 def _utf8(text: str) -> bytes:
@@ -100,11 +116,7 @@ def format_read_file(
     `start_line` to `end_line`, numbered, cut at the read limits with the
     contract's marker. `ToolError` for a bad range."""
     spec = OUTPUTS["read_file"]
-    for name, value in (("start_line", start_line), ("end_line", end_line)):
-        if value is not None and value < 1:
-            raise ToolError("bad_line", name=name, value=value)
-    if start_line is not None and end_line is not None and end_line < start_line:
-        raise ToolError("end_before_start", start_line=start_line, end_line=end_line)
+    check_lines(start_line, end_line)
     lines = text_lines(text)
     total = len(lines)
     if total == 0:
@@ -213,35 +225,46 @@ def format_shell(
     stopped: bool = False,
     timeout_s: float | None = None,
     limits: Mapping[str, int] | None = None,
+    omitted: int = 0,
 ) -> str:
     """run_shell's result: the status line (a timeout, a stop by the user,
     the exit code, or an end by a signal when `exit_code` is None), then
-    the output, its middle cut out past `shell_output_max_bytes`."""
+    the output, its middle cut out past `shell_output_max_bytes`.
+
+    `omitted` is for a client that kept only the start and the end of a
+    long output: pass the two joined as `output` and the number of bytes
+    dropped from between them as `omitted`. The text is cut as though it
+    were the whole output, and the cut is always shown. Keep at least the
+    first and the last half of `shell_output_max_bytes` (whole characters)
+    and the result is the one the whole output would give."""
     spec = OUTPUTS["shell"]
+    if omitted < 0:
+        raise ValueError("omitted counts bytes and cannot be negative")
     if timed_out:
         seconds = limit("shell_timeout_s_default", limits) if timeout_s is None else timeout_s
-        shown = str(int(seconds)) if float(seconds).is_integer() else str(seconds)
-        status = fill(spec["timeout"], {"timeout_s": shown})
+        status = fill(spec["timeout"], {"timeout_s": _seconds(seconds)})
     elif stopped:
         status = spec["stopped"]
     elif exit_code is None:
         status = spec["signal"]
     else:
         status = fill(spec["exit"], {"code": str(exit_code)})
-    if output == "":
+    if output == "" and omitted == 0:
         return f"{status}\n{spec['no_output']}"
     cap = limit("shell_output_max_bytes", limits)
-    total = len(_utf8(output))
-    if total > cap:
+    total = len(_utf8(output)) + omitted
+    if total > cap or omitted > 0:
         head = utf8_head(output, cap // 2)
-        tail = utf8_tail(output, cap - cap // 2)
-        omitted = total - len(_utf8(head)) - len(_utf8(tail))
-        output = f"{head}\n{fill(spec['cut'], {'omitted': str(omitted)})}\n{tail}"
+        # The tail comes from what follows the head, so text a client kept
+        # short of the cap is never shown twice.
+        tail = utf8_tail(output[len(head) :], cap - cap // 2)
+        cut = total - len(_utf8(head)) - len(_utf8(tail))
+        output = f"{head}\n{fill(spec['cut'], {'omitted': str(cut)})}\n{tail}"
     return f"{status}\n{output}"
 
 
 @lru_cache(maxsize=256)
-def _glob_regex(pattern: str) -> tuple[re.Pattern[str], bool]:
+def _compile_glob(pattern: str) -> tuple[re.Pattern[str], bool]:
     text = pattern.removeprefix("./")
     anchored = text.startswith("/")
     text = text.lstrip("/")
@@ -249,10 +272,18 @@ def _glob_regex(pattern: str) -> tuple[re.Pattern[str], bool]:
     return re.compile(glob_to_regex(text), re.IGNORECASE), whole_path
 
 
+def _glob_regex(pattern: str) -> tuple[re.Pattern[str], bool]:
+    try:
+        return _compile_glob(pattern)
+    except (GlobError, re.error):
+        raise ToolError("invalid_glob", glob=pattern) from None
+
+
 def glob_matches(pattern: str, relative: str) -> bool:
     """Whether glob's `pattern` matches a file at `relative` (to the search's
     `path`, `/`-separated): the whole path when the pattern has a `/`,
-    otherwise the file's name at any depth. Case is ignored."""
+    otherwise the file's name at any depth. Case is ignored. `ToolError`
+    (`invalid_glob`) for a pattern whose `[...]` range runs backwards."""
     regex, whole_path = _glob_regex(pattern)
     subject = relative if whole_path else relative.rsplit("/", 1)[-1]
     return regex.fullmatch(subject) is not None

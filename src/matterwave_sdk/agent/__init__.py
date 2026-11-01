@@ -9,7 +9,7 @@ paths:
 
     from matterwave_sdk import agent
 
-    agent.CONTRACT_VERSION                    # "1.1.0"
+    agent.CONTRACT_VERSION                    # "1.1.1"
     tools = agent.tools_for_mode("plan")      # the `tools` for /v1: read-only
     agent.allowed("edit", "ask")              # "ask"
     prompt = agent.system_prompt("ask", root="/home/me/project")
@@ -73,11 +73,13 @@ from ._contract import (
     ToolFailure,
     ToolKind,
     ToolName,
+    fill,
 )
 from .confine import (
     PROTECTED_LIST,
     ConfinedPath,
     DenyList,
+    GlobError,
     PathRefused,
     confine,
     glob_to_regex,
@@ -102,6 +104,7 @@ from .modes import (
 )
 from .output import (
     ToolError,
+    check_lines,
     decode_text,
     format_glob,
     format_grep,
@@ -111,6 +114,7 @@ from .output import (
     glob_matches,
     grep_line,
     is_binary,
+    limit,
     text_lines,
     utf8_head,
     utf8_tail,
@@ -162,6 +166,7 @@ __all__ = [
     "EditFailure",
     "ExtraTool",
     "ExtraToolKind",
+    "GlobError",
     "IgnoreFile",
     "ModeName",
     "PathRefused",
@@ -175,8 +180,10 @@ __all__ = [
     "ToolName",
     "allowed",
     "apply_edit",
+    "check_lines",
     "confine",
     "decode_text",
+    "fill",
     "format_glob",
     "format_grep",
     "format_list_dir",
@@ -188,6 +195,7 @@ __all__ = [
     "is_absolute",
     "is_binary",
     "is_protected",
+    "limit",
     "load_deny_list",
     "load_search_ignore",
     "mode",

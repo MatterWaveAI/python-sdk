@@ -33,11 +33,39 @@ def _write_tree(root: Path, tree: Any) -> None:
         target.write_bytes(content.encode("utf-8"))
 
 
+def _make_specials(root: Path) -> set[str]:
+    """The conformance `fifos` and `links`, where this platform can make
+    them: the names of the kinds it made."""
+    made: set[str] = set()
+    mkfifo = getattr(os, "mkfifo", None)
+    if mkfifo is not None:
+        for relative in CONFORMANCE["fifos"]:
+            mkfifo(root / relative)
+        made.add("fifos")
+    try:
+        for relative, target in CONFORMANCE["links"].items():
+            os.symlink(target, root / relative)
+        made.add("links")
+    except OSError:
+        pass  # Windows without Developer Mode cannot make links
+    return made
+
+
+MADE: set[str] = set()
+
+
 @pytest.fixture(scope="module")
 def tree(tmp_path_factory: pytest.TempPathFactory) -> Path:
     root = tmp_path_factory.mktemp("conformance")
     _write_tree(root, CONFORMANCE["tree"])
+    MADE.update(_make_specials(root))
     return root
+
+
+def _needs(case: Any) -> None:
+    missing = set(case.get("needs", ())) - MADE
+    if missing:
+        pytest.skip(f"this platform cannot make {', '.join(sorted(missing))}")
 
 
 def _run(root: Path, case: Any) -> str:
@@ -72,6 +100,7 @@ def _case_id(case: Any) -> str:
 
 @pytest.mark.parametrize("case", CONFORMANCE["tools"], ids=_case_id)
 def test_tool_output(tree: Path, case: Any) -> None:
+    _needs(case)
     if "expected" in case:
         assert _run(tree, case) == case["expected"]
         return
@@ -88,7 +117,9 @@ def test_tool_output(tree: Path, case: Any) -> None:
 
 def test_every_tool_error_has_a_case() -> None:
     covered = {c["error"] for c in CONFORMANCE["tools"] if "error" in c}
-    assert covered == set(agent.TOOL_ERRORS) - {"bad_timeout"}
+    # run_shell's bad_timeout is no read tool's, and grep's timeout depends
+    # on the machine; both have tests of their own.
+    assert covered == set(agent.TOOL_ERRORS) - {"bad_timeout", "timeout"}
     assert set(agent.TOOL_ERRORS) == set(get_args(agent.ToolFailure))
 
 
@@ -131,6 +162,7 @@ def test_a_byte_cut_keeps_whole_characters() -> None:
     ids=lambda c: f"{c['path']!r}{' (write)' if c.get('write') else ''}",
 )
 def test_confine_paths(tree: Path, case: Any) -> None:
+    _needs(case)
     write = case.get("write", False)
     if "relative" in case:
         assert agent.confine(tree, case["path"], write=write).relative == case["relative"]
@@ -235,6 +267,7 @@ def test_shell_output(case: Any) -> None:
         stopped=case.get("stopped", False),
         timeout_s=case.get("timeout_s"),
         limits=dict(case["limits"]) if "limits" in case else None,
+        omitted=case.get("omitted", 0),
     )
     assert rendered == case["expected"]
 
@@ -322,7 +355,8 @@ def test_the_protected_list() -> None:
         ".aws/",
         "**/.config/matterwave",
     )
-    assert agent.CONTEXT_FILES == ("MATTERWAVE.md", "MATTERWAVE.local.md", "AGENTS.md")
+    # The personal file comes last, so it wins where it and a shared one disagree.
+    assert agent.CONTEXT_FILES == ("MATTERWAVE.md", "AGENTS.md", "MATTERWAVE.local.md")
     assert agent.SETTINGS_DIR == ".matterwave/"
     assert agent.PROTECTED_LIST.patterns == agent.PROTECTED
     assert agent.EDIT_CRLF_FALLBACK is True
@@ -428,3 +462,184 @@ def test_a_walk_does_not_follow_a_link_out(tmp_path: Path) -> None:
         pytest.skip(f"symbolic links need admin or Developer Mode on Windows: {exc}")
     assert list(agent.walk(root)) == ["src/a.py"]
     assert agent.run_list_dir(root) == "again/\nsrc/"
+
+
+# --- 1.1.1 fixes -------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "case",
+    CONFORMANCE["alias_roots"],
+    ids=lambda c: f"{c['path']!r} in {c['root']!r}",
+)
+def test_only_the_names_below_the_root_are_aliases(case: Any) -> None:
+    assert agent.windows_alias(case["path"], case["root"]) == case["refused"]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Windows cannot name a folder con, a:b or x.")
+@pytest.mark.parametrize("parent", ["con", "a:b", "x.", "NUL.d"])
+def test_a_root_inside_an_alias_named_folder_takes_absolute_paths(
+    tmp_path: Path, parent: str
+) -> None:
+    root = tmp_path / parent / "repo"
+    (root / "src").mkdir(parents=True)
+    (root / "src" / "a.py").write_text("x = 1\n", encoding="utf-8")
+    absolute = str(root / "src" / "a.py")
+    assert agent.confine(root, absolute).relative == "src/a.py"
+    assert agent.run_read_file(root, absolute) == "1\tx = 1"
+    assert agent.run_grep(root, "x", str(root)) == "src/a.py:1: x = 1"
+    with pytest.raises(agent.PathRefused) as below:
+        agent.confine(root, str(root / "nul.txt"))
+    assert below.value.reason == "device"
+
+
+def test_a_byte_order_mark_does_not_hide_the_first_rule() -> None:
+    assert agent.IgnoreFile("\ufeff*.log\n").match("a.log") is True
+    assert agent.DenyList.with_ignore_file("\ufeffsecrets/\n").matches("secrets/x")
+    rules = agent.SearchIgnore({".gitignore": "\ufeffbuild/\n"}.get)
+    assert rules.ignored("build/a.txt")
+
+
+def test_an_invalid_ignore_line_is_skipped() -> None:
+    rules = agent.IgnoreFile("[z-a]\n*.log\n!keep.log\n")
+    assert rules.match("a.log") is True and rules.match("keep.log") is False
+    assert rules.match("z") is None
+    deny = agent.DenyList.with_ignore_file("[9-0]*\nprivate/\n")
+    assert deny.matches("private/x") and not deny.matches("9")
+
+
+def test_an_invalid_ignore_file_does_not_break_search_or_confine(tmp_path: Path) -> None:
+    (tmp_path / ".gitignore").write_text("[z-a]\n*.log\n", encoding="utf-8")
+    (tmp_path / ".matterwaveignore").write_text("[z-a]\nsecret/\n", encoding="utf-8")
+    (tmp_path / "a.txt").write_text("hit\n", encoding="utf-8")
+    (tmp_path / "b.log").write_text("hit\n", encoding="utf-8")
+    assert agent.run_grep(tmp_path, "hit") == "a.txt:1: hit"
+    assert agent.confine(tmp_path, "a.txt").relative == "a.txt"
+    with pytest.raises(agent.PathRefused):
+        agent.confine(tmp_path, "secret/x")
+
+
+def test_glob_classes_read_alike_in_every_dialect() -> None:
+    assert agent.glob_matches("[]x]", "]")
+    assert agent.glob_matches("[!]x]", "a") and not agent.glob_matches("[!]x]", "]")
+    assert agent.glob_matches("[^a]", "b") and not agent.glob_matches("[^a]", "A")
+    assert agent.glob_matches("[a-]", "-")
+    assert agent.glob_matches("[\\]", "\\")
+    assert agent.glob_matches("[!]", "[!]")
+    assert agent.glob_matches("a[b", "a[b")
+    with pytest.raises(agent.GlobError):
+        agent.glob_to_regex("[z-a]")
+    with pytest.raises(agent.ToolError) as invalid:
+        agent.glob_matches("[z-a]", "x")
+    assert invalid.value.reason == "invalid_glob"
+
+
+def test_an_invalid_glob_is_a_tool_error_before_any_search(tmp_path: Path) -> None:
+    for call in (
+        lambda: agent.run_glob(tmp_path, "[z-a]", "nowhere"),
+        lambda: agent.run_grep(tmp_path, "x", "nowhere", glob="[z-a]"),
+    ):
+        with pytest.raises(agent.ToolError) as invalid:
+            call()
+        assert invalid.value.reason == "invalid_glob"
+
+
+def test_a_link_loop_is_a_refusal(tmp_path: Path) -> None:
+    try:
+        os.symlink("loop", tmp_path / "loop")
+        os.symlink("pong", tmp_path / "ping")
+        os.symlink("ping", tmp_path / "pong")
+    except OSError as exc:
+        pytest.skip(f"symbolic links need admin or Developer Mode on Windows: {exc}")
+    (tmp_path / "a.txt").write_text("x\n", encoding="utf-8")
+    for path in ("loop", "ping", "pong/x", str(tmp_path / "ping")):
+        with pytest.raises(agent.PathRefused) as refused:
+            agent.confine(tmp_path, path, write=True)
+        assert refused.value.reason == "loop"
+    assert list(agent.walk(tmp_path)) == ["a.txt"]
+    assert agent.run_list_dir(tmp_path) == "a.txt"
+
+
+def test_a_file_that_grows_past_the_cap_is_still_too_large(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from matterwave_sdk.agent import search
+
+    (tmp_path / "a.txt").write_bytes(b"x" * 100)
+    real_fstat = os.fstat
+
+    def stale_fstat(fd: int) -> os.stat_result:
+        # The size from before the file grew: under the cap.
+        info = real_fstat(fd)
+        return os.stat_result((*info[:6], 5, *info[7:10]))
+
+    monkeypatch.setattr(search.os, "fstat", stale_fstat)
+    with pytest.raises(agent.ToolError) as large:
+        agent.run_read_file(tmp_path, "a.txt", limits={"read_max_file_bytes": 10})
+    assert large.value.reason == "too_large"
+    assert str(large.value) == "a.txt is 11 bytes, over the 10 bytes read_file reads."
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="no named pipes")
+def test_a_named_pipe_is_never_waited_on(tmp_path: Path) -> None:
+    os.mkfifo(tmp_path / "pipe")
+    (tmp_path / "a.txt").write_text("x\n", encoding="utf-8")
+    for call in (
+        lambda: agent.run_read_file(tmp_path, "pipe"),
+        lambda: agent.run_grep(tmp_path, "x", "pipe"),
+        lambda: agent.run_list_dir(tmp_path, "pipe"),
+        lambda: list(agent.walk(tmp_path, "pipe")),
+    ):
+        with pytest.raises(agent.ToolError) as special:
+            call()
+        assert special.value.reason == "special_file"
+    assert agent.run_grep(tmp_path, "x") == "a.txt:1: x"
+    assert agent.run_list_dir(tmp_path) == "a.txt"
+
+
+def test_grep_stops_at_its_deadline(tmp_path: Path) -> None:
+    import time
+
+    # Each line takes a while to fail on its own, and there are many.
+    (tmp_path / "slow.txt").write_text(("a" * 18 + "b\n") * 400, encoding="utf-8")
+    started = time.monotonic()
+    with pytest.raises(agent.ToolError) as late:
+        agent.run_grep(tmp_path, "(a+)+$", timeout_s=0.2)
+    assert time.monotonic() - started < 5
+    assert late.value.reason == "timeout"
+    assert str(late.value) == (
+        "The search for (a+)+$ stopped after 0.2 s without finishing. "
+        "Try a simpler pattern, a narrower path or a glob."
+    )
+    assert agent.run_grep(tmp_path, "b$", "slow.txt", timeout_s=30).startswith("slow.txt:1: aaaa")
+    with pytest.raises(ValueError):
+        agent.run_grep(tmp_path, "x", timeout_s=0)
+
+
+def test_format_shell_takes_a_head_and_tail_kept_by_the_client() -> None:
+    limits = {"shell_output_max_bytes": 64}
+    whole = "".join(f"line {n} é😀\n" for n in range(200))
+    data = whole.encode("utf-8")
+    for keep in (32, 33, 40, 64):
+        head = data[:keep].decode("utf-8", "ignore")
+        tail = data[len(data) - keep :].decode("utf-8", "ignore")
+        dropped = len(data) - len(head.encode()) - len(tail.encode())
+        assert agent.format_shell(
+            head + tail, exit_code=0, limits=limits, omitted=dropped
+        ) == agent.format_shell(whole, exit_code=0, limits=limits), keep
+    assert agent.format_shell("", exit_code=0, omitted=4) == (
+        "Exit code 0\n\n[... 4 bytes of output cut from the middle ...]\n"
+    )
+    with pytest.raises(ValueError):
+        agent.format_shell("x", exit_code=0, omitted=-1)
+
+
+def test_the_helpers_clients_reimplemented_are_exported() -> None:
+    assert agent.fill("{a} {b}", {"a": "1"}) == "1 {b}"
+    assert agent.limit("read_max_lines") == agent.LIMITS["read_max_lines"]
+    assert agent.limit("read_max_lines", {"read_max_lines": 3}) == 3
+    agent.check_lines(1, 1)
+    for start, end, reason in ((0, None, "bad_line"), (3, 2, "end_before_start")):
+        with pytest.raises(agent.ToolError) as bad:
+            agent.check_lines(start, end)
+        assert bad.value.reason == reason

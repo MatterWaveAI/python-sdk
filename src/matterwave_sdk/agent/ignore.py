@@ -4,7 +4,9 @@
 `IgnoreFile` is one file's rules, for the directory holding it, in the
 .gitignore syntax: comments, `!` to re-include, a trailing `/` for
 directories only, a leading or middle `/` to anchor at that directory,
-`**`, and a backslash to escape. `SearchIgnore` stacks every file that
+`**`, and a backslash to escape; a leading byte-order mark is dropped and
+a line whose pattern is invalid (a `[...]` range that runs backwards) is
+skipped, as git does. `SearchIgnore` stacks every file that
 applies to a path, root first, with the deny list on top: the last rule
 that matches decides, a path inside an ignored directory stays ignored,
 and the deny list cannot be re-included. Matching ignores case, so every
@@ -25,7 +27,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ._contract import SEARCH_IGNORE_FILES
-from .confine import DenyList, glob_to_regex
+from .confine import DenyList, GlobError, glob_to_regex
+
+_BOM = "\ufeff"
 
 
 @dataclass(frozen=True)
@@ -71,16 +75,21 @@ def _parse(line: str) -> _Rule | None:
     text = text.removeprefix("/")
     if not text:
         return None
-    return _Rule(re.compile(_pattern_regex(text), re.IGNORECASE), negate, dir_only, anchored)
+    try:
+        regex = re.compile(_pattern_regex(text), re.IGNORECASE)
+    except (GlobError, re.error):
+        return None
+    return _Rule(regex, negate, dir_only, anchored)
 
 
 class IgnoreFile:
     """The rules of one .gitignore-syntax file, for the directory holding it
-    (`base`, relative to the workspace root, `""` for the root)."""
+    (`base`, relative to the workspace root, `""` for the root). A leading
+    byte-order mark is dropped, and an invalid line is skipped."""
 
     def __init__(self, text: str, base: str = "") -> None:
         self.base = base.strip("/")
-        self.patterns: tuple[str, ...] = tuple(text.split("\n"))
+        self.patterns: tuple[str, ...] = tuple(text.removeprefix(_BOM).split("\n"))
         self._rules = [r for r in (_parse(line) for line in self.patterns) if r is not None]
 
     def match(self, relative: str, *, is_dir: bool = False) -> bool | None:

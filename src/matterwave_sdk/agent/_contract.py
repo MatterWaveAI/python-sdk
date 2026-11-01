@@ -26,6 +26,7 @@ Refusal = Literal[
     "parent",
     "outside",
     "symlink",
+    "loop",
     "denied",
     "protected",
     "stream",
@@ -40,6 +41,7 @@ RefusalCode = Literal[
     "parent",
     "outside",
     "symlink",
+    "loop",
     "denied",
     "protected",
     "stream",
@@ -65,6 +67,9 @@ ToolFailure = Literal[
     "empty_pattern",
     "invalid_regex",
     "bad_timeout",
+    "invalid_glob",
+    "special_file",
+    "timeout",
 ]
 
 
@@ -193,7 +198,9 @@ class ContextFile:
     """A file of instructions for the agent (MATTERWAVE.md, AGENTS.md,
     MATTERWAVE.local.md) for `system_prompt`: where it is, its text, and
     whether the user trusts it. An untrusted file is left out of the
-    prompt."""
+    prompt. Pass them from the most shared to the most personal
+    (`CONTEXT_FILES` order, MATTERWAVE.local.md last): the later file wins
+    where two disagree."""
 
     path: str
     content: str
@@ -248,6 +255,9 @@ PROTECTED: tuple[str, ...] = tuple(_CONFINEMENT["protected"])
 REFUSALS: Mapping[str, str] = MappingProxyType(dict(_CONFINEMENT["refusals"]))
 SETTINGS_DIR: str = _CONFINEMENT["settings_dir"]
 CONTEXT_FILES: tuple[str, ...] = tuple(_CONFINEMENT["context_files"])
+"""The context files a client reads from the root, in the order to pass
+them to `system_prompt`: the shared MATTERWAVE.md and AGENTS.md, then the
+user's own MATTERWAVE.local.md last, so that it wins where they disagree."""
 
 EDIT_CRLF_FALLBACK: bool = _RAW["edit"]["crlf_fallback"]
 EDIT_ERRORS: Mapping[str, str] = MappingProxyType(dict(_RAW["edit"]["errors"]))

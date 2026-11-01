@@ -83,6 +83,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `PROTECTED` also covers what matters when the root is the home folder
     or above it: `.bashrc`, `.bash_profile`, `.profile`, `.zshrc`,
     `.zprofile`, `.ssh/`, `.aws/` and `.config/matterwave` at any depth.
+- Agent contract `1.1.1`, fixes from the clients' testing; each observable
+  one is a case in `CONTRACT["conformance"]`:
+  - `confine` checks Windows aliases only in the names below the root, so a
+    root inside `/x/con/`, `/x/a:b/` or `/x/x./` takes absolute paths into
+    it again; `windows_alias(path, root)` is that check on its own.
+  - A leading byte-order mark in `.gitignore` or `.matterwaveignore` is
+    dropped, and an invalid line (a `[...]` range that runs backwards) is
+    skipped, as git does, instead of failing every search and `confine`.
+  - glob classes are translated so every regex dialect reads them alike (a
+    `]` first is literal, `[^...]` negates too), and a backwards range is
+    `GlobError` from `glob_to_regex` and the new `invalid_glob` ToolError
+    from `glob_matches`, `run_glob` and `run_grep`.
+  - A loop of links is `PathRefused` with the new code `loop`, never a bare
+    OSError, and the walker leaves such links out.
+  - `run_read_file` and `run_grep` read no more than the cap + 1 bytes; a
+    pipe, socket or device (or a link to one) is the new `special_file`
+    ToolError, is left out of searches, and is never waited on.
+  - `CONTEXT_FILES` is MATTERWAVE.md, AGENTS.md, MATTERWAVE.local.md, so
+    passed in that order the user's own file wins; the prompt slot's rules
+    say so.
+  - `format_shell(..., omitted=N)` formats an output of which a client kept
+    only the start and the end; `fill`, `limit` and `check_lines` are
+    exported.
+  - `run_grep(..., timeout_s=...)` runs the search on a thread and raises
+    the new `timeout` ToolError at the deadline. CPython's `re` cannot be
+    interrupted inside one match, so a pattern that is exponential on a
+    single line still holds the call until that match ends.
+  - The `PROTECTED_LIST` and `allowed()` docs name the whole 1.1 list.
 - `tools_of(models, model_id)` and `local_agent_tools_of(me)`: the
   `supports_tools` and `local_agent_tools` flags as `"yes"`, `"no"` or
   `"unknown"` (`ToolsVerdict`), as `vision_of` reads `supports_vision`.
