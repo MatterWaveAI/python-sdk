@@ -31,6 +31,7 @@ from typing import Any, Literal, TypeVar, cast, overload
 import httpx
 
 from . import _base
+from . import _org_requests as org_req
 from ._account import (
     Account,
     AsyncAccount,
@@ -53,6 +54,17 @@ from ._account import (
 )
 from ._base import EmbeddingInput, Message, Request, Tool, ToolChoice
 from ._mcp import AsyncMcp, Mcp
+from ._org import (
+    AsyncInviteLinks,
+    AsyncInvites,
+    AsyncMembers,
+    AsyncOrgClient,
+    InviteLinks,
+    Invites,
+    Members,
+    OrgClient,
+)
+from ._org_models import DeviceDecision, DeviceLookup
 from ._pagination import async_items_of, async_pages_of, items_of, pages_of
 from ._resources import (
     Admin,
@@ -1172,7 +1184,11 @@ def _login_expired(timed_out: bool, timeout: float | None) -> MatterWaveError:
 class DeviceAuth:
     """Sign a person in from a device with no browser of its own (RFC 8628):
     show them a code, they approve it in any browser, and the poll returns
-    an API key that acts as them. Nothing is written to disk here."""
+    an API key that acts as them. Nothing is written to disk here.
+
+    `lookup`, `approve` and `deny` are the other side, deciding a code a
+    device shows: they need a signed-in person's token (`access_token=`),
+    and an API key is refused."""
 
     def __init__(self, client: MatterWave) -> None:
         self._client = client
@@ -1225,6 +1241,32 @@ class DeviceAuth:
                     interval += _base.SLOW_DOWN_STEP_S
                 elif err.code != "authorization_pending":
                     raise
+
+    def lookup(self, user_code: str) -> DeviceLookup:
+        """`POST /api/auth/device/lookup`: which client is asking with the
+        code a device shows, before the person decides. An API key is
+        refused here: a key that could mint keys would outlive its own
+        revocation."""
+        response = self._client._send(org_req.device_lookup_request(user_code))
+        return DeviceLookup.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    def approve(self, user_code: str, *, name: str | None = None) -> DeviceDecision:
+        """`POST /api/auth/device/approve`: let the device sign in as the
+        caller; it gets an API key (named after `name`, or the client) on
+        its next poll. `ConflictError` once the code was decided."""
+        response = self._client._send(org_req.device_approve_request(user_code, name))
+        return DeviceDecision.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    def deny(self, user_code: str) -> DeviceDecision:
+        """`POST /api/auth/device/deny`: refuse the device; its poll ends in `access_denied`."""
+        response = self._client._send(org_req.device_deny_request(user_code))
+        return DeviceDecision.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
 
 
 class Auth:
@@ -1299,6 +1341,10 @@ class MatterWave:
         self.billing = Billing(self)
         self.plans = Plans(self)
         self.policy = Policy(self)
+        self.org = OrgClient(self)
+        self.members = Members(self)
+        self.invites = Invites(self)
+        self.invite_links = InviteLinks(self)
 
     @property
     def base_url(self) -> str:
@@ -1907,6 +1953,24 @@ class AsyncDeviceAuth:
                 elif err.code != "authorization_pending":
                     raise
 
+    async def lookup(self, user_code: str) -> DeviceLookup:
+        response = await self._client._send(org_req.device_lookup_request(user_code))
+        return DeviceLookup.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    async def approve(self, user_code: str, *, name: str | None = None) -> DeviceDecision:
+        response = await self._client._send(org_req.device_approve_request(user_code, name))
+        return DeviceDecision.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    async def deny(self, user_code: str) -> DeviceDecision:
+        response = await self._client._send(org_req.device_deny_request(user_code))
+        return DeviceDecision.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
 
 class AsyncAuth:
     def __init__(self, client: AsyncMatterWave) -> None:
@@ -1970,6 +2034,10 @@ class AsyncMatterWave:
         self.billing = AsyncBilling(self)
         self.plans = AsyncPlans(self)
         self.policy = AsyncPolicy(self)
+        self.org = AsyncOrgClient(self)
+        self.members = AsyncMembers(self)
+        self.invites = AsyncInvites(self)
+        self.invite_links = AsyncInviteLinks(self)
 
     @property
     def base_url(self) -> str:

@@ -71,7 +71,8 @@ def _coerce(hint: Any, value: Any) -> Any:
         return [v for v in items if v is not _MISSING]
     if origin is dict:
         return value if isinstance(value, dict) else _MISSING
-    if isinstance(hint, type) and issubclass(hint, Wire):
+    if isinstance(hint, type) and hasattr(hint, "from_dict"):
+        # A Wire model, or one of the hand-written models with its own reader.
         return hint.from_dict(value) if isinstance(value, dict) else _MISSING
     return value
 

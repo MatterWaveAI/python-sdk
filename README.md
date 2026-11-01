@@ -333,6 +333,48 @@ which builds the export inside the request. `imports`: `create`, `list`, `get`,
 `wait` raises `MatterWaveError` when the job failed or expired and
 `APITimeoutError` when `timeout` passes first.
 
+## Administering the organisation
+
+Members, invites, the org's settings and its billing are a person's to manage,
+not a key's: sign in as an owner or admin (see [Signing a person in](#signing-a-person-in))
+and pass the token as `access_token=`.
+
+```python
+admin = MatterWave(access_token=signin.session(token))
+
+for member in admin.members.list():
+    print(member.email, member.role, member.state)
+admin.members.set_role(subject, "admin")
+invite = admin.invites.create("new.hire@example.com", role="member")   # mailed; `mail` says if it went
+link = admin.invite_links.create(role="viewer", max_uses=5)             # link.url is shown this once
+
+admin.org.set_models(["grt-nano", "grt-pro"])    # the allow-list; None allows the whole plan
+admin.org.set_sharing(False)                     # silences every share link without revoking it
+admin.org.domains.claim("example.com")
+print(admin.org.domains.challenge("example.com").record.value)   # publish, then verify()
+admin.org.idps.attach(name="Okta", issuer="https://acme.okta.com", client_id=..., client_secret=...)
+enforced = admin.org.set_sso(True)               # owner only; store enforced.recovery.code offline
+
+print(admin.billing.invoices().data[0].hosted_invoice_url)
+checkout = admin.billing.checkout("team", annual=True)            # send the person to checkout.url
+```
+
+`org`: `get`, `rename`, `close` (owner only, irreversible; `confirm` is the org's
+name), `models` / `set_models`, `sharing` / `set_sharing`, `shares` /
+`revoke_share`, `sso` / `set_sso` / `mint_recovery_code`, `mfa` / `set_mfa`, and
+`org.domains` (`list`, `claim`, `challenge`, `verify`, `release`) and `org.idps`
+(`list`, `attach`, `detach`). `members`: `list`, `set_role`,
+`transfer_ownership`, `remove`. `invites`: `list`, `create`, `resend`, `revoke`,
+`lookup`, `accept`. `invite_links`: `list`, `create`, `revoke`, `lookup`, `join`.
+`billing`: `checkout`, `portal`, `invoices`, `change_plan`, `plan_history`
+beside `status`. `auth.device`: `lookup`, `approve`, `deny`, the person's side
+of device login. `invites.lookup` and `invite_links.lookup` are anonymous: the
+token is the credential. Reading the org, its members and its invites is any
+member's; the rest is an owner's or admin's, and closing the org, transferring
+ownership and requiring SSO or two-factor an owner's alone. One-time secrets --
+an invite link's `token` and `url`, an SSO recovery `code` -- are kept out of
+`repr`.
+
 ## Receiving webhooks
 
 `client.webhooks` manages endpoints; `matterwave_sdk.webhooks` is the
@@ -383,8 +425,9 @@ organisation; for those, sign the person in at the identity provider instead.
 
 ## Signing a person in
 
-The routes that manage the organisation -- the audit trail, the org's
-instructions, budget caps, and the operator console -- gate on the caller's
+The routes that manage the organisation -- members and invites, the org's
+settings, its billing, the audit trail, the org's instructions, budget caps, and
+the operator console -- gate on the caller's
 membership, not a key scope, and answer every API key 403 "Membership is managed
 by a person, not an API key." A person's access token from the deployment's
 identity provider is what they take. Pass one as `access_token=`, the token
@@ -425,14 +468,14 @@ platform's route document (the drift test holds the two together):
 
 | `CREDENTIALS` | Accepts | Methods |
 | --- | --- | --- |
-| `public` | nothing | `index`, `auth.device.start` / `poll`, `shares.view`, `plans.list`, `policy.stats` |
+| `public` | nothing | `index`, `auth.device.start` / `poll`, `shares.view`, `plans.list`, `policy.stats`, `invites.lookup`, `invite_links.lookup` |
 | `key` | any API key, or a person's token | `me`, `account`, `preferences`, `sessions`, `speech`, `billing.status`, `app_models`, `instructions.user` / `update_user`, `notifications`, `announcements.list`, `entitlements.get`, `messages.set_feedback` / `delete_feedback`, `keys.list`, `usage.get`, `attachments`, `library`, `shares.list_mine` / `revoke`, `budget.get` |
 | `key:chat:read` | a key with `chat:read`, or a person's token | `models`, `exports`, the conversation reads, `messages.list_feedback`, `shares.list` |
 | `key:chat:write` | a key with `chat:write`, or a person's token | `imports`, `chat.completions.create`, `embeddings.create`, the conversation writes and turns, `shares.create` |
 | `key:keys:manage` | a key with `keys:manage`, or a person's token | `keys.create` / `update` / `rotate` / `revoke` |
 | `key:usage:read` | a key with `usage:read`, or a person's token | `usage.org`, `usage.export_csv` |
 | `key:webhooks:manage` | a key with `webhooks:manage`, or a person's token | `webhooks` |
-| `person` | a person's token only | `audit`, `instructions.org` / `update_org`, `budget.members` / `set_overage_cap` / `set_member_default_cap` / `set_member_cap`, `admin` |
+| `person` | a person's token only | `audit`, `instructions.org` / `update_org`, `budget.members` / `set_overage_cap` / `set_member_default_cap` / `set_member_cap`, `org`, `members`, `invites` and `invite_links` (but their two `lookup`s), `billing` (but `status`), `auth.device.lookup` / `approve` / `deny`, `admin` |
 
 A scope never widens a role: the org routes still need the org role they ask of a
 person, whichever credential carries it.

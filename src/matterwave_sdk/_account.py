@@ -15,6 +15,7 @@ import time
 from typing import IO, Any
 
 from . import _account_requests as req
+from . import _org_requests as org_req
 from ._account_models import (
     AccountExport,
     BillingStatus,
@@ -32,8 +33,10 @@ from ._account_models import (
     UpdatedName,
 )
 from ._base import UNSET
+from ._org_models import BillingLink, InvoiceList, PlanHistory
 from ._resources import _Async, _Sync
 from .errors import APITimeoutError, MatterWaveError
+from .models import Entitlements
 
 # How often `wait` asks after a job, unless told otherwise.
 POLL_INTERVAL_S = 5.0
@@ -410,7 +413,10 @@ class AsyncSpeech(_Async):
 
 
 class Billing(_Sync):
-    """The org's billing as any member sees it."""
+    """The org's billing. `status` is any member's read, with a key or a
+    person's token; the rest is an owner's or admin's and needs a person's
+    token -- an API key is refused 403 "Membership is managed by a person,
+    not an API key."."""
 
     def status(self) -> BillingStatus:
         """`GET /api/billing/status`: the plan and its limits, whether
@@ -419,11 +425,62 @@ class Billing(_Sync):
         body, rid = self._object(req.billing_status_request())
         return BillingStatus.from_dict(body, request_id=rid)
 
+    def checkout(self, plan: str, *, annual: bool = False) -> BillingLink:
+        """`POST /api/billing/checkout`: a Stripe Checkout page for `plan`;
+        the plan changes once Stripe confirms the payment. `ConflictError`
+        while an invoice is overdue."""
+        body, rid = self._object(org_req.checkout_request(plan, annual))
+        return BillingLink.from_dict(body, request_id=rid)
+
+    def portal(self) -> BillingLink:
+        """`POST /api/billing/portal`: the Stripe customer portal, where the
+        card and invoices are managed."""
+        body, rid = self._object(org_req.portal_request())
+        return BillingLink.from_dict(body, request_id=rid)
+
+    def invoices(self) -> InvoiceList:
+        """`GET /api/billing/invoices`: the latest 24, newest first."""
+        body, rid = self._object(org_req.invoices_request())
+        return InvoiceList.from_dict(body, request_id=rid)
+
+    def change_plan(self, plan: str, *, reason: str | None = None) -> Entitlements:
+        """`PUT /api/plan`: move to `plan` directly -- in practice to
+        `free`; a paid plan starts with `checkout` and the server answers
+        402 saying so. Nothing is deleted on a downgrade, but writes past
+        the new limits stop (`writes_blocked`)."""
+        body, rid = self._object(org_req.put_plan_request(plan, reason))
+        return Entitlements.from_dict(body, request_id=rid)
+
+    def plan_history(self) -> PlanHistory:
+        """`GET /api/plan/history`: the latest 50 plan and status changes."""
+        body, rid = self._object(org_req.plan_history_request())
+        return PlanHistory.from_dict(body, request_id=rid)
+
 
 class AsyncBilling(_Async):
     async def status(self) -> BillingStatus:
         body, rid = await self._object(req.billing_status_request())
         return BillingStatus.from_dict(body, request_id=rid)
+
+    async def checkout(self, plan: str, *, annual: bool = False) -> BillingLink:
+        body, rid = await self._object(org_req.checkout_request(plan, annual))
+        return BillingLink.from_dict(body, request_id=rid)
+
+    async def portal(self) -> BillingLink:
+        body, rid = await self._object(org_req.portal_request())
+        return BillingLink.from_dict(body, request_id=rid)
+
+    async def invoices(self) -> InvoiceList:
+        body, rid = await self._object(org_req.invoices_request())
+        return InvoiceList.from_dict(body, request_id=rid)
+
+    async def change_plan(self, plan: str, *, reason: str | None = None) -> Entitlements:
+        body, rid = await self._object(org_req.put_plan_request(plan, reason))
+        return Entitlements.from_dict(body, request_id=rid)
+
+    async def plan_history(self) -> PlanHistory:
+        body, rid = await self._object(org_req.plan_history_request())
+        return PlanHistory.from_dict(body, request_id=rid)
 
 
 class Plans(_Sync):

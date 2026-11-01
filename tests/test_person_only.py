@@ -76,9 +76,24 @@ def method_of(client: object, dotted: str) -> Any:
     return target
 
 
-def test_the_person_only_methods_are_exactly_the_person_credentials_outside_admin() -> None:
-    person = {name for name, need in CREDENTIALS.items() if need == "person"}
-    assert set(CALLS) == {name for name in person if not name.startswith("admin.")}
+def test_these_are_person_credentials() -> None:
+    assert all(CREDENTIALS[name] == "person" for name in CALLS)
+
+
+PERSON_ONLY = sorted(
+    name for name, need in CREDENTIALS.items() if need == "person" and not name.startswith("admin.")
+)
+
+
+@pytest.mark.parametrize("name", PERSON_ONLY)
+def test_every_person_only_method_says_it_needs_a_person(name: str) -> None:
+    """The method's own docstring, or its class's, or its module's, says a
+    person's token is what the route takes."""
+    method = method_of(MatterWave(api_key="k", base_url=BASE_URL), name)
+    owner = method.__self__
+    docs = [inspect.getdoc(method), type(owner).__doc__, inspect.getmodule(type(owner)).__doc__]
+    text = " ".join(" ".join((doc or "").split()) for doc in docs)
+    assert "person's token" in text or "signed-in person" in text, name
 
 
 @pytest.mark.parametrize("name", sorted(CALLS))

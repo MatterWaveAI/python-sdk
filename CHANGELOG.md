@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Organisation administration, for a person's token, sync and async:
+  `org` (`get`, `rename`, `close`, the model allow-list, sharing and the
+  org's share links, SSO with its recovery code, two-factor, and
+  `org.domains` and `org.idps`), `members` (`list`, `set_role`,
+  `transfer_ownership`, `remove`), `invites` (`list`, `create`, `resend`,
+  `revoke`, and the anonymous `lookup` and `accept`), `invite_links`
+  (`list`, `create`, `revoke`, `lookup`, `join`), `billing.checkout` /
+  `portal` / `invoices` / `change_plan` / `plan_history`, and
+  `auth.device.lookup` / `approve` / `deny`. One-time secrets (a link's
+  token and url, an SSO recovery code) are kept out of `repr`.
 - The account and data routes a key reaches, sync and async: `account`
   (`update`, `accept_terms`, `enforcement`), `preferences` (`get`,
   `update`), `sessions` (`list`, `revoke`, `revoke_others`), `exports`
