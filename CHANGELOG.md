@@ -48,8 +48,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from the app's export (`--check` exits 1 when it is behind), and the `ci`
   workflow takes an `openapi_source` URL on a manual run to test against it.
 
+- `client.with_options(timeout=, max_retries=, max_retry_wait=,
+  default_headers=, idempotency_key=)` (sync and async): the client with
+  those settings replaced for the calls made through it, so any method --
+  the resources, `models.retrieve`, the rest -- can have its own bounds.
+  The view shares the connection pool, and closing the client ends it.
+- An `Idempotency-Key` header on every write (any method but GET): a fresh
+  UUID per call, the same on each of its retries;
+  `with_options(idempotency_key=...)` supplies the caller's own.
+- `max_retry_wait` (default 60 seconds): a `Retry-After` longer than it
+  raises the error at once, with `retry_after` set, rather than waiting.
+- `extra_headers=` and `extra_query=` beside `extra_body=` on
+  `chat.completions.create` / `parse` and `embeddings.create`.
+- `MATTERWAVE_LOG=info` logs a line per response or failure (method, path,
+  status, request id, time) to the `matterwave_sdk` logger and stderr;
+  `debug` adds each attempt and each retry's wait. Bodies and headers are
+  never logged.
+- `APIDeprecationWarning`: raised once per route when a response carries
+  `Deprecation` or `Sunset`, naming the route and the dates.
+- `MatterWaveConfigError`, a `MatterWaveError` and a `ValueError`, for a
+  client setting that cannot be used.
+- `VERSIONING.md`: the 0.x policy and the API namespace each release speaks.
+- Classifiers for Python 3.10 to 3.13; the sdist carries `CHANGELOG.md`,
+  `VERSIONING.md` and `docs/`.
+- `tests/surface.json` and `tests/parity.json`: the public surface, and
+  each difference from the TypeScript SDK with its reason, held by a test
+  against that SDK's copy. The README has the table.
+- Releases: a tag must name the package version, a CycloneDX SBOM is built,
+  and each tag gets a GitHub release with its CHANGELOG section, the wheel,
+  the sdist and the SBOM (`scripts/release.py`).
+- CI on Python 3.10, 3.11, 3.12 and 3.13 with `ruff format --check`, a
+  gitleaks scan of the whole history, and a check that no tracked file
+  names a private ticket; `.pre-commit-config.yaml` runs gitleaks on each
+  commit; `CODEOWNERS`.
+
 ### Changed
 
+- A POST or PATCH is retried only after a 429 or a connection that was
+  never made. After a 5xx or a reply cut short the first copy may have taken
+  effect -- a message stored and billed, a key minted -- so the error is
+  raised instead. GET, PUT, DELETE and the read-only MCP calls retry as
+  before.
+- A bad base URL, a negative `max_retries` and the like raise
+  `MatterWaveConfigError`, still a `ValueError`.
+- Every action in the workflows is pinned to a commit, and the workflow
+  token is read-only unless a job needs more.
+- The source and tests are formatted with `ruff format`.
 - `tests/openapi.json` refreshed from the app's export: the two penalty
   fields on `ChatCompletionRequest` and the `compacting` stream event.
 - CI runs `mypy` beside `ruff` and `pytest`, and checks the TypeScript
@@ -57,6 +101,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A retried write could send a message, or mint a key, twice.
+- A `Retry-After: 3600` held a call for an hour.
 - The README's link to a `docs/package-names.md` that only existed in the
   old monorepo now points at the MatterWaveAI GitHub org.
 
