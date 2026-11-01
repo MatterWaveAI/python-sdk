@@ -377,7 +377,9 @@ name with no kind is denied.
 | `network` (web_fetch), `mcp` | deny; ask when marked `read_only` | ask | ask | allow |
 
 A write to a protected file (`.matterwaveignore`, `.matterwave/`,
-`MATTERWAVE.md`, `MATTERWAVE.local.md`, `AGENTS.md`) asks in every mode that
+`MATTERWAVE.md`, `MATTERWAVE.local.md`, `AGENTS.md`, and for a root at or above
+the home folder `.bashrc`, `.bash_profile`, `.profile`, `.zshrc`, `.zprofile`,
+`.ssh/`, `.aws/` and `.config/matterwave` at any depth) asks in every mode that
 allows writes, yolo included: `allowed("edit", "auto-edit", path="AGENTS.md")`
 is `"ask"`, and `confine(..., write=True)` refuses it until the client passes
 `approved=True`.
@@ -408,7 +410,13 @@ or raises `PathRefused` (with a `reason` and the sentence to hand back to the
 model) before anything is read or written: for a `..` segment, an absolute path
 outside the root, a link that leads out of the root (symbolic links, and
 junctions on Windows), a path on the deny list, by its own name or its
-target's, or an unapproved write to a protected path. The deny list is `.env*`,
+target's, or an unapproved write to a protected path. On every platform it
+also refuses a name Windows would read as another file or a device: a `:` in a
+name (`key.pem:x`, `dir::$INDEX_ALLOCATION`), a name ending in a dot or a space
+(`.git `, `a.`), a reserved device name with or without an extension (`NUL`,
+`con.h`, `COM1.log`), and `\\?\`, `\\.\` and UNC paths (`stream`, `trailing`,
+`device`, `unc`); the check alone is `windows_alias(path)`. Whatever the OS makes of
+a path, the error is always the SDK's refusal. The deny list is `.env*`,
 `*.pem`, `id_*` and `.git/` plus the lines of the workspace's
 `.matterwaveignore`, and it applies to reads too, so those files are never sent
 to the model; the protected files can be read, and written only with the

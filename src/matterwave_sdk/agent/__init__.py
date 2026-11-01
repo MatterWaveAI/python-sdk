@@ -85,6 +85,7 @@ from .confine import (
     is_protected,
     load_deny_list,
     resolve_links,
+    windows_alias,
 )
 from .diff import split_lines, unified_diff
 from .edit import EditError, apply_edit, occurrences
@@ -207,4 +208,5 @@ __all__ = [
     "utf8_head",
     "utf8_tail",
     "walk",
+    "windows_alias",
 ]

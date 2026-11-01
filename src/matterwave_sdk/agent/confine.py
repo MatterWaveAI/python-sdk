@@ -3,10 +3,14 @@
 `confine(root, path)` resolves `path` against the workspace root, follows
 its links (symbolic links, and junctions on Windows) and returns where it
 really leads, or raises `PathRefused` before anything is read or written:
-for a `..` segment, an absolute path outside the root, a link that leads
-out of it, a path on the deny list (by its own name or its target's), or,
-for a write, a protected path the user has not approved. The refusal's
-message is the contract's sentence for the model.
+for a `..` segment, a name Windows would read as another file or a device
+(a `:` stream, a trailing dot or space, `NUL` and the other reserved
+names, a verbatim or UNC path), an absolute path outside the root, a link
+that leads out of it, a path on the deny list (by its own name or its
+target's), or, for a write, a protected path the user has not approved.
+The refusal's message is the contract's sentence for the model, and
+nothing else escapes it: a path the OS cannot make sense of is a
+`PathRefused` too, never a bare ValueError.
 
 Confinement is not a sandbox. It keeps the file tools inside the root;
 `run_shell` can reach anything the user can, which is why commands ask.
@@ -24,12 +28,18 @@ from ._contract import DEFAULT_DENY, DENY_FILE, PROTECTED, REFUSALS, Refusal
 
 _MAX_LINK_HOPS = 40
 _DRIVE = re.compile(r"^[A-Za-z]:")
+_DRIVE_ROOT = re.compile(r"^[A-Za-z]:(?=[\\/]|$)")
 _SEPARATORS = re.compile(r"[\\/]")
+_DEVICE = re.compile(
+    r"con|prn|aux|nul|com[1-9\u00b9\u00b2\u00b3]|lpt[1-9\u00b9\u00b2\u00b3]|conin\$|conout\$",
+    re.IGNORECASE,
+)
 
 
 class PathRefused(PermissionError):
     """The path is not one the agent may use. `reason` is the contract's
-    code (`empty`, `parent`, `outside`, `symlink`, `denied`, `protected`);
+    code (`empty`, `parent`, `outside`, `symlink`, `denied`, `protected`,
+    and the Windows aliases `stream`, `trailing`, `device`, `unc`);
     `str(error)` is the sentence to return to the model as the tool's
     result."""
 
@@ -173,6 +183,31 @@ def is_absolute(path: str) -> bool:
     return path.startswith(("/", "\\")) or bool(_DRIVE.match(path))
 
 
+def windows_alias(path: str) -> Refusal | None:
+    """The refusal for a path Windows could read as something other than
+    the file it seems to name, or None: `unc` for a `\\\\?\\`, `\\\\.\\`,
+    `\\??\\` or network path, then, name by name, `stream` for a `:` (an
+    alternate data stream, or a drive-relative `C:x`), `trailing` for a
+    name that ends in a dot or a space, and `device` for CON, PRN, AUX,
+    NUL, COM1-9, LPT1-9, CONIN$ or CONOUT$, in any case and with or without
+    an extension. `confine` applies it on every platform, so the clients
+    agree on what they refuse."""
+    if len(path) >= 2 and path[0] in "\\/" and path[1] in "\\/":
+        return "unc"
+    if path[:4] in ("\\??\\", "/??/"):
+        return "unc"
+    for name in _SEPARATORS.split(_DRIVE_ROOT.sub("", path, count=1)):
+        if name in ("", "."):
+            continue
+        if ":" in name:
+            return "stream"
+        if name[-1] in ". ":
+            return "trailing"
+        if _DEVICE.fullmatch(name.split(".", 1)[0].rstrip(" ")):
+            return "device"
+    return None
+
+
 def _strip_verbatim(path: str) -> str:
     for prefix in ("\\\\?\\", "\\??\\"):
         if path.startswith(prefix):
@@ -234,7 +269,20 @@ def confine(
         raise PathRefused("outside", path.replace("\0", ""))
     if ".." in _SEPARATORS.split(path):
         raise PathRefused("parent", path)
+    alias = windows_alias(path)
+    if alias is not None:
+        raise PathRefused(alias, path)
+    try:
+        return _confine(root, path, deny, write and not approved)
+    except ValueError:
+        # A path the OS maps somewhere relpath cannot follow (another
+        # drive, a device) is outside the root as far as the tools go.
+        raise PathRefused("outside", path) from None
 
+
+def _confine(
+    root: str | os.PathLike[str], path: str, deny: DenyList | None, write: bool
+) -> ConfinedPath:
     given_root = os.path.abspath(root)
     real_root = str(resolve_links(given_root))
     if is_absolute(path):
@@ -259,7 +307,7 @@ def confine(
     for rel in (lexical_rel, real_rel):
         if rel and deny_list.matches(rel, is_dir=is_dir):
             raise PathRefused("denied", path)
-    if write and not approved:
+    if write:
         for rel in (lexical_rel, real_rel):
             if rel and PROTECTED_LIST.matches(rel, is_dir=is_dir):
                 raise PathRefused("protected", path)

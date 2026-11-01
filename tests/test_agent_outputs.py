@@ -122,6 +122,43 @@ def test_a_byte_cut_keeps_whole_characters() -> None:
     assert agent.format_read_file("é" * 10, "x", limits={"read_max_bytes": 6}).startswith("1\téé\n")
 
 
+# --- what confine makes of a path -------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "case",
+    CONFORMANCE["paths"],
+    ids=lambda c: f"{c['path']!r}{' (write)' if c.get('write') else ''}",
+)
+def test_confine_paths(tree: Path, case: Any) -> None:
+    write = case.get("write", False)
+    if "relative" in case:
+        assert agent.confine(tree, case["path"], write=write).relative == case["relative"]
+        return
+    with pytest.raises(agent.PathRefused) as refused:
+        agent.confine(tree, case["path"], write=write)
+    assert refused.value.reason == case["refused"]
+    assert str(refused.value) == case["message"]
+
+
+def test_windows_aliases_are_named_without_the_filesystem() -> None:
+    for case in CONFORMANCE["paths"]:
+        if case.get("refused") in {"stream", "trailing", "device", "unc"}:
+            assert agent.windows_alias(case["path"]) == case["refused"], case
+        elif "relative" in case:
+            assert agent.windows_alias(case["path"]) is None, case
+    assert {"stream", "trailing", "device", "unc"} <= set(agent.REFUSALS)
+
+
+def test_a_path_the_os_cannot_follow_is_still_a_refusal(tmp_path: Path) -> None:
+    for path in ("nul", "NUL.txt", "con", "COM1", "x:y", r"\\.\nul", r"src\aux.txt"):
+        with pytest.raises(agent.PathRefused):
+            agent.confine(tmp_path, path)
+    with pytest.raises(agent.PathRefused) as refused:
+        agent.confine(tmp_path, r"Z:\elsewhere\file.txt")
+    assert refused.value.reason == "outside"
+
+
 # --- the search rules --------------------------------------------------------
 
 
@@ -276,6 +313,14 @@ def test_the_protected_list() -> None:
         "MATTERWAVE.md",
         "MATTERWAVE.local.md",
         "AGENTS.md",
+        ".bashrc",
+        ".bash_profile",
+        ".profile",
+        ".zshrc",
+        ".zprofile",
+        ".ssh/",
+        ".aws/",
+        "**/.config/matterwave",
     )
     assert agent.CONTEXT_FILES == ("MATTERWAVE.md", "MATTERWAVE.local.md", "AGENTS.md")
     assert agent.SETTINGS_DIR == ".matterwave/"

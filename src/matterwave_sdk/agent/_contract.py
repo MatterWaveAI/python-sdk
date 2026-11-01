@@ -21,7 +21,18 @@ dispatching a subagent (`meta`)."""
 AnyToolKind = Literal["read", "write", "shell", "network", "mcp", "meta"]
 ToolName = Literal["read_file", "list_dir", "glob", "grep", "edit", "write_file", "run_shell"]
 ModeName = Literal["plan", "ask", "auto-edit", "yolo"]
-Refusal = Literal["empty", "parent", "outside", "symlink", "denied", "protected"]
+Refusal = Literal[
+    "empty",
+    "parent",
+    "outside",
+    "symlink",
+    "denied",
+    "protected",
+    "stream",
+    "trailing",
+    "device",
+    "unc",
+]
 EditFailure = Literal["missing", "empty", "unchanged", "not_found", "not_unique"]
 ApprovalRefusal = Literal["mode", "unknown_tool", "rejected", "headless", "needs_approval"]
 RefusalCode = Literal[
@@ -31,6 +42,10 @@ RefusalCode = Literal[
     "symlink",
     "denied",
     "protected",
+    "stream",
+    "trailing",
+    "device",
+    "unc",
     "mode",
     "unknown_tool",
     "rejected",

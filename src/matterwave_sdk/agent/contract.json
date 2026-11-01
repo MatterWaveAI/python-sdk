@@ -225,15 +225,15 @@
       "unknown_tool": "Refused: there is no tool named {tool}. Use one of the tools you were given.",
       "rejected": "The user rejected this {tool} call, so nothing was done. Do not send it again: change course, or ask the user what they want.",
       "headless": "Refused: {tool} needs the user's approval in {mode} mode, and this run is non-interactive, so nothing was done.",
-      "needs_approval": "Refused: {path} steers the agent (its settings, the project's instructions or .matterwaveignore), so a change to it needs the user's approval, which it did not get."
+      "needs_approval": "Refused: {path} is protected (the agent's settings or instructions, .matterwaveignore, a shell startup file or a credentials folder), so a change to it needs the user's approval, which it did not get."
     }
   },
   "confinement": {
-    "rules": "Every path is resolved against the workspace root and must stay under it after symbolic links (and Windows junctions) are followed. A path with a `..` segment is refused outright, an absolute path is allowed only when it resolves under the root, and a path that matches the deny list, by its own name or by where its links lead, is refused for reading as well as writing. Protected paths (the deny file, the agent's settings folder and the context files) can be read, but every write to one asks the user first, in each mode that allows writes, yolo included; `confine` refuses such a write unless it says the user approved it.",
+    "rules": "Every path is resolved against the workspace root and must stay under it after symbolic links (and Windows junctions) are followed. A path with a `..` segment is refused outright, an absolute path is allowed only when it resolves under the root, and a path that matches the deny list, by its own name or by where its links lead, is refused for reading as well as writing. On every platform, so that the clients agree, a path is refused when Windows could read it as something other than the file it seems to name: a ':' in a name (an alternate data stream such as key.pem:x, or a drive-relative path), a name that ends in a dot or a space (Windows drops them), a reserved device name (CON, PRN, AUX, NUL, COM1-9, LPT1-9, CONIN$, CONOUT$, any case, with or without an extension), or a \\\\?\\, \\\\.\\, \\??\\ or network (UNC) path; a refusal is always the SDK's own error. Protected paths (the deny file, the agent's settings folder, the context files, and the shell startup files and credential folders that matter when the root is the home folder or above it) can be read, but every write to one asks the user first, in each mode that allows writes, yolo included; `confine` refuses such a write unless it says the user approved it.",
     "deny": [".env*", "*.pem", "id_*", ".git/"],
     "deny_file": ".matterwaveignore",
     "search_ignore_files": [".gitignore", ".matterwaveignore"],
-    "protected": [".matterwaveignore", ".matterwave/", "MATTERWAVE.md", "MATTERWAVE.local.md", "AGENTS.md"],
+    "protected": [".matterwaveignore", ".matterwave/", "MATTERWAVE.md", "MATTERWAVE.local.md", "AGENTS.md", ".bashrc", ".bash_profile", ".profile", ".zshrc", ".zprofile", ".ssh/", ".aws/", "**/.config/matterwave"],
     "settings_dir": ".matterwave/",
     "context_files": ["MATTERWAVE.md", "MATTERWAVE.local.md", "AGENTS.md"],
     "pattern_syntax": "One pattern per line of the deny file; blank lines and lines starting with # are skipped, and a line starting with ! is ignored because a deny cannot be undone. A pattern with no / other than a trailing one matches any segment of the path, and a match on a directory covers everything under it. A trailing / matches directories only. A pattern with a / elsewhere is anchored at the workspace root (a leading / is dropped). * and ? match within one segment, [...] is a character class, ** matches any number of segments. Matching ignores case.",
@@ -243,7 +243,11 @@
       "outside": "Refused: {path} is outside the workspace root.",
       "symlink": "Refused: {path} is a link that leads outside the workspace root.",
       "denied": "Refused: {path} is protected (a secret, a key, .git or an entry in .matterwaveignore) and is not sent to the model.",
-      "protected": "Refused: {path} can be read but not changed by the agent."
+      "protected": "Refused: {path} can be read but not changed by the agent.",
+      "stream": "Refused: {path} has a ':' in a name, which Windows reads as an alternate data stream or another drive, not the file it seems to name.",
+      "trailing": "Refused: {path} has a name that ends in a dot or a space, which Windows drops, so it would reach a different file.",
+      "device": "Refused: {path} uses a reserved device name (CON, PRN, AUX, NUL, COM1-9, LPT1-9), which Windows treats as a device, not a file.",
+      "unc": "Refused: {path} is a \\\\?\\, \\\\.\\ or network path. Paths must stay inside the workspace."
     }
   },
   "search": {
@@ -385,7 +389,7 @@
     ]
   },
   "conformance": {
-    "about": "Cases every client's tools must reproduce; both SDKs' suites run them. Write `tree` out as a workspace first (each path to its UTF-8 text). Each of `tools` names a tool, its arguments and any `limits` to override, and gives the `expected` text, or an `error` (a key of outputs.errors) or a `refused` (a confinement refusal) code with its `message` (`message_prefix` where the rest is the regex dialect's own words). `ignore` asks the search rules alone about a path, with the tree's ignore files and its .matterwaveignore as the deny file; `ancestors: false` checks the path without the directories above it, as a walker does. `shell` gives run_shell's text for a command's result.",
+    "about": "Cases every client's tools must reproduce; both SDKs' suites run them. Write `tree` out as a workspace first (each path to its UTF-8 text). Each of `tools` names a tool, its arguments and any `limits` to override, and gives the `expected` text, or an `error` (a key of outputs.errors) or a `refused` (a confinement refusal) code with its `message` (`message_prefix` where the rest is the regex dialect's own words). `ignore` asks the search rules alone about a path, with the tree's ignore files and its .matterwaveignore as the deny file; `ancestors: false` checks the path without the directories above it, as a walker does. `shell` gives run_shell's text for a command's result. `paths` is what `confine` makes of a path in the same tree (`write` for a write, unapproved): the `relative` path, or the `refused` code and its `message`; a client on any platform must agree with every one.",
     "tree": {
       ".gitignore": "# build output\nbuild/\n*.log\n!keep.log\n!build/keep.txt\n/dist\ndocs/*.tmp\n\\#hash.txt\n\\!bang.txt\ntrail.txt   \n**/cache/\n",
       ".matterwaveignore": "# denied for reading too\nprivate/\n",
@@ -424,6 +428,287 @@
       "src/main.py": "import os\n\ndef main():\n    return os.getcwd()\n",
       "src/util.py": "def helper():\n    return 'TODO: tidy'\n"
     },
+    "paths": [
+      {
+        "path": "key.pem:x",
+        "refused": "stream",
+        "message": "Refused: key.pem:x has a ':' in a name, which Windows reads as an alternate data stream or another drive, not the file it seems to name."
+      },
+      {
+        "path": "dir::$INDEX_ALLOCATION",
+        "refused": "stream",
+        "message": "Refused: dir::$INDEX_ALLOCATION has a ':' in a name, which Windows reads as an alternate data stream or another drive, not the file it seems to name."
+      },
+      {
+        "path": "x:Zone.Identifier",
+        "refused": "stream",
+        "message": "Refused: x:Zone.Identifier has a ':' in a name, which Windows reads as an alternate data stream or another drive, not the file it seems to name."
+      },
+      {
+        "path": "README.md:Zone.Identifier",
+        "refused": "stream",
+        "message": "Refused: README.md:Zone.Identifier has a ':' in a name, which Windows reads as an alternate data stream or another drive, not the file it seems to name."
+      },
+      {
+        "path": "src/main.py::$DATA",
+        "refused": "stream",
+        "message": "Refused: src/main.py::$DATA has a ':' in a name, which Windows reads as an alternate data stream or another drive, not the file it seems to name."
+      },
+      {
+        "path": "C:foo.txt",
+        "refused": "stream",
+        "message": "Refused: C:foo.txt has a ':' in a name, which Windows reads as an alternate data stream or another drive, not the file it seems to name."
+      },
+      {
+        "path": ".git ",
+        "refused": "trailing",
+        "message": "Refused: .git  has a name that ends in a dot or a space, which Windows drops, so it would reach a different file."
+      },
+      {
+        "path": "a.",
+        "refused": "trailing",
+        "message": "Refused: a. has a name that ends in a dot or a space, which Windows drops, so it would reach a different file."
+      },
+      {
+        "path": "src/main.py.",
+        "refused": "trailing",
+        "message": "Refused: src/main.py. has a name that ends in a dot or a space, which Windows drops, so it would reach a different file."
+      },
+      {
+        "path": "src /main.py",
+        "refused": "trailing",
+        "message": "Refused: src /main.py has a name that ends in a dot or a space, which Windows drops, so it would reach a different file."
+      },
+      {
+        "path": "README.md ",
+        "write": true,
+        "refused": "trailing",
+        "message": "Refused: README.md  has a name that ends in a dot or a space, which Windows drops, so it would reach a different file."
+      },
+      {
+        "path": "...",
+        "refused": "trailing",
+        "message": "Refused: ... has a name that ends in a dot or a space, which Windows drops, so it would reach a different file."
+      },
+      {
+        "path": "nul",
+        "refused": "device",
+        "message": "Refused: nul uses a reserved device name (CON, PRN, AUX, NUL, COM1-9, LPT1-9), which Windows treats as a device, not a file."
+      },
+      {
+        "path": "NUL",
+        "refused": "device",
+        "message": "Refused: NUL uses a reserved device name (CON, PRN, AUX, NUL, COM1-9, LPT1-9), which Windows treats as a device, not a file."
+      },
+      {
+        "path": "NUL.txt",
+        "refused": "device",
+        "message": "Refused: NUL.txt uses a reserved device name (CON, PRN, AUX, NUL, COM1-9, LPT1-9), which Windows treats as a device, not a file."
+      },
+      {
+        "path": "con",
+        "refused": "device",
+        "message": "Refused: con uses a reserved device name (CON, PRN, AUX, NUL, COM1-9, LPT1-9), which Windows treats as a device, not a file."
+      },
+      {
+        "path": "CON.tar.gz",
+        "refused": "device",
+        "message": "Refused: CON.tar.gz uses a reserved device name (CON, PRN, AUX, NUL, COM1-9, LPT1-9), which Windows treats as a device, not a file."
+      },
+      {
+        "path": "aux.c",
+        "refused": "device",
+        "message": "Refused: aux.c uses a reserved device name (CON, PRN, AUX, NUL, COM1-9, LPT1-9), which Windows treats as a device, not a file."
+      },
+      {
+        "path": "Prn",
+        "refused": "device",
+        "message": "Refused: Prn uses a reserved device name (CON, PRN, AUX, NUL, COM1-9, LPT1-9), which Windows treats as a device, not a file."
+      },
+      {
+        "path": "com1",
+        "refused": "device",
+        "message": "Refused: com1 uses a reserved device name (CON, PRN, AUX, NUL, COM1-9, LPT1-9), which Windows treats as a device, not a file."
+      },
+      {
+        "path": "COM9.log",
+        "refused": "device",
+        "message": "Refused: COM9.log uses a reserved device name (CON, PRN, AUX, NUL, COM1-9, LPT1-9), which Windows treats as a device, not a file."
+      },
+      {
+        "path": "lpt1",
+        "refused": "device",
+        "message": "Refused: lpt1 uses a reserved device name (CON, PRN, AUX, NUL, COM1-9, LPT1-9), which Windows treats as a device, not a file."
+      },
+      {
+        "path": "LPT9.txt",
+        "write": true,
+        "refused": "device",
+        "message": "Refused: LPT9.txt uses a reserved device name (CON, PRN, AUX, NUL, COM1-9, LPT1-9), which Windows treats as a device, not a file."
+      },
+      {
+        "path": "src/con.h",
+        "refused": "device",
+        "message": "Refused: src/con.h uses a reserved device name (CON, PRN, AUX, NUL, COM1-9, LPT1-9), which Windows treats as a device, not a file."
+      },
+      {
+        "path": "nul .txt",
+        "refused": "device",
+        "message": "Refused: nul .txt uses a reserved device name (CON, PRN, AUX, NUL, COM1-9, LPT1-9), which Windows treats as a device, not a file."
+      },
+      {
+        "path": "COM¹",
+        "refused": "device",
+        "message": "Refused: COM¹ uses a reserved device name (CON, PRN, AUX, NUL, COM1-9, LPT1-9), which Windows treats as a device, not a file."
+      },
+      {
+        "path": "CONIN$",
+        "refused": "device",
+        "message": "Refused: CONIN$ uses a reserved device name (CON, PRN, AUX, NUL, COM1-9, LPT1-9), which Windows treats as a device, not a file."
+      },
+      {
+        "path": "conout$.txt",
+        "refused": "device",
+        "message": "Refused: conout$.txt uses a reserved device name (CON, PRN, AUX, NUL, COM1-9, LPT1-9), which Windows treats as a device, not a file."
+      },
+      {
+        "path": "\\\\?\\C:\\x",
+        "refused": "unc",
+        "message": "Refused: \\\\?\\C:\\x is a \\\\?\\, \\\\.\\ or network path. Paths must stay inside the workspace."
+      },
+      {
+        "path": "\\\\.\\pipe\\x",
+        "refused": "unc",
+        "message": "Refused: \\\\.\\pipe\\x is a \\\\?\\, \\\\.\\ or network path. Paths must stay inside the workspace."
+      },
+      {
+        "path": "\\\\server\\share\\x",
+        "refused": "unc",
+        "message": "Refused: \\\\server\\share\\x is a \\\\?\\, \\\\.\\ or network path. Paths must stay inside the workspace."
+      },
+      {
+        "path": "//server/share/x",
+        "refused": "unc",
+        "message": "Refused: //server/share/x is a \\\\?\\, \\\\.\\ or network path. Paths must stay inside the workspace."
+      },
+      {
+        "path": "\\??\\C:\\x",
+        "refused": "unc",
+        "message": "Refused: \\??\\C:\\x is a \\\\?\\, \\\\.\\ or network path. Paths must stay inside the workspace."
+      },
+      {
+        "path": "/\\server\\x",
+        "refused": "unc",
+        "message": "Refused: /\\server\\x is a \\\\?\\, \\\\.\\ or network path. Paths must stay inside the workspace."
+      },
+      {
+        "path": ".ENV",
+        "refused": "denied",
+        "message": "Refused: .ENV is protected (a secret, a key, .git or an entry in .matterwaveignore) and is not sent to the model."
+      },
+      {
+        "path": ".Env.Local",
+        "refused": "denied",
+        "message": "Refused: .Env.Local is protected (a secret, a key, .git or an entry in .matterwaveignore) and is not sent to the model."
+      },
+      {
+        "path": "ID_RSA",
+        "refused": "denied",
+        "message": "Refused: ID_RSA is protected (a secret, a key, .git or an entry in .matterwaveignore) and is not sent to the model."
+      },
+      {
+        "path": ".GIT/HEAD",
+        "refused": "denied",
+        "message": "Refused: .GIT/HEAD is protected (a secret, a key, .git or an entry in .matterwaveignore) and is not sent to the model."
+      },
+      {
+        "path": "PRIVATE/secret.md",
+        "refused": "denied",
+        "message": "Refused: PRIVATE/secret.md is protected (a secret, a key, .git or an entry in .matterwaveignore) and is not sent to the model."
+      },
+      {
+        "path": "bin/../.env",
+        "refused": "parent",
+        "message": "Refused: bin/../.env goes through '..'. Paths must stay inside the workspace."
+      },
+      {
+        "path": "console.log",
+        "relative": "console.log"
+      },
+      {
+        "path": "com10",
+        "relative": "com10"
+      },
+      {
+        "path": "lpt0.txt",
+        "relative": "lpt0.txt"
+      },
+      {
+        "path": "nullable.ts",
+        "relative": "nullable.ts"
+      },
+      {
+        "path": "auxiliary/x.md",
+        "relative": "auxiliary/x.md"
+      },
+      {
+        "path": "CONFIG",
+        "relative": "CONFIG"
+      },
+      {
+        "path": "./src/main.py",
+        "relative": "src/main.py"
+      },
+      {
+        "path": "a.b.c",
+        "relative": "a.b.c"
+      },
+      {
+        "path": "src/.gitignore",
+        "relative": "src/.gitignore"
+      },
+      {
+        "path": "AGENTS.md",
+        "write": true,
+        "refused": "protected",
+        "message": "Refused: AGENTS.md can be read but not changed by the agent."
+      },
+      {
+        "path": ".bashrc",
+        "write": true,
+        "refused": "protected",
+        "message": "Refused: .bashrc can be read but not changed by the agent."
+      },
+      {
+        "path": ".ssh/config",
+        "write": true,
+        "refused": "protected",
+        "message": "Refused: .ssh/config can be read but not changed by the agent."
+      },
+      {
+        "path": ".aws/credentials",
+        "write": true,
+        "refused": "protected",
+        "message": "Refused: .aws/credentials can be read but not changed by the agent."
+      },
+      {
+        "path": ".config/matterwave/settings.json",
+        "write": true,
+        "refused": "protected",
+        "message": "Refused: .config/matterwave/settings.json can be read but not changed by the agent."
+      },
+      {
+        "path": "me/.config/matterwave/settings.json",
+        "write": true,
+        "refused": "protected",
+        "message": "Refused: me/.config/matterwave/settings.json can be read but not changed by the agent."
+      },
+      {
+        "path": ".config/other/x",
+        "write": true,
+        "relative": ".config/other/x"
+      }
+    ],
     "tools": [
       {
         "tool": "read_file",

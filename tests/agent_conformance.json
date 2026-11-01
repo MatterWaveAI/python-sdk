@@ -814,6 +814,171 @@
         "write_file yolo": "allow",
         "read_file auto-edit": "allow"
       }
+    },
+    {
+      "path": ".bashrc",
+      "protected": true,
+      "decisions": {
+        "edit plan": "deny",
+        "edit ask": "ask",
+        "edit auto-edit": "ask",
+        "edit yolo": "ask",
+        "write_file plan": "deny",
+        "write_file ask": "ask",
+        "write_file auto-edit": "ask",
+        "write_file yolo": "ask",
+        "read_file auto-edit": "allow"
+      }
+    },
+    {
+      "path": ".zshrc",
+      "protected": true,
+      "decisions": {
+        "edit plan": "deny",
+        "edit ask": "ask",
+        "edit auto-edit": "ask",
+        "edit yolo": "ask",
+        "write_file plan": "deny",
+        "write_file ask": "ask",
+        "write_file auto-edit": "ask",
+        "write_file yolo": "ask",
+        "read_file auto-edit": "allow"
+      }
+    },
+    {
+      "path": ".profile",
+      "protected": true,
+      "decisions": {
+        "edit plan": "deny",
+        "edit ask": "ask",
+        "edit auto-edit": "ask",
+        "edit yolo": "ask",
+        "write_file plan": "deny",
+        "write_file ask": "ask",
+        "write_file auto-edit": "ask",
+        "write_file yolo": "ask",
+        "read_file auto-edit": "allow"
+      }
+    },
+    {
+      "path": ".bash_profile",
+      "protected": true,
+      "decisions": {
+        "edit plan": "deny",
+        "edit ask": "ask",
+        "edit auto-edit": "ask",
+        "edit yolo": "ask",
+        "write_file plan": "deny",
+        "write_file ask": "ask",
+        "write_file auto-edit": "ask",
+        "write_file yolo": "ask",
+        "read_file auto-edit": "allow"
+      }
+    },
+    {
+      "path": ".ssh/config",
+      "protected": true,
+      "decisions": {
+        "edit plan": "deny",
+        "edit ask": "ask",
+        "edit auto-edit": "ask",
+        "edit yolo": "ask",
+        "write_file plan": "deny",
+        "write_file ask": "ask",
+        "write_file auto-edit": "ask",
+        "write_file yolo": "ask",
+        "read_file auto-edit": "allow"
+      }
+    },
+    {
+      "path": "home/me/.ssh/authorized_keys",
+      "protected": true,
+      "decisions": {
+        "edit plan": "deny",
+        "edit ask": "ask",
+        "edit auto-edit": "ask",
+        "edit yolo": "ask",
+        "write_file plan": "deny",
+        "write_file ask": "ask",
+        "write_file auto-edit": "ask",
+        "write_file yolo": "ask",
+        "read_file auto-edit": "allow"
+      }
+    },
+    {
+      "path": ".aws/credentials",
+      "protected": true,
+      "decisions": {
+        "edit plan": "deny",
+        "edit ask": "ask",
+        "edit auto-edit": "ask",
+        "edit yolo": "ask",
+        "write_file plan": "deny",
+        "write_file ask": "ask",
+        "write_file auto-edit": "ask",
+        "write_file yolo": "ask",
+        "read_file auto-edit": "allow"
+      }
+    },
+    {
+      "path": ".config/matterwave/settings.json",
+      "protected": true,
+      "decisions": {
+        "edit plan": "deny",
+        "edit ask": "ask",
+        "edit auto-edit": "ask",
+        "edit yolo": "ask",
+        "write_file plan": "deny",
+        "write_file ask": "ask",
+        "write_file auto-edit": "ask",
+        "write_file yolo": "ask",
+        "read_file auto-edit": "allow"
+      }
+    },
+    {
+      "path": "me/.config/matterwave",
+      "protected": true,
+      "decisions": {
+        "edit plan": "deny",
+        "edit ask": "ask",
+        "edit auto-edit": "ask",
+        "edit yolo": "ask",
+        "write_file plan": "deny",
+        "write_file ask": "ask",
+        "write_file auto-edit": "ask",
+        "write_file yolo": "ask",
+        "read_file auto-edit": "allow"
+      }
+    },
+    {
+      "path": ".config/other/settings.json",
+      "protected": false,
+      "decisions": {
+        "edit plan": "deny",
+        "edit ask": "ask",
+        "edit auto-edit": "allow",
+        "edit yolo": "allow",
+        "write_file plan": "deny",
+        "write_file ask": "ask",
+        "write_file auto-edit": "allow",
+        "write_file yolo": "allow",
+        "read_file auto-edit": "allow"
+      }
+    },
+    {
+      "path": "bashrc",
+      "protected": false,
+      "decisions": {
+        "edit plan": "deny",
+        "edit ask": "ask",
+        "edit auto-edit": "allow",
+        "edit yolo": "allow",
+        "write_file plan": "deny",
+        "write_file ask": "ask",
+        "write_file auto-edit": "allow",
+        "write_file yolo": "allow",
+        "read_file auto-edit": "allow"
+      }
     }
   ],
   "refusals": [
@@ -852,7 +1017,7 @@
       "values": {
         "path": "AGENTS.md"
       },
-      "expected": "Refused: AGENTS.md steers the agent (its settings, the project's instructions or .matterwaveignore), so a change to it needs the user's approval, which it did not get."
+      "expected": "Refused: AGENTS.md is protected (the agent's settings or instructions, .matterwaveignore, a shell startup file or a credentials folder), so a change to it needs the user's approval, which it did not get."
     },
     {
       "code": "outside",

@@ -71,6 +71,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     exported.
   - New limits: `read_max_file_bytes`, `grep_max_file_bytes` and
     `binary_sniff_bytes`.
+  - `confine` refuses, on every platform, a name Windows would read as
+    another file or a device: alternate data streams and drive-relative
+    names (`stream`), a name ending in a dot or a space (`trailing`), CON,
+    PRN, AUX, NUL, COM1-9, LPT1-9, CONIN$ and CONOUT$ with or without an
+    extension (`device`), and `\\?\`, `\\.\`, `\??\` and UNC paths (`unc`);
+    `windows_alias(path)` names the check on its own. A path the OS maps off the
+    root (`nul` on Windows) is now a refusal, never a bare error. The
+    contract's `conformance.paths` lists the cases every client must agree
+    on, the deny list's case-insensitive matches (`.ENV`, `ID_RSA`) among them.
+  - `PROTECTED` also covers what matters when the root is the home folder
+    or above it: `.bashrc`, `.bash_profile`, `.profile`, `.zshrc`,
+    `.zprofile`, `.ssh/`, `.aws/` and `.config/matterwave` at any depth.
 - `tools_of(models, model_id)` and `local_agent_tools_of(me)`: the
   `supports_tools` and `local_agent_tools` flags as `"yes"`, `"no"` or
   `"unknown"` (`ToolsVerdict`), as `vision_of` reads `supports_vision`.
