@@ -153,6 +153,11 @@ message, finish = acc.message(), acc.finish_reason
 defines them. Before offering an agent mode, a client reads two flags: the
 model row's `supports_tools` (`client.app_models()`) and the org's
 `local_agent_tools` (`client.me()`). Each is `None` when the server did not say.
+`tools_of(models, model_id)` and `local_agent_tools_of(me)` read them as
+`"yes"`, `"no"` or `"unknown"`, as `vision_of` does for images: only `"no"`
+should grey agent mode out. `create` takes `messages` and `tools` as plain
+dicts too (`MessageParam`, `ToolParam`), so `agent.tools_for_mode(...)` goes
+straight in without a cast.
 
 `client.embeddings.create(["one", "two"])` returns one embedding per input from
 the deployment's embedding model; `client.index().capabilities["embeddings"]`
@@ -336,9 +341,10 @@ print(answer.text)
 
 `matterwave_sdk.agent` is what the MatterWave coding clients (the TUI's `code`
 mode, the VS Code agent) share: the local tools a client offers the model on
-`/v1`, the approval modes that gate them, the paths those tools may touch, and
-the agent-mode system prompt. It is versioned (`agent.CONTRACT_VERSION`,
-`1.0.0`; the prompt carries its own `agent.SYSTEM_PROMPT_VERSION`), and its one
+`/v1`, the approval modes that gate them, the paths those tools may touch, what
+the read tools and `run_shell` return, and the agent-mode system prompt. It is
+versioned (`agent.CONTRACT_VERSION`, `1.1.0`; the prompt carries its own
+`agent.SYSTEM_PROMPT_VERSION`), and its one
 source is `src/matterwave_sdk/agent/contract.json`, from which the TypeScript
 SDK's copy is generated.
 
@@ -358,6 +364,23 @@ SDK's copy is generated.
 | `ask` (default) | the read tools | `edit`, `write_file`, `run_shell` |
 | `auto-edit` | the read tools, `edit`, `write_file` | `run_shell` |
 | `yolo` | everything | nothing; needs a flag each session and is never saved |
+
+A client's own tools are decided by their kind (`agent.TOOL_KINDS`), passed as
+`allowed(name, mode, kind)`; a contract tool's kind cannot be overridden, and a
+name with no kind is denied.
+
+| Kind | `plan` | `ask` | `auto-edit` | `yolo` |
+|---|---|---|---|---|
+| `read`, `meta` (todo_write, exit_plan_mode, a subagent) | allow | allow | allow | allow |
+| `write` | deny | ask | allow | allow |
+| `shell` | deny | ask | ask | allow |
+| `network` (web_fetch), `mcp` | deny; ask when marked `read_only` | ask | ask | allow |
+
+A write to a protected file (`.matterwaveignore`, `.matterwave/`,
+`MATTERWAVE.md`, `MATTERWAVE.local.md`, `AGENTS.md`) asks in every mode that
+allows writes, yolo included: `allowed("edit", "auto-edit", path="AGENTS.md")`
+is `"ask"`, and `confine(..., write=True)` refuses it until the client passes
+`approved=True`.
 
 ```python
 import json
@@ -385,10 +408,11 @@ or raises `PathRefused` (with a `reason` and the sentence to hand back to the
 model) before anything is read or written: for a `..` segment, an absolute path
 outside the root, a link that leads out of the root (symbolic links, and
 junctions on Windows), a path on the deny list, by its own name or its
-target's, or a write to a protected path. The deny list is `.env*`, `*.pem`,
-`id_*` and `.git/` plus the lines of the workspace's `.matterwaveignore`, and it
-applies to reads too, so those files are never sent to the model;
-`.matterwaveignore` itself can be read but not written. Confinement is not a
+target's, or an unapproved write to a protected path. The deny list is `.env*`,
+`*.pem`, `id_*` and `.git/` plus the lines of the workspace's
+`.matterwaveignore`, and it applies to reads too, so those files are never sent
+to the model; the protected files can be read, and written only with the
+user's approval (`PROTECTED_LIST`, `is_protected`). Confinement is not a
 sandbox: `run_shell` reaches whatever the user can, which is why it asks.
 
 `apply_edit` is `edit`'s exact replace on text (`EditError` when the string is
@@ -397,6 +421,54 @@ CRLF file), and `unified_diff` prints the diff an approval shows. The TypeScript
 SDK ports both line for line, and the two suites run the same conformance cases
 (`tests/agent_conformance.json`), so the two clients refuse, edit and print
 alike.
+
+### Search, tool output, refusals and the prompt's slots (1.1)
+
+The read tools run the same way in every client:
+
+```python
+agent.run_read_file(root, "src/app.py", 40, 80)    # numbered lines, cut at the read limits
+agent.run_list_dir(root, "src")                     # directories first, ignored entries left out
+agent.run_glob(root, "*.py", "src")                 # a pattern with no / matches names at any depth
+agent.run_grep(root, "TODO", glob="*.py", ignore_case=True)  # "path:line: text"
+for path in agent.walk(root): ...                   # what glob and grep see
+```
+
+Each returns the tool's text, or raises `PathRefused` or `ToolError` (whose
+`str()` is the contract's sentence, sent back with the error flag). The walk
+reads `.gitignore` and `.matterwaveignore` in every directory from the root
+down (nesting, `!`, a trailing `/`, anchoring, `**`, escapes, case ignored) and
+applies the deny list on top; `SearchIgnore` and `IgnoreFile` are the matcher
+on its own, fed by any reader, for a client that lists files another way. For
+a client that reads files itself, `format_read_file`, `format_list_dir`,
+`format_glob`, `format_grep` and `format_shell` turn its results into the same
+text. The formats, markers and messages are `agent.OUTPUTS`, and the cases
+every client must reproduce are in the contract itself
+(`agent.CONTRACT["conformance"]`: a workspace tree, tool calls with their
+expected text, ignore verdicts and run_shell results).
+
+`refusal(code, tool=..., mode=..., path=...)` words every refusal a client
+sends: `mode` (denied by the mode), `unknown_tool`, `rejected` (sent as an
+ordinary result, not an error), `headless`, `needs_approval` (a protected
+file), and the confinement codes (`outside`, `denied`, ...).
+
+`system_prompt` takes two optional slots, and renders exactly as before
+without them:
+
+```python
+agent.system_prompt(
+    "ask",
+    root=str(root),
+    extra_tools=[agent.ExtraTool("web_fetch", "network", "Fetch a URL and return its text.")],
+    context_files=[agent.ContextFile("AGENTS.md", text, trusted=True)],
+)
+```
+
+Extra tools join the tool list and get a one-line description each; trusted
+context files follow as "Project instructions", each fenced between
+`<project-instructions path="...">` lines that its own text cannot close, and
+an untrusted file is left out. `tools_for_mode(mode, extra=[...])` adds the
+same `ExtraTool`s to the `tools` the mode offers.
 
 To change the contract, edit `contract.json`, bump `contract_version` (major
 when a tool, field or mode goes or changes meaning, minor when one is added,

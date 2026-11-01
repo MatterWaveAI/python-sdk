@@ -302,6 +302,13 @@ class Tool(TypedDict):
 
 ToolChoice = Literal["none", "auto", "required"] | dict[str, Any]
 
+MessageParam = Message | Mapping[str, Any]
+"""A prompt message as `create` takes it: a `Message`, or any mapping of
+the same shape, so a plain `dict` built at run time needs no cast."""
+ToolParam = Tool | Mapping[str, Any]
+"""A tool as `create` takes it: a `Tool`, or any mapping of the same shape,
+such as the dicts `agent.tools_for_mode` returns."""
+
 EmbeddingInput = str | Sequence[str] | Sequence[int] | Sequence[Sequence[int]]
 
 
@@ -370,7 +377,7 @@ def retrieve_model_request(model_id: str) -> Request:
 
 
 def chat_completion_body(
-    messages: Sequence[Message],
+    messages: Sequence[MessageParam],
     *,
     model: str | None,
     stream: bool,
@@ -384,7 +391,7 @@ def chat_completion_body(
     stop: str | Sequence[str] | None,
     n: int | None,
     user: str | None,
-    tools: Sequence[Tool] | None,
+    tools: Sequence[ToolParam] | None,
     tool_choice: ToolChoice | None,
     response_format: dict[str, Any] | None,
     conversation_id: str | None,

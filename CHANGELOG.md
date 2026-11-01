@@ -41,6 +41,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only), `system_prompt(mode, root)`, `confine(root, path)` (resolve, follow
   links, refuse `..`, outside paths, link escapes and denied files),
   `DenyList`, `apply_edit` (exact, unique replace) and `unified_diff`.
+- Agent contract `1.1.0`, all additions (every 1.0.0 name and default
+  behaviour is unchanged):
+  - The search rules and a walker: `IgnoreFile` and `SearchIgnore` (nested
+    `.gitignore` and `.matterwaveignore` files, `!`, directory-only and
+    anchored patterns, `**`, escapes, case ignored, the deny list on top),
+    `load_search_ignore(root)` and `walk(root, path)`.
+  - The read tools' output as the contract spells it (`OUTPUTS`,
+    `TOOL_ERRORS`, `ToolError`): `run_read_file`, `run_list_dir`,
+    `run_glob` and `run_grep` over a workspace, and `format_read_file`,
+    `format_list_dir`, `format_glob`, `format_grep` and `format_shell` for a
+    client that reads files or runs commands itself. The contract carries
+    their conformance cases (`CONTRACT["conformance"]`).
+  - Tool kinds beyond the seven: `network`, `mcp` and `meta`
+    (`TOOL_KINDS`, `KIND_DECISIONS`, `READ_ONLY_DECISIONS`, `ExtraTool`).
+    `allowed(tool, mode, kind, read_only=..., path=...)` decides a client's
+    own tool by its kind, and `tools_for_mode(mode, extra)` offers them.
+  - `refusal(code, ...)` and `APPROVAL_REFUSALS`: the wording for a tool the
+    mode denies, an unknown tool, a call the user rejected, a call a
+    headless run cannot ask about, and a protected file without approval.
+  - `system_prompt(..., extra_tools=..., context_files=...)` (`ContextFile`):
+    a "More tools" section and a fenced "Project instructions" section for
+    trusted context files; without them the prompt is unchanged.
+  - `PROTECTED` adds `.matterwave/`, `MATTERWAVE.md`, `MATTERWAVE.local.md`
+    and `AGENTS.md` (`SETTINGS_DIR`, `CONTEXT_FILES`); a write to any of them
+    asks in every mode that allows writes (`allowed(..., path=...)`,
+    `is_protected`), and `confine(..., write=True, approved=True)` lets an
+    approved one through. `PROTECTED_LIST` and `EDIT_CRLF_FALLBACK` are
+    exported.
+  - New limits: `read_max_file_bytes`, `grep_max_file_bytes` and
+    `binary_sniff_bytes`.
+- `tools_of(models, model_id)` and `local_agent_tools_of(me)`: the
+  `supports_tools` and `local_agent_tools` flags as `"yes"`, `"no"` or
+  `"unknown"` (`ToolsVerdict`), as `vision_of` reads `supports_vision`.
+- `MessageParam` and `ToolParam`: `chat.completions.create` and `parse`
+  (sync and async) take `messages` and `tools` as plain dicts too, so
+  `agent.tools_for_mode(...)` passes mypy without a cast.
 - `scripts/gen_agent_contract.py` writes the TypeScript SDK's copy of the
   contract and of the shared conformance cases (`tests/agent_conformance.json`);
   `--check` fails on drift, and the suite and CI run it.
@@ -54,6 +90,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fields on `ChatCompletionRequest` and the `compacting` stream event.
 - CI runs `mypy` beside `ruff` and `pytest`, and checks the TypeScript
   SDK's copy of the agent contract against `contract.json`.
+- The agent contract's `list_dir` and `glob` descriptions say what is left
+  out (ignored and denied entries; protected ones are listed) and that a
+  pattern with no `/` matches names at any depth.
 
 ### Fixed
 

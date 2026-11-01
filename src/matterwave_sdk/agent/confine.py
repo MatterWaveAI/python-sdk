@@ -5,8 +5,8 @@ its links (symbolic links, and junctions on Windows) and returns where it
 really leads, or raises `PathRefused` before anything is read or written:
 for a `..` segment, an absolute path outside the root, a link that leads
 out of it, a path on the deny list (by its own name or its target's), or,
-for a write, a protected path. The refusal's message is the contract's
-sentence for the model.
+for a write, a protected path the user has not approved. The refusal's
+message is the contract's sentence for the model.
 
 Confinement is not a sandbox. It keeps the file tools inside the root;
 `run_shell` can reach anything the user can, which is why commands ask.
@@ -148,7 +148,17 @@ class DenyList:
         return False
 
 
-_PROTECTED = DenyList(PROTECTED)
+PROTECTED_LIST = DenyList(PROTECTED)
+"""The protected paths as a matcher: the deny file, the agent's settings
+folder and the context files. They can be read; a write to one always asks
+the user first (`allowed(..., path=...)` says `ask`), and `confine` refuses
+it unless `approved=True`."""
+
+
+def is_protected(relative: str, *, is_dir: bool = False) -> bool:
+    """Whether `relative` (to the root, `/`-separated) is protected, so a
+    write to it needs the user's approval in every mode."""
+    return PROTECTED_LIST.matches(relative, is_dir=is_dir)
 
 
 def load_deny_list(root: str | os.PathLike[str]) -> DenyList:
@@ -212,10 +222,12 @@ def confine(
     *,
     deny: DenyList | None = None,
     write: bool = False,
+    approved: bool = False,
 ) -> ConfinedPath:
     """Where `path` leads inside `root`, or `PathRefused`. `deny` defaults
     to the root's `DenyList.from_root`; `write=True` also refuses the
-    protected paths, which can be read but not changed."""
+    protected paths unless `approved=True` says the user approved this
+    write, since a change to one always asks first."""
     if not path or path.strip() == "":
         raise PathRefused("empty", path)
     if "\0" in path:
@@ -247,8 +259,8 @@ def confine(
     for rel in (lexical_rel, real_rel):
         if rel and deny_list.matches(rel, is_dir=is_dir):
             raise PathRefused("denied", path)
-    if write:
+    if write and not approved:
         for rel in (lexical_rel, real_rel):
-            if rel and _PROTECTED.matches(rel, is_dir=is_dir):
+            if rel and PROTECTED_LIST.matches(rel, is_dir=is_dir):
                 raise PathRefused("protected", path)
     return ConfinedPath(absolute=real, relative=real_rel or ".")
