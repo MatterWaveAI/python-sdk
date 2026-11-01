@@ -1207,3 +1207,45 @@ def put_org_mfa_request(mfa_required: bool) -> Request:
     return Request("PUT", "/api/org/mfa", {"mfa_required": mfa_required}, keyed=True, stream=False)
 
 
+# --- plans and billing ------------------------------------------------------------------
+
+
+def list_plans_request() -> Request:
+    return Request("GET", "/api/plans", None, keyed=True, stream=False)
+
+
+def switch_plan_request(plan: str, reason: str | None) -> Request:
+    if not plan or len(plan) > 64:
+        raise ValueError("plan must be 1 to 64 characters")
+    body: dict[str, Any] = {"plan": plan}
+    if reason is not None:
+        if len(reason) > 500:
+            raise ValueError("reason must be 500 characters or fewer")
+        body["reason"] = reason
+    return Request("PUT", "/api/plan", body, keyed=True, stream=False)
+
+
+def plan_history_request() -> Request:
+    return Request("GET", "/api/plan/history", None, keyed=True, stream=False)
+
+
+def checkout_request(plan: str, annual: bool) -> Request:
+    if not plan or len(plan) > 64:
+        raise ValueError("plan must be 1 to 64 characters")
+    return Request(
+        "POST", "/api/billing/checkout", {"plan": plan, "annual": annual}, keyed=True, stream=False
+    )
+
+
+def portal_request() -> Request:
+    return Request("POST", "/api/billing/portal", None, keyed=True, stream=False)
+
+
+def billing_status_request() -> Request:
+    return Request("GET", "/api/billing/status", None, keyed=True, stream=False)
+
+
+def invoices_request() -> Request:
+    return Request("GET", "/api/billing/invoices", None, keyed=True, stream=False)
+
+

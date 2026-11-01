@@ -46,7 +46,9 @@ from .models import (
     Attachment,
     AttachmentLimits,
     AuditPage,
+    BillingStatus,
     Budget,
+    CheckoutLink,
     Conversation,
     ConversationTags,
     CreatedInviteLink,
@@ -70,6 +72,7 @@ from .models import (
     InviteLinkList,
     InviteList,
     InvitePreview,
+    InvoiceList,
     Library,
     LinkPreview,
     MemberBudget,
@@ -88,6 +91,8 @@ from .models import (
     OrgShareList,
     OrgUsage,
     PasswordChanged,
+    PlanCatalog,
+    PlanHistory,
     Preferences,
     RecoveryCode,
     RevokedOrgShare,
@@ -1913,5 +1918,103 @@ class AsyncOrg(_Async):
     async def close(self, confirm: str) -> OrgClosed:
         body, rid = await self._object(req.close_org_request(confirm))
         return OrgClosed.from_dict(body, request_id=rid)
+
+
+# --- plans and billing (T-227) -------------------------------------------------------------------
+
+
+class Billing(_Sync):
+    """`/api/plans`, `/api/plan` and Stripe: the money surface. The catalog
+    is public; moving the org to Free is owner or admin (paid plans move by
+    confirmed Stripe subscription, so a paid code here is a 402 pointing at
+    checkout); starting a subscription or opening the portal is owner or
+    admin, because it spends the org's money; the status read is any
+    member's, so a non-admin sees the plan and is told to ask an admin
+    rather than meeting a 403 that looks like a bug."""
+
+    def plans(self) -> PlanCatalog:
+        """`GET /api/plans`: the public catalog, cheapest first, with the
+        price table beside it -- the pricing page's data, straight from the
+        `plans` rows."""
+        body, rid = self._object(req.list_plans_request())
+        return PlanCatalog.from_dict(body, request_id=rid)
+
+    def switch_plan(self, plan: str, *, reason: str | None = None) -> Entitlements:
+        """`PUT /api/plan`: move the org to Free. Owner or admin. No money
+        moves here, so no paid plan is granted here -- that is a confirmed
+        Stripe subscription's or an operator's act; a paid code is a 402
+        pointing at `checkout`. The move to Free never deletes anything:
+        past the Free conversation cap it succeeds, the data stays, and
+        `writes_blocked` says the org is read-only over the limit."""
+        body, rid = self._object(req.switch_plan_request(plan, reason))
+        return Entitlements.from_dict(body, request_id=rid)
+
+    def plan_history(self) -> PlanHistory:
+        """`GET /api/plan/history`: the append-only billing trail, newest
+        first. Owner or admin: the org's commercial history, not a per-user
+        fact."""
+        body, rid = self._object(req.plan_history_request())
+        return PlanHistory.from_dict(body, request_id=rid)
+
+    def checkout(self, plan: str, *, annual: bool = False) -> CheckoutLink:
+        """`POST /api/billing/checkout`: the Stripe Checkout URL to
+        redirect the browser to. Owner or admin, and the org comes from the
+        membership rather than any body, so a caller cannot start a
+        subscription for someone else."""
+        body, rid = self._object(req.checkout_request(plan, annual))
+        return CheckoutLink.from_dict(body, request_id=rid)
+
+    def portal(self) -> CheckoutLink:
+        """`POST /api/billing/portal`: a Stripe customer portal session --
+        card update, plan change, cancel. Owner or admin."""
+        body, rid = self._object(req.portal_request())
+        return CheckoutLink.from_dict(body, request_id=rid)
+
+    def status(self) -> BillingStatus:
+        """`GET /api/billing/status`: the plan facts any member may read,
+        `billing_enabled` (whether the buy/manage buttons should exist at
+        all), how the org pays, and the late-payment schedule when it is
+        late."""
+        body, rid = self._object(req.billing_status_request())
+        return BillingStatus.from_dict(body, request_id=rid)
+
+    def invoices(self) -> InvoiceList:
+        """`GET /api/billing/invoices`: the org's invoices, newest first,
+        with Stripe's hosted page and PDF links -- which is where an
+        invoice is paid. Owner or admin."""
+        body, rid = self._object(req.invoices_request())
+        return InvoiceList.from_dict(body, request_id=rid)
+
+
+class AsyncBilling(_Async):
+    """As `Billing`; every method a coroutine."""
+
+    async def plans(self) -> PlanCatalog:
+        body, rid = await self._object(req.list_plans_request())
+        return PlanCatalog.from_dict(body, request_id=rid)
+
+    async def switch_plan(self, plan: str, *, reason: str | None = None) -> Entitlements:
+        body, rid = await self._object(req.switch_plan_request(plan, reason))
+        return Entitlements.from_dict(body, request_id=rid)
+
+    async def plan_history(self) -> PlanHistory:
+        body, rid = await self._object(req.plan_history_request())
+        return PlanHistory.from_dict(body, request_id=rid)
+
+    async def checkout(self, plan: str, *, annual: bool = False) -> CheckoutLink:
+        body, rid = await self._object(req.checkout_request(plan, annual))
+        return CheckoutLink.from_dict(body, request_id=rid)
+
+    async def portal(self) -> CheckoutLink:
+        body, rid = await self._object(req.portal_request())
+        return CheckoutLink.from_dict(body, request_id=rid)
+
+    async def status(self) -> BillingStatus:
+        body, rid = await self._object(req.billing_status_request())
+        return BillingStatus.from_dict(body, request_id=rid)
+
+    async def invoices(self) -> InvoiceList:
+        body, rid = await self._object(req.invoices_request())
+        return InvoiceList.from_dict(body, request_id=rid)
 
 

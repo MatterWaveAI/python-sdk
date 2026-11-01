@@ -42,6 +42,7 @@ from ._resources import (
     AsyncAnnouncements,
     AsyncAttachments,
     AsyncAudit,
+    AsyncBilling,
     AsyncBudgetClient,
     AsyncEntitlementsClient,
     AsyncExports,
@@ -56,6 +57,7 @@ from ._resources import (
     AsyncWebhooks,
     Attachments,
     Audit,
+    Billing,
     BudgetClient,
     EntitlementsClient,
     Exports,
@@ -1208,6 +1210,7 @@ class MatterWave:
         self.imports = Imports(self)
         self.members = Members(self)
         self.org = Org(self)
+        self.billing = Billing(self)
         self.mcp = Mcp(self)
 
     @property
@@ -1875,6 +1878,7 @@ class AsyncMatterWave:
         self.imports = AsyncImports(self)
         self.members = AsyncMembers(self)
         self.org = AsyncOrg(self)
+        self.billing = AsyncBilling(self)
         self.mcp = AsyncMcp(self)
 
     @property

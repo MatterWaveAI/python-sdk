@@ -236,6 +236,14 @@ APP_OPERATIONS: dict[str, tuple[str, str]] = {
     "org.idp.detach": ("DELETE", "/api/org/idp/{provider}"),
     "org.mfa.get": ("GET", "/api/org/mfa"),
     "org.mfa.set": ("PUT", "/api/org/mfa"),
+    # --- plans and billing (T-227) ------------------------------------------------
+    "billing.plans": ("GET", "/api/plans"),
+    "billing.switch_plan": ("PUT", "/api/plan"),
+    "billing.plan_history": ("GET", "/api/plan/history"),
+    "billing.checkout": ("POST", "/api/billing/checkout"),
+    "billing.portal": ("POST", "/api/billing/portal"),
+    "billing.status": ("GET", "/api/billing/status"),
+    "billing.invoices": ("GET", "/api/billing/invoices"),
 }
 
 Role = Literal["system", "user", "assistant", "tool"]

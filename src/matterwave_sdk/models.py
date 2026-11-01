@@ -3496,3 +3496,227 @@ class MfaPolicy:
         return cls(mfa_required=data.get("mfa_required") is True, request_id=request_id)
 
 
+# --- plans and billing --------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Plan:
+    """One plan of the public catalog (`GET /api/plans`), cheapest first.
+    On a plan sold per seat the price, the allowance and the default overage
+    cap are each per seat, and the seats share one pool. `models` names the
+    model ids the plan includes; `limits` is the plan's limits object,
+    kept as the server shapes it."""
+
+    code: str
+    name: str
+    price_cents_monthly: int
+    price_cents_annual: int
+    included_tokens: int
+    overage_enabled: bool
+    default_overage_cap_micros: int
+    trial_days: int
+    per_seat: bool = False
+    included_tokens_per_seat: int | None = None
+    models: list[str] = field(default_factory=list)
+    limits: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Plan:
+        return cls(
+            code=_str(data.get("code")),
+            name=_str(data.get("name")),
+            price_cents_monthly=_int(data.get("price_cents_monthly")),
+            price_cents_annual=_int(data.get("price_cents_annual")),
+            included_tokens=_int(data.get("included_tokens")),
+            overage_enabled=data.get("overage_enabled") is True,
+            default_overage_cap_micros=_int(data.get("default_overage_cap_micros")),
+            trial_days=_int(data.get("trial_days")),
+            per_seat=data.get("per_seat") is True,
+            included_tokens_per_seat=_opt_int(data.get("included_tokens_per_seat")),
+            models=_strs(data.get("models")),
+            limits=_dict(data.get("limits")),
+        )
+
+
+@dataclass(frozen=True)
+class PlanCatalog:
+    """`GET /api/plans`: the catalog and, beside it, the price table -- the
+    label, multiplier and list price per million tokens for every model
+    sold, kept as sent -- and the `default_model`."""
+
+    data: list[Plan]
+    models: list[dict[str, Any]]
+    default_model: str
+    request_id: str | None = field(default=None, compare=False)
+
+    def __iter__(self) -> Any:
+        return iter(self.data)
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> PlanCatalog:
+        return cls(
+            data=[Plan.from_dict(p) for p in _dicts(data.get("data"))],
+            models=_dicts(data.get("models")),
+            default_model=_str(data.get("default_model")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class PlanHistoryEvent:
+    """One row of the append-only billing trail (`GET /api/plan/history`),
+    newest first: which plan and status moved to which, who or what moved it
+    (a person's subject, or `stripe:<event id>`), and the reason given."""
+
+    to_plan: str
+    to_status: str
+    kind: str
+    actor: str
+    created_at: str
+    from_plan: str | None = None
+    from_status: str | None = None
+    reason: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PlanHistoryEvent:
+        return cls(
+            to_plan=_str(data.get("to_plan")),
+            to_status=_str(data.get("to_status")),
+            kind=_str(data.get("kind")),
+            actor=_str(data.get("actor")),
+            created_at=_str(data.get("created_at")),
+            from_plan=_opt_str(data.get("from_plan")),
+            from_status=_opt_str(data.get("from_status")),
+            reason=_opt_str(data.get("reason")),
+            metadata=_dict(data.get("metadata")),
+        )
+
+
+@dataclass(frozen=True)
+class PlanHistory:
+    data: list[PlanHistoryEvent]
+    request_id: str | None = field(default=None, compare=False)
+
+    def __iter__(self) -> Any:
+        return iter(self.data)
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> PlanHistory:
+        return cls(
+            data=[PlanHistoryEvent.from_dict(r) for r in _dicts(data.get("data"))],
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class CheckoutLink:
+    """The Stripe URL to redirect the browser to, from `billing.checkout`
+    (start a subscription) or `billing.portal` (card, plan, cancel)."""
+
+    url: str
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> CheckoutLink:
+        return cls(url=_str(data.get("url")), request_id=request_id)
+
+
+@dataclass(frozen=True)
+class BillingStatus:
+    """`GET /api/billing/status`: what a billing page renders, in one read.
+    `entitlements` is the plan facts any member may read; `billing_enabled`
+    says whether the buy/manage buttons should exist at all, `collection_*`
+    how the org pays, and `dunning` the late-payment schedule when it is
+    late (None when it is not)."""
+
+    entitlements: Entitlements
+    billing_enabled: bool
+    collection_method: str | None
+    days_until_due: int | None
+    dunning: dict[str, Any] | None
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> BillingStatus:
+        dunning = data.get("dunning")
+        collection = data.get("collection_method")
+        days = data.get("days_until_due")
+        return cls(
+            entitlements=Entitlements.from_dict(data),
+            billing_enabled=data.get("billing_enabled") is True,
+            collection_method=collection if isinstance(collection, str) else None,
+            days_until_due=(
+                days if isinstance(days, int) and not isinstance(days, bool) else None
+            ),
+            dunning=dict(dunning) if isinstance(dunning, dict) else None,
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class Invoice:
+    """One invoice of the org's, newest first in `billing.invoices`:
+    status and amounts, and Stripe's hosted page and PDF links, which is
+    where an invoice is paid."""
+
+    id: str
+    number: str
+    status: str
+    collection_method: str
+    currency: str
+    amount_due_micros: int
+    amount_remaining_micros: int
+    issued_at: str
+    due_at: str | None = None
+    paid_at: str | None = None
+    hosted_invoice_url: str | None = None
+    invoice_pdf: str | None = None
+    request_id: str | None = field(default=None, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> Invoice:
+        return cls(
+            id=_str(data.get("id")),
+            number=_str(data.get("number")),
+            status=_str(data.get("status")),
+            collection_method=_str(data.get("collection_method")),
+            currency=_str(data.get("currency")),
+            amount_due_micros=_int(data.get("amount_due_micros")),
+            amount_remaining_micros=_int(data.get("amount_remaining_micros")),
+            issued_at=_str(data.get("issued_at")),
+            due_at=_opt_str(data.get("due_at")),
+            paid_at=_opt_str(data.get("paid_at")),
+            hosted_invoice_url=_opt_str(data.get("hosted_invoice_url")),
+            invoice_pdf=_opt_str(data.get("invoice_pdf")),
+            request_id=request_id,
+        )
+
+
+@dataclass(frozen=True)
+class InvoiceList:
+    """`GET /api/billing/invoices`: the org's invoices, newest first."""
+
+    data: list[Invoice]
+    request_id: str | None = field(default=None, compare=False)
+
+    def __iter__(self) -> Any:
+        return iter(self.data)
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> InvoiceList:
+        return cls(
+            data=[Invoice.from_dict(i) for i in _dicts(data.get("data"))],
+            request_id=request_id,
+        )
+
+
