@@ -33,6 +33,7 @@ import httpx
 from . import _base
 from ._base import EmbeddingInput, Message, Request, Tool, ToolChoice
 from ._mcp import AsyncMcp, Mcp
+from ._pagination import async_items_of, async_pages_of, items_of, pages_of
 from ._resources import (
     Admin,
     Announcements,
@@ -730,13 +731,7 @@ class Conversations:
     ) -> Iterator[ConversationList]:
         """Every page of `list`, first to last, each fetched as the previous
         one is consumed."""
-        cursor: str | None = None
-        while True:
-            page = self.list(filter=filter, limit=limit, cursor=cursor)
-            yield page
-            cursor = page.next_cursor
-            if cursor is None:
-                return
+        return pages_of(lambda cursor: self.list(filter=filter, limit=limit, cursor=cursor))
 
     def items(
         self, *, filter: str | None = None, limit: int | None = None
@@ -744,8 +739,7 @@ class Conversations:
         """Every conversation of every page, one at a time -- the item-level
         paginator, walking `pages` so each page is fetched only as the
         previous one runs dry."""
-        for page in self.pages(filter=filter, limit=limit):
-            yield from page
+        return items_of(self.pages(filter=filter, limit=limit))
 
     def search(self, q: str, *, limit: int | None = None) -> SearchResults:
         """`GET /api/conversations/search`: full text over the caller's own messages."""
@@ -1502,24 +1496,16 @@ class AsyncConversations:
         body, rid = await self._object(_base.list_conversations_request(filter, limit, cursor))
         return ConversationList.from_dict(body, request_id=rid)
 
-    async def pages(
+    def pages(
         self, *, filter: str | None = None, limit: int | None = None
     ) -> AsyncIterator[ConversationList]:
-        cursor: str | None = None
-        while True:
-            page = await self.list(filter=filter, limit=limit, cursor=cursor)
-            yield page
-            cursor = page.next_cursor
-            if cursor is None:
-                return
+        return async_pages_of(lambda cursor: self.list(filter=filter, limit=limit, cursor=cursor))
 
-    async def items(
+    def items(
         self, *, filter: str | None = None, limit: int | None = None
     ) -> AsyncIterator[Conversation]:
         """As `Conversations.items`: every conversation of every page."""
-        async for page in self.pages(filter=filter, limit=limit):
-            for conversation in page:
-                yield conversation
+        return async_items_of(self.pages(filter=filter, limit=limit))
 
     async def search(self, q: str, *, limit: int | None = None) -> SearchResults:
         body, rid = await self._object(_base.search_conversations_request(q, limit))

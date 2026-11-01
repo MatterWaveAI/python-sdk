@@ -193,7 +193,8 @@ print(stream.result.id if stream.result else None)   # the saved assistant messa
 ```
 
 `list(filter=, limit=, cursor=)` is one page of the sidebar (`next_cursor`
-on the result; `pages()` iterates them all), and `search(q)`, `get(id,
+on the result; `pages()` iterates them all and `items()` every conversation
+of every page), and `search(q)`, `get(id,
 full=)`, `tree(id)`, `set_active_leaf(id, message_id)`, `fork(id,
 message_id)`, `edit(id, message_id, content)` and `regenerate(id,
 message_id)` cover the rest of the sidebar and the branch switcher;
@@ -260,6 +261,8 @@ data = client.attachments.download(client.attachments.get(doc.id))
 folder = client.library.create_folder("Work")
 client.library.move(conversation_id, folder.id)
 page = client.library.search("invoice", limit=20)
+for hit in client.library.search_items("invoice"):  # every page, fetched as it is reached
+    print(hit.conversation.title, hit.snippet)
 
 # Shares: the token is on create only; view needs no key.
 link = client.shares.create(conversation_id, expires_in_s=7 * 86400)
@@ -270,9 +273,23 @@ client.shares.revoke(link.share.id)
 `export_csv`. `webhooks`: `list`, `create`, `get`, `update`, `delete`,
 `rotate_secret`, `test`, `deliveries`, `redeliver`. `attachments`: `upload`,
 `get`, `delete`, `download`, `limits`. `library`: `get`, `search`,
-`create_folder`, `update_folder`, `delete_folder`, `move`, `create_tag`,
+`search_pages`, `search_items`, `create_folder`, `update_folder`, `delete_folder`, `move`, `create_tag`,
 `delete_tag`, `set_tags`. `shares`: `create`, `list`, `list_mine`, `revoke`,
 `view`. A delete or revoke returns None; a missing id is a `NotFoundError`.
+
+Every cursor-paged list has a page iterator and an item iterator beside it:
+`conversations.pages` / `items`, `audit.pages` / `items` and
+`library.search_pages` / `search_items`, each fetching the next page only
+when the previous one has been consumed. `pages_of(fetch)` and
+`items_of(pages)` (and `async_pages_of` / `async_items_of`) are the walk
+they share, for any list that answers `{"data": [...], "next_cursor": ...}`:
+
+```python
+from matterwave_sdk import items_of, pages_of
+
+for event in items_of(pages_of(lambda cursor: client.audit.list(event="org.sso", cursor=cursor))):
+    print(event.occurred_at, event.action)
+```
 
 ## Device login
 

@@ -22,13 +22,14 @@ routes, the platform `admin` role, not an API key's.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Iterator, Sequence
 from datetime import datetime
 from typing import IO, TYPE_CHECKING, Any
 
 from . import _base
 from . import _native as req
 from ._base import UNSET, Request
+from ._pagination import async_items_of, async_pages_of, items_of, pages_of
 from .models import (
     AdminAnnouncement,
     AdminAnnouncementList,
@@ -37,6 +38,7 @@ from .models import (
     ApiKeyList,
     Attachment,
     AttachmentLimits,
+    AuditEvent,
     AuditPage,
     Budget,
     Conversation,
@@ -51,6 +53,7 @@ from .models import (
     NotificationList,
     NotificationsReadAll,
     OrgUsage,
+    SearchHit,
     SearchResults,
     SharedConversation,
     ShareList,
@@ -295,6 +298,35 @@ class Audit(_Sync):
         )
         return AuditPage.from_dict(body, request_id=rid)
 
+    def pages(
+        self,
+        *,
+        event: str | None = None,
+        actor: str | None = None,
+        since: datetime | str | None = None,
+        until: datetime | str | None = None,
+        limit: int | None = None,
+    ) -> Iterator[AuditPage]:
+        """Every page of `list` under the same filters, first to last, each
+        fetched as the previous one is consumed."""
+        return pages_of(
+            lambda cursor: self.list(
+                event=event, actor=actor, since=since, until=until, cursor=cursor, limit=limit
+            )
+        )
+
+    def items(
+        self,
+        *,
+        event: str | None = None,
+        actor: str | None = None,
+        since: datetime | str | None = None,
+        until: datetime | str | None = None,
+        limit: int | None = None,
+    ) -> Iterator[AuditEvent]:
+        """Every matching event, newest first, one at a time across the pages."""
+        return items_of(self.pages(event=event, actor=actor, since=since, until=until, limit=limit))
+
     def export_csv(
         self,
         *,
@@ -327,6 +359,34 @@ class AsyncAudit(_Async):
             )
         )
         return AuditPage.from_dict(body, request_id=rid)
+
+    def pages(
+        self,
+        *,
+        event: str | None = None,
+        actor: str | None = None,
+        since: datetime | str | None = None,
+        until: datetime | str | None = None,
+        limit: int | None = None,
+    ) -> AsyncIterator[AuditPage]:
+        return async_pages_of(
+            lambda cursor: self.list(
+                event=event, actor=actor, since=since, until=until, cursor=cursor, limit=limit
+            )
+        )
+
+    def items(
+        self,
+        *,
+        event: str | None = None,
+        actor: str | None = None,
+        since: datetime | str | None = None,
+        until: datetime | str | None = None,
+        limit: int | None = None,
+    ) -> AsyncIterator[AuditEvent]:
+        return async_items_of(
+            self.pages(event=event, actor=actor, since=since, until=until, limit=limit)
+        )
 
     async def export_csv(
         self,
@@ -546,6 +606,15 @@ class LibraryClient(_Sync):
         body, rid = self._object(req.library_search_request(q, cursor, limit))
         return SearchResults.from_dict(body, request_id=rid)
 
+    def search_pages(self, q: str, *, limit: int | None = None) -> Iterator[SearchResults]:
+        """Every page of `search` for `q`, best match first, each fetched as
+        the previous one is consumed."""
+        return pages_of(lambda cursor: self.search(q, cursor=cursor, limit=limit))
+
+    def search_items(self, q: str, *, limit: int | None = None) -> Iterator[SearchHit]:
+        """Every hit for `q`, one at a time across the pages."""
+        return items_of(self.search_pages(q, limit=limit))
+
     def create_folder(self, name: str) -> Folder:
         body, rid = self._object(req.create_folder_request(name))
         return Folder.from_dict(body, request_id=rid)
@@ -590,6 +659,12 @@ class AsyncLibraryClient(_Async):
     ) -> SearchResults:
         body, rid = await self._object(req.library_search_request(q, cursor, limit))
         return SearchResults.from_dict(body, request_id=rid)
+
+    def search_pages(self, q: str, *, limit: int | None = None) -> AsyncIterator[SearchResults]:
+        return async_pages_of(lambda cursor: self.search(q, cursor=cursor, limit=limit))
+
+    def search_items(self, q: str, *, limit: int | None = None) -> AsyncIterator[SearchHit]:
+        return async_items_of(self.search_pages(q, limit=limit))
 
     async def create_folder(self, name: str) -> Folder:
         body, rid = await self._object(req.create_folder_request(name))

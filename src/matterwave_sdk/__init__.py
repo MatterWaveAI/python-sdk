@@ -40,6 +40,7 @@ from ._client import (
     Stream,
 )
 from ._mcp import AsyncMcp, Mcp, McpTool, McpToolResult, SendMessageResult
+from ._pagination import CursorPage, async_items_of, async_pages_of, items_of, pages_of
 from ._resources import (
     Admin,
     AdminAnnouncements,
@@ -250,6 +251,7 @@ __all__ = [
     "ConversationMessage",
     "ConversationStream",
     "ConversationTags",
+    "CursorPage",
     "CreatedShare",
     "DailyUsage",
     "DeletedConversation",
@@ -345,6 +347,10 @@ __all__ = [
     "WebhookVerificationError",
     "Webhooks",
     "agent",
+    "async_items_of",
+    "async_pages_of",
+    "items_of",
+    "pages_of",
     "frames",
     "webhooks",
     "__version__",
