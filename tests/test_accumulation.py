@@ -42,19 +42,15 @@ def _turn_body(*texts: str) -> bytes:
     events: list[bytes] = []
     for text in texts:
         events.append(
-            f'event: delta\ndata: {json.dumps({"type": "delta", "content": text})}\n\n'.encode()
+            f"event: delta\ndata: {json.dumps({'type': 'delta', 'content': text})}\n\n".encode()
         )
-    events.append(
-        f'event: done\ndata: {json.dumps(_message("".join(texts)))}\n\n'.encode()
-    )
+    events.append(f"event: done\ndata: {json.dumps(_message(''.join(texts)))}\n\n".encode())
     return b"".join(events)
 
 
 def test_the_v1_stream_accumulates_to_final_text(api, client: MatterWave) -> None:
     api.post("/v1/chat/completions").mock(
-        return_value=httpx.Response(
-            200, content=_stream_body("Hello", " there", "!")
-        )
+        return_value=httpx.Response(200, content=_stream_body("Hello", " there", "!"))
     )
     stream = client.chat.completions.create(
         messages=[{"role": "user", "content": "hi"}], stream=True
@@ -72,11 +68,11 @@ def test_the_conversation_stream_accumulates_to_final_text(api, client: MatterWa
 
 
 @pytest.mark.asyncio
-async def test_the_async_streams_accumulate_the_same_way(api, async_client: AsyncMatterWave) -> None:
+async def test_the_async_streams_accumulate_the_same_way(
+    api, async_client: AsyncMatterWave
+) -> None:
     api.post("/v1/chat/completions").mock(
-        return_value=httpx.Response(
-            200, content=_stream_body("Good", "bye")
-        )
+        return_value=httpx.Response(200, content=_stream_body("Good", "bye"))
     )
     api.post("/api/conversations/c-1/messages").mock(
         return_value=httpx.Response(200, content=_turn_body("Good", "bye"))
@@ -92,7 +88,8 @@ async def test_the_async_streams_accumulate_the_same_way(api, async_client: Asyn
 def _conversation_page(conversation_ids: list[str], next_cursor: str | None) -> dict:
     return {
         "data": [
-            {"id": cid, "title": f"Conversation {cid}", "filter": "default"} for cid in conversation_ids
+            {"id": cid, "title": f"Conversation {cid}", "filter": "default"}
+            for cid in conversation_ids
         ],
         "filter": "default",
         **({"next_cursor": next_cursor} if next_cursor else {}),
@@ -133,7 +130,7 @@ def test_the_hooks_see_every_request_and_response(api, sleeps) -> None:
     )
     api.post("/v1/chat/completions").mock(
         side_effect=[
-            httpx.Response(500, json={"error": {"message": "boom"}}),
+            httpx.Response(429, json={"error": {"message": "slow down"}}),
             httpx.Response(
                 200,
                 json={
@@ -156,7 +153,7 @@ def test_the_hooks_see_every_request_and_response(api, sleeps) -> None:
     )
     client.chat.completions.create(messages=[{"role": "user", "content": "hi"}])
     assert seen_requests == ["POST /v1/chat/completions", "POST /v1/chat/completions"]
-    assert [r.status_code for r in seen_responses] == [500, 200]
+    assert [r.status_code for r in seen_responses] == [429, 200]
     assert seen_responses[-1].request_id == "req-final"
 
 

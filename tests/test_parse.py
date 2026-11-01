@@ -65,9 +65,7 @@ def test_a_valid_answer_validates_into_the_model(api, client: MatterWave) -> Non
 
 def test_the_request_asks_for_a_json_object(api, client: MatterWave) -> None:
     route = api.post("/v1/chat/completions").mock(
-        return_value=httpx.Response(
-            200, json=_row_completion(json.dumps({"name": "bolt"}))
-        )
+        return_value=httpx.Response(200, json=_row_completion(json.dumps({"name": "bolt"})))
     )
     client.chat.completions.parse(
         messages=[{"role": "user", "content": "parts"}], response_model=Row
@@ -78,9 +76,7 @@ def test_the_request_asks_for_a_json_object(api, client: MatterWave) -> None:
 
 def test_a_caller_passed_response_format_wins(api, client: MatterWave) -> None:
     route = api.post("/v1/chat/completions").mock(
-        return_value=httpx.Response(
-            200, json=_row_completion(json.dumps({"name": "bolt"}))
-        )
+        return_value=httpx.Response(200, json=_row_completion(json.dumps({"name": "bolt"})))
     )
     schema = {"type": "json_schema", "json_schema": {"name": "row", "strict": True}}
     client.chat.completions.parse(
@@ -145,7 +141,8 @@ def test_a_model_with_neither_protocol_is_refused_before_any_request(
     )
     with pytest.raises(TypeError, match="model_validate"):
         client.chat.completions.parse(
-            messages=[{"role": "user", "content": "parts"}], response_model=dict  # type: ignore[arg-type]
+            messages=[{"role": "user", "content": "parts"}],
+            response_model=dict,  # type: ignore[arg-type]
         )
     assert route.call_count == 0
 

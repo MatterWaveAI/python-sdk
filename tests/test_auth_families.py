@@ -96,7 +96,8 @@ def passkey_body(**extra) -> dict:
 
 def test_passkeys_list_carries_the_rp_id_and_the_cap(api, client: MatterWave) -> None:
     route = api.get("/api/me/passkeys").respond(
-        200, json={"passkeys": [passkey_body()], "rp_id": "matterwave.test", "max": 10},
+        200,
+        json={"passkeys": [passkey_body()], "rp_id": "matterwave.test", "max": 10},
         headers=H,
     )
     passkeys = client.passkeys.list()
@@ -286,8 +287,7 @@ def test_accounts_list_offers_the_parked_ones(api, client: MatterWave) -> None:
         json={
             "accounts": [
                 account_body(),
-                account_body(slot=1, current=False, subject="user-0002",
-                             email="bob@example.test"),
+                account_body(slot=1, current=False, subject="user-0002", email="bob@example.test"),
             ],
             "max": 4,
             "room": True,
@@ -309,9 +309,7 @@ def test_accounts_switch_logout_and_logout_all(api, client: MatterWave) -> None:
     assert switched.subject == "user-0002"
     with pytest.raises(ValueError, match="slot"):
         client.accounts.switch(0)  # slot 0 is already acting
-    logout = api.post(f"/api/accounts/{SLOT}/logout").respond(
-        200, json={"status": "ok"}
-    )
+    logout = api.post(f"/api/accounts/{SLOT}/logout").respond(200, json={"status": "ok"})
     assert client.accounts.logout(SLOT).status == "ok"
     assert sent(logout).url.path == f"/api/accounts/{SLOT}/logout"
     logout_all = api.post("/api/accounts/logout-all").respond(
@@ -326,9 +324,7 @@ def test_accounts_switch_logout_and_logout_all(api, client: MatterWave) -> None:
 # --- speech ---------------------------------------------------------------------------------
 
 
-def test_speech_transcribe_posts_multipart_with_the_language_hint(
-    api, client: MatterWave
-) -> None:
+def test_speech_transcribe_posts_multipart_with_the_language_hint(api, client: MatterWave) -> None:
     route = api.post("/api/speech/transcribe").respond(
         200, json={"text": "Hello from the dictation test."}, headers=H
     )
@@ -343,12 +339,8 @@ def test_speech_transcribe_posts_multipart_with_the_language_hint(
     assert result.request_id == REQUEST_ID
 
 
-def test_speech_refuses_unknown_media_and_bad_language_here(
-    api, client: MatterWave
-) -> None:
-    route = api.post("/api/speech/transcribe").respond(
-        200, json={"text": "unreachable"}, headers=H
-    )
+def test_speech_refuses_unknown_media_and_bad_language_here(api, client: MatterWave) -> None:
+    route = api.post("/api/speech/transcribe").respond(200, json={"text": "unreachable"}, headers=H)
     with pytest.raises(ValueError, match="content_type"):
         client.speech.transcribe(b"x", "clip.txt", content_type="text/plain")
     with pytest.raises(ValueError, match="language"):
@@ -364,15 +356,14 @@ async def test_async_auth_families_make_the_same_requests(
     api, async_client: AsyncMatterWave
 ) -> None:
     api.get("/api/me/passkeys").respond(
-        200, json={"passkeys": [passkey_body()], "rp_id": "matterwave.test", "max": 10},
+        200,
+        json={"passkeys": [passkey_body()], "rp_id": "matterwave.test", "max": 10},
         headers=H,
     )
     api.post("/api/me/passkeys/start").respond(
         200, json={"passkey_id": PASSKEY_ID, "options": {}}, headers=H
     )
-    api.post(f"/api/me/passkeys/{PASSKEY_ID}/verify").respond(
-        201, json=passkey_body(), headers=H
-    )
+    api.post(f"/api/me/passkeys/{PASSKEY_ID}/verify").respond(201, json=passkey_body(), headers=H)
     api.patch(f"/api/me/passkeys/{PASSKEY_ID}").respond(
         200, json=passkey_body(name="Renamed"), headers=H
     )
@@ -384,15 +375,18 @@ async def test_async_auth_families_make_the_same_requests(
         200, json={"redirect": "/api/auth/callback"}, headers=H
     )
     api.get("/api/me/mfa").respond(
-        200, json={"totp_enrolled": False, "recovery_codes_left": 0,
-                   "org_requires_mfa": True}, headers=H,
+        200,
+        json={"totp_enrolled": False, "recovery_codes_left": 0, "org_requires_mfa": True},
+        headers=H,
     )
     api.post("/api/me/mfa/totp/start").respond(
-        200, json={"secret": "S", "uri": "otpauth://x", "qr_svg": "data:image/svg+xml;base64,x"},
+        200,
+        json={"secret": "S", "uri": "otpauth://x", "qr_svg": "data:image/svg+xml;base64,x"},
         headers=H,
     )
     api.post("/api/me/mfa/totp/confirm").respond(
-        200, json={"totp_enrolled": True, "recovery_codes": ["1-2"], "recovery_codes_left": 1},
+        200,
+        json={"totp_enrolled": True, "recovery_codes": ["1-2"], "recovery_codes_left": 1},
         headers=H,
     )
     api.delete("/api/me/mfa/totp").respond(
@@ -409,9 +403,7 @@ async def test_async_auth_families_make_the_same_requests(
     )
     api.post(f"/api/accounts/{SLOT}/logout").respond(200, json={"status": "ok"})
     api.post("/api/accounts/logout-all").respond(200, json={"status": "ok"})
-    api.post("/api/speech/transcribe").respond(
-        200, json={"text": "words"}, headers=H
-    )
+    api.post("/api/speech/transcribe").respond(200, json={"text": "words"}, headers=H)
     async with async_client as c:
         assert len(await c.passkeys.list()) == 1
         assert (await c.passkeys.start()).passkey_id == PASSKEY_ID

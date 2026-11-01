@@ -86,7 +86,9 @@ def _rpc_error(error: Any) -> McpError:
     if not isinstance(error, dict):
         return McpError("The MCP endpoint answered with a malformed error.")
     data = error.get("data")
-    return McpError(str(error.get("message") or "The MCP request failed."), code=_code(error), data=data)
+    return McpError(
+        str(error.get("message") or "The MCP request failed."), code=_code(error), data=data
+    )
 
 
 def _code(error: dict[str, Any]) -> int | None:
@@ -113,7 +115,9 @@ class McpTool:
             name=_str_of(data.get("name")),
             title=title if isinstance(title, str) else "",
             description=_str_of(data.get("description")),
-            input_schema=dict(data["inputSchema"]) if isinstance(data.get("inputSchema"), dict) else {},
+            input_schema=dict(data["inputSchema"])
+            if isinstance(data.get("inputSchema"), dict)
+            else {},
             annotations=dict(annotations) if isinstance(annotations, dict) else {},
         )
 
@@ -186,7 +190,11 @@ class Mcp:
         the other side never plans on it."""
         result = self._rpc("tools/list", {}, protocol_version)
         tools = result.get("tools")
-        return [McpTool.from_dict(t) for t in tools if isinstance(t, dict)] if isinstance(tools, list) else []
+        return (
+            [McpTool.from_dict(t) for t in tools if isinstance(t, dict)]
+            if isinstance(tools, list)
+            else []
+        )
 
     def call_tool(
         self,
@@ -224,7 +232,9 @@ class Mcp:
         arguments: dict[str, Any] = {"conversation_id": conversation_id, "content": content}
         if model is not None:
             arguments["model"] = model
-        result = self.call_tool("send_message", arguments, protocol_version=protocol_version, timeout=timeout)
+        result = self.call_tool(
+            "send_message", arguments, protocol_version=protocol_version, timeout=timeout
+        )
         structured = result.structured
         notices = structured.get("notices")
         return SendMessageResult(
@@ -271,6 +281,9 @@ class Mcp:
             stream=False,
             headers=self._headers(method, named, protocol_version),
             timeout=timeout,
+            # Every JSON-RPC call is a POST; only `tools/call` can change
+            # anything, so the rest retry as the reads they are.
+            idempotent=method != "tools/call",
         )
         response = self._client._send(request)
         payload = _base.parse_json_object(response)
@@ -350,7 +363,9 @@ class AsyncMcp:
         self._initialized: set[str] = set()
         self._ids = itertools.count(1)
 
-    async def initialize(self, *, protocol_version: str = DEFAULT_HANDSHAKE_VERSION) -> dict[str, Any]:
+    async def initialize(
+        self, *, protocol_version: str = DEFAULT_HANDSHAKE_VERSION
+    ) -> dict[str, Any]:
         if protocol_version not in HANDSHAKE_VERSIONS:
             raise ValueError(
                 f"initialize speaks the handshake revisions "
@@ -368,10 +383,16 @@ class AsyncMcp:
         self._initialized.add(protocol_version)
         return result
 
-    async def list_tools(self, *, protocol_version: str = DEFAULT_HANDSHAKE_VERSION) -> list[McpTool]:
+    async def list_tools(
+        self, *, protocol_version: str = DEFAULT_HANDSHAKE_VERSION
+    ) -> list[McpTool]:
         result = await self._rpc("tools/list", {}, protocol_version)
         tools = result.get("tools")
-        return [McpTool.from_dict(t) for t in tools if isinstance(t, dict)] if isinstance(tools, list) else []
+        return (
+            [McpTool.from_dict(t) for t in tools if isinstance(t, dict)]
+            if isinstance(tools, list)
+            else []
+        )
 
     async def call_tool(
         self,
@@ -447,6 +468,7 @@ class AsyncMcp:
             stream=False,
             headers=Mcp._headers(method, named, protocol_version),
             timeout=timeout,
+            idempotent=method != "tools/call",
         )
         response = await self._client._send(request)
         payload = _base.parse_json_object(response)

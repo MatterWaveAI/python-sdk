@@ -1,6 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "description": "T-061 shared policy. Pip/uv ecosystem (pyproject.toml + uv.lock). rangeStrategy is 'auto' (not 'pin') because these repos commit lockfiles while manifests keep version ranges: Renovate updates the range in the manifest and the resolved version in the lockfile together.",
+  "description": "The shared Renovate policy of the MatterWave repos. Pip/uv ecosystem (pyproject.toml + uv.lock). rangeStrategy is 'auto' (not 'pin') because these repos commit lockfiles while manifests keep version ranges: Renovate updates the range in the manifest and the resolved version in the lockfile together.",
   "extends": [
     "config:recommended",
     ":pinDigests",

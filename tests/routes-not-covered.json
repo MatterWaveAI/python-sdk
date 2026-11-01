@@ -1,0 +1,9 @@
+{
+  "prefixes": {
+    "/api/v1/apps/": "The app platform: whether the SDKs cover it is an open scope decision.",
+    "/api/unsubscribe": "The email footer's one-click unsubscribe, keyed by the link's own token."
+  },
+  "routes": {
+    "GET /api/share/{token}/attachments/{attachment_id}": "An attachment inside a shared snapshot, fetched by the page that renders the snapshot."
+  }
+}

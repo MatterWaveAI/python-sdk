@@ -17,6 +17,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
+from .errors import MatterWaveError
+
 if TYPE_CHECKING:
     from ._base import Message
 
@@ -300,8 +302,9 @@ class ChatCompletionAccumulator:
         for chunk in stream:
             acc.add(chunk)          # render chunk.content as it arrives
         message = acc.message()     # content and complete tool_calls
+        completion = acc.completion()  # the same, with finish reason and usage
 
-    `Stream.final_message()` runs that loop."""
+    `Stream.final_message()` and `Stream.final_completion()` run that loop."""
 
     def __init__(self) -> None:
         self._text: list[str] = []
@@ -310,6 +313,8 @@ class ChatCompletionAccumulator:
         self.usage: Usage | None = None
         self.model: str | None = None
         self.id: str | None = None
+        self.created: int | None = None
+        self.request_id: str | None = None
 
     def add(self, chunk: ChatCompletionChunk) -> None:
         if chunk.usage is not None:
@@ -318,6 +323,10 @@ class ChatCompletionAccumulator:
             self.model = chunk.model
         if chunk.id:
             self.id = chunk.id
+        if chunk.created:
+            self.created = chunk.created
+        if chunk.request_id:
+            self.request_id = chunk.request_id
         if not chunk.choices:
             return
         choice = chunk.choices[0]
@@ -362,6 +371,26 @@ class ChatCompletionAccumulator:
             role="assistant",
             content=text if text or not calls else None,
             tool_calls=calls or None,
+        )
+
+    def completion(self) -> ChatCompletion:
+        """The whole answer in the shape a non-streamed `create` returns:
+        the message, its finish reason, the usage, the id and model. The
+        usage is all zeros when the stream carried none -- ask for it with
+        `include_usage=True`. `MatterWaveError` when no chunk carried a
+        finish reason: the stream was cut short, so it is not a whole
+        answer."""
+        if self.finish_reason is None:
+            raise MatterWaveError(
+                "The stream ended without a finish reason, so it is not a whole completion."
+            )
+        return ChatCompletion(
+            id=self.id or "",
+            created=self.created or 0,
+            model=self.model or "",
+            choices=[Choice(index=0, message=self.message(), finish_reason=self.finish_reason)],
+            usage=self.usage or Usage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
+            request_id=self.request_id,
         )
 
 
@@ -525,7 +554,8 @@ class ApiIndex:
             capabilities=dict(capabilities) if isinstance(capabilities, dict) else {},
             stability=Stability.from_dict(stability if isinstance(stability, dict) else {}),
             extensions={
-                str(k): str(v) for k, v in (extensions if isinstance(extensions, dict) else {}).items()
+                str(k): str(v)
+                for k, v in (extensions if isinstance(extensions, dict) else {}).items()
             },
             docs=_str(data.get("docs")),
             request_id=request_id,
@@ -874,9 +904,7 @@ class DeviceCode:
             device_code=_str(data.get("device_code")),
             user_code=_str(data.get("user_code")),
             verification_uri=verification_uri,
-            verification_uri_complete=_str(
-                data.get("verification_uri_complete"), verification_uri
-            ),
+            verification_uri_complete=_str(data.get("verification_uri_complete"), verification_uri),
             expires_in=_int(data.get("expires_in"), 600),
             # RFC 8628 section 3.2: five seconds when the server names no interval.
             interval=_int(data.get("interval"), 5),
@@ -1671,9 +1699,7 @@ class UserInstructions:
     request_id: str | None = field(default=None, compare=False)
 
     @classmethod
-    def from_dict(
-        cls, data: dict[str, Any], *, request_id: str | None = None
-    ) -> UserInstructions:
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> UserInstructions:
         return cls(
             about=_str(data.get("about")),
             style=_str(data.get("style")),
@@ -1690,9 +1716,7 @@ class OrgInstructions:
     request_id: str | None = field(default=None, compare=False)
 
     @classmethod
-    def from_dict(
-        cls, data: dict[str, Any], *, request_id: str | None = None
-    ) -> OrgInstructions:
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> OrgInstructions:
         return cls(text=_str(data.get("text")), request_id=request_id)
 
 
@@ -1738,9 +1762,7 @@ class MessageFeedback:
     request_id: str | None = field(default=None, compare=False)
 
     @classmethod
-    def from_dict(
-        cls, data: dict[str, Any], *, request_id: str | None = None
-    ) -> MessageFeedback:
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> MessageFeedback:
         return cls(
             message_id=_str(data.get("message_id")),
             rating=_int(data.get("rating")),
@@ -1761,9 +1783,7 @@ class RemovedFeedback:
     request_id: str | None = field(default=None, compare=False)
 
     @classmethod
-    def from_dict(
-        cls, data: dict[str, Any], *, request_id: str | None = None
-    ) -> RemovedFeedback:
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> RemovedFeedback:
         return cls(status=_str(data.get("status")), request_id=request_id)
 
 
@@ -1896,7 +1916,9 @@ class Budget:
             member_cap=_opt_int(data.get("member_cap")),
             member_spent=_opt_int(data.get("member_spent")),
             member_exhausted=(
-                data.get("member_exhausted") if isinstance(data.get("member_exhausted"), bool) else None
+                data.get("member_exhausted")
+                if isinstance(data.get("member_exhausted"), bool)
+                else None
             ),
             request_id=request_id,
         )
@@ -1956,9 +1978,7 @@ class MemberBudgetList:
         return len(self.data)
 
     @classmethod
-    def from_dict(
-        cls, data: dict[str, Any], *, request_id: str | None = None
-    ) -> MemberBudgetList:
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> MemberBudgetList:
         return cls(
             period_start=_str(data.get("period_start")),
             member_default_cap_micros=_opt_int(data.get("member_default_cap_micros")),
@@ -2151,9 +2171,7 @@ class AdminAnnouncement:
     request_id: str | None = field(default=None, compare=False)
 
     @classmethod
-    def from_dict(
-        cls, data: dict[str, Any], *, request_id: str | None = None
-    ) -> AdminAnnouncement:
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> AdminAnnouncement:
         return cls(
             id=_str(data.get("id")),
             message=_str(data.get("message")),
@@ -2343,187 +2361,15 @@ def vision_of(models: Sequence[Any] | None, model_id: str | None) -> VisionVerdi
 
 # --- the account families (0.5) ------------------------------------------------
 #
-# Account self-service, export/import jobs, members, org management, billing,
-# passkeys, MFA, account switching, speech and edge pairing: the remaining
-# routes the web app's settings panes speak. As above, the fields are the
-# ones the routes send today and anything new is dropped rather than refused.
+# The password, email and deletion answers, passkeys, MFA, account switching
+# and edge pairing; the rest of the account and organisation answers are in
+# `_account_models` and `_org_models`. As above, the fields are the ones the
+# routes send today and anything new is dropped rather than refused.
 
 
 ORG_ROLES = ("owner", "admin", "member", "viewer")
 """The four roles a membership may carry. Ownership moves only between
 owners, and nobody demotes or removes the last owner."""
-
-
-@dataclass(frozen=True)
-class SessionInfo:
-    """One live sign-in (`GET /api/me/sessions`). `current` flags the
-    session that made the request; `user_agent` and `ip` are what the sign-in
-    travelled with, so a device the person no longer trusts is findable."""
-
-    id: str
-    current: bool
-    created_at: str
-    last_seen_at: str
-    user_agent: str
-    ip: str | None = None
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> SessionInfo:
-        ip = data.get("ip")
-        return cls(
-            id=_str(data.get("id")),
-            current=data.get("current") is True,
-            created_at=_str(data.get("created_at")),
-            last_seen_at=_str(data.get("last_seen_at")),
-            user_agent=_str(data.get("user_agent")),
-            ip=ip if isinstance(ip, str) else None,
-        )
-
-
-@dataclass(frozen=True)
-class SessionList:
-    """`GET /api/me/sessions`: the caller's live sessions. `current_id` is
-    None for an API caller with no cookie, and then nothing is flagged."""
-
-    current_id: str | None
-    data: list[SessionInfo]
-    request_id: str | None = field(default=None, compare=False)
-
-    def __iter__(self) -> Any:
-        return iter(self.data)
-
-    def __len__(self) -> int:
-        return len(self.data)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> SessionList:
-        return cls(
-            current_id=_opt_str(data.get("current_id")),
-            data=[SessionInfo.from_dict(s) for s in _dicts(data.get("sessions"))],
-            request_id=request_id,
-        )
-
-
-@dataclass(frozen=True)
-class SessionRevoked:
-    """The answer to `account.sessions.revoke`. `current` is True when the
-    revoked row was the session that made the request -- "sign out"."""
-
-    status: str
-    current: bool
-    request_id: str | None = field(default=None, compare=False)
-
-    @classmethod
-    def from_dict(
-        cls, data: dict[str, Any], *, request_id: str | None = None
-    ) -> SessionRevoked:
-        return cls(
-            status=_str(data.get("status")),
-            current=data.get("current") is True,
-            request_id=request_id,
-        )
-
-
-@dataclass(frozen=True)
-class SessionsLoggedOut:
-    """The answer to `account.sessions.logout_others`: how many other live
-    sessions were ended. The one making the request keeps going."""
-
-    revoked: int
-    request_id: str | None = field(default=None, compare=False)
-
-    @classmethod
-    def from_dict(
-        cls, data: dict[str, Any], *, request_id: str | None = None
-    ) -> SessionsLoggedOut:
-        return cls(revoked=_int(data.get("revoked")), request_id=request_id)
-
-
-@dataclass(frozen=True)
-class EmailPreferences:
-    """The mail toggles. `billing_receipts` is transactional mail: the
-    server sends it as True in every read and refuses a write that tries to
-    turn it off."""
-
-    product_updates: bool = False
-    usage_alerts: bool = True
-    billing_receipts: bool = True
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> EmailPreferences:
-        return cls(
-            product_updates=data.get("product_updates") is True,
-            usage_alerts=data.get("usage_alerts") is not False,
-            billing_receipts=data.get("billing_receipts") is not False,
-        )
-
-
-@dataclass(frozen=True)
-class NotificationPreferences:
-    budget_warn: bool = True
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> NotificationPreferences:
-        return cls(budget_warn=data.get("budget_warn") is not False)
-
-
-@dataclass(frozen=True)
-class Preferences:
-    """`GET /api/me/preferences`: the person's mail toggles and locale. The
-    locale is a BCP-47 tag (None when unset); the server validates the whole
-    shape on a write, so an unknown locale is its 422."""
-
-    email: EmailPreferences = field(default_factory=EmailPreferences)
-    notifications: NotificationPreferences = field(default_factory=NotificationPreferences)
-    locale: str | None = None
-    request_id: str | None = field(default=None, compare=False)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> Preferences:
-        email = data.get("email")
-        notifications = data.get("notifications")
-        return cls(
-            email=EmailPreferences.from_dict(email if isinstance(email, dict) else {}),
-            notifications=(
-                NotificationPreferences.from_dict(notifications)
-                if isinstance(notifications, dict)
-                else NotificationPreferences()
-            ),
-            locale=_opt_str(data.get("locale")),
-            request_id=request_id,
-        )
-
-
-@dataclass(frozen=True)
-class NameUpdated:
-    """The answer to `account.rename`."""
-
-    name: str
-    request_id: str | None = field(default=None, compare=False)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> NameUpdated:
-        return cls(name=_str(data.get("name")), request_id=request_id)
-
-
-@dataclass(frozen=True)
-class TermsAccepted:
-    """The answer to `account.accept_terms`: the version now on record and
-    when it was accepted. `terms_current` is always True on a 200."""
-
-    terms_version: str
-    terms_accepted_at: str | None
-    terms_current: bool
-    request_id: str | None = field(default=None, compare=False)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> TermsAccepted:
-        return cls(
-            terms_version=_str(data.get("terms_version")),
-            terms_accepted_at=_opt_str(data.get("terms_accepted_at")),
-            terms_current=data.get("terms_current") is True,
-            request_id=request_id,
-        )
 
 
 @dataclass(frozen=True)
@@ -2536,9 +2382,7 @@ class PasswordChanged:
     request_id: str | None = field(default=None, compare=False)
 
     @classmethod
-    def from_dict(
-        cls, data: dict[str, Any], *, request_id: str | None = None
-    ) -> PasswordChanged:
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> PasswordChanged:
         return cls(
             status=_str(data.get("status"), "changed"),
             revoked=_int(data.get("revoked")),
@@ -2581,9 +2425,7 @@ class EmailChangeState:
     request_id: str | None = field(default=None, compare=False)
 
     @classmethod
-    def from_dict(
-        cls, data: dict[str, Any], *, request_id: str | None = None
-    ) -> EmailChangeState:
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> EmailChangeState:
         return cls(
             email=_opt_str(data.get("email")),
             pending_email=_opt_str(data.get("pending_email")),
@@ -2689,1089 +2531,7 @@ class DeletedAccount:
         )
 
 
-# --- export and import jobs ----------------------------------------------------
-
-
-@dataclass(frozen=True)
-class ExportJob:
-    """One account export (`POST` then `GET /api/me/export/{id}`). It is
-    built by the platform's worker; `download_url` appears with the status
-    `ready` and is a signed path that lasts until `expires_at`. The bytes
-    are only reachable by the owner: pass the job (or its URL) to
-    `exports.download`, which sends the caller's own credentials too."""
-
-    id: str
-    status: str
-    created_at: str
-    size_bytes: int | None = None
-    completed_at: str | None = None
-    expires_at: str | None = None
-    download_url: str | None = field(default=None, repr=False)
-    request_id: str | None = field(default=None, compare=False)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> ExportJob:
-        return cls(
-            id=_str(data.get("id")),
-            status=_str(data.get("status")),
-            created_at=_str(data.get("created_at")),
-            size_bytes=_opt_int(data.get("size_bytes")),
-            completed_at=_opt_str(data.get("completed_at")),
-            expires_at=_opt_str(data.get("expires_at")),
-            download_url=_opt_str(data.get("download_url")),
-            request_id=request_id,
-        )
-
-
-@dataclass(frozen=True)
-class ImportJob:
-    """One ChatGPT/Claude history import, from start to `completed` (or
-    `failed`, with `error`). The counts say what the worker found and what
-    it made; `branches_dropped` counts message branches the target's
-    linear model cannot hold."""
-
-    id: str
-    status: str
-    source: str
-    filename: str
-    size_bytes: int
-    conversations_total: int
-    conversations_done: int
-    conversations_created: int
-    conversations_existing: int
-    conversations_skipped: int
-    messages_created: int
-    attachments_skipped: int
-    branches_dropped: int
-    created_at: str
-    error: str | None = None
-    started_at: str | None = None
-    completed_at: str | None = None
-    request_id: str | None = field(default=None, compare=False)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> ImportJob:
-        return cls(
-            id=_str(data.get("id")),
-            status=_str(data.get("status")),
-            source=_str(data.get("source")),
-            filename=_str(data.get("filename")),
-            size_bytes=_int(data.get("size_bytes")),
-            conversations_total=_int(data.get("conversations_total")),
-            conversations_done=_int(data.get("conversations_done")),
-            conversations_created=_int(data.get("conversations_created")),
-            conversations_existing=_int(data.get("conversations_existing")),
-            conversations_skipped=_int(data.get("conversations_skipped")),
-            messages_created=_int(data.get("messages_created")),
-            attachments_skipped=_int(data.get("attachments_skipped")),
-            branches_dropped=_int(data.get("branches_dropped")),
-            created_at=_str(data.get("created_at")),
-            error=_opt_str(data.get("error")),
-            started_at=_opt_str(data.get("started_at")),
-            completed_at=_opt_str(data.get("completed_at")),
-            request_id=request_id,
-        )
-
-
-@dataclass(frozen=True)
-class ImportJobList:
-    """`GET /api/me/imports`: the caller's recent imports, newest first."""
-
-    data: list[ImportJob]
-    request_id: str | None = field(default=None, compare=False)
-
-    def __iter__(self) -> Any:
-        return iter(self.data)
-
-    def __len__(self) -> int:
-        return len(self.data)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> ImportJobList:
-        return cls(
-            data=[ImportJob.from_dict(r) for r in _dicts(data.get("data"))],
-            request_id=request_id,
-        )
-
-
-# --- members, invites, invite links, join ----------------------------------------
-
-
-@dataclass(frozen=True)
-class Membership:
-    """One person's place in the org, as the members pane lists it. `state`
-    is `active`, `suspended` or `unverified`; `last_seen_at` is None for
-    someone who has never signed in."""
-
-    subject: str
-    email: str
-    role: str
-    state: str
-    created_at: str
-    name: str | None = None
-    last_seen_at: str | None = None
-    request_id: str | None = field(default=None, compare=False)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> Membership:
-        return cls(
-            subject=_str(data.get("subject")),
-            email=_str(data.get("email")),
-            role=_str(data.get("role")),
-            state=_str(data.get("state"), "active"),
-            created_at=_str(data.get("created_at")),
-            name=_opt_str(data.get("name")),
-            last_seen_at=_opt_str(data.get("last_seen_at")),
-            request_id=request_id,
-        )
-
-
-@dataclass(frozen=True)
-class Seats:
-    """The plan's room against what is taken: members plus pending invites.
-    `max` is None with no cap; `billed` is the seats the org pays for on a
-    plan sold per seat (its members, without the invites)."""
-
-    used: int
-    max: int | None = None
-    billed: int | None = None
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Seats:
-        return cls(
-            used=_int(data.get("used")),
-            max=_opt_int(data.get("max")),
-            billed=_opt_int(data.get("billed")),
-        )
-
-
-@dataclass(frozen=True)
-class MemberList:
-    """`GET /api/org/members`: every member with their role, `role` being
-    the caller's own (the token's claims say nothing about the org), and
-    `seats` the plan's room."""
-
-    data: list[Membership]
-    role: str
-    seats: Seats
-    request_id: str | None = field(default=None, compare=False)
-
-    def __iter__(self) -> Any:
-        return iter(self.data)
-
-    def __len__(self) -> int:
-        return len(self.data)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> MemberList:
-        seats = data.get("seats")
-        return cls(
-            data=[Membership.from_dict(m) for m in _dicts(data.get("data"))],
-            role=_str(data.get("role")),
-            seats=Seats.from_dict(seats if isinstance(seats, dict) else {}),
-            request_id=request_id,
-        )
-
-
-@dataclass(frozen=True)
-class Invite:
-    """A mailed invitation, as the invites pane lists it. Never the token:
-    the plaintext went out in the mail and nowhere else. `status` is
-    `pending`, `accepted`, `expired` or `revoked`."""
-
-    id: str
-    email: str
-    role: str
-    invited_by: str
-    created_at: str
-    expires_at: str
-    status: str
-    request_id: str | None = field(default=None, compare=False)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> Invite:
-        return cls(
-            id=_str(data.get("id")),
-            email=_str(data.get("email")),
-            role=_str(data.get("role")),
-            invited_by=_str(data.get("invited_by")),
-            created_at=_str(data.get("created_at")),
-            expires_at=_str(data.get("expires_at")),
-            status=_str(data.get("status")),
-            request_id=request_id,
-        )
-
-
-@dataclass(frozen=True)
-class InviteList:
-    """`GET /api/org/invites`: the org's invitations."""
-
-    data: list[Invite]
-    request_id: str | None = field(default=None, compare=False)
-
-    def __iter__(self) -> Any:
-        return iter(self.data)
-
-    def __len__(self) -> int:
-        return len(self.data)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> InviteList:
-        return cls(
-            data=[Invite.from_dict(i) for i in _dicts(data.get("data"))],
-            request_id=request_id,
-        )
-
-
-@dataclass(frozen=True)
-class SentInvite:
-    """The answer to `invites.create` and `invites.resend`: the invite plus
-    whether its mail went. A relay failure does not undo the row -- `mail`
-    is `"failed"` with `detail` saying so, and a resend is the recovery."""
-
-    id: str
-    email: str
-    role: str
-    invited_by: str
-    created_at: str
-    expires_at: str
-    status: str
-    mail: str | None = None
-    detail: str | None = None
-    request_id: str | None = field(default=None, compare=False)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> SentInvite:
-        return cls(
-            id=_str(data.get("id")),
-            email=_str(data.get("email")),
-            role=_str(data.get("role")),
-            invited_by=_str(data.get("invited_by")),
-            created_at=_str(data.get("created_at")),
-            expires_at=_str(data.get("expires_at")),
-            status=_str(data.get("status")),
-            mail=_opt_str(data.get("mail")),
-            detail=_opt_str(data.get("detail")),
-            request_id=request_id,
-        )
-
-
-@dataclass(frozen=True)
-class InvitePreview:
-    """What an anonymous lookup may know about a mailed invite: enough to
-    say "join Acme as a member" and pre-fill the address, nothing about who
-    else is in the org."""
-
-    org_name: str
-    email: str
-    role: str
-    expires_at: str
-    status: str
-    request_id: str | None = field(default=None, compare=False)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> InvitePreview:
-        return cls(
-            org_name=_str(data.get("org_name")),
-            email=_str(data.get("email")),
-            role=_str(data.get("role")),
-            expires_at=_str(data.get("expires_at")),
-            status=_str(data.get("status")),
-            request_id=request_id,
-        )
-
-
-@dataclass(frozen=True)
-class InviteLink:
-    """A join link, as the pane lists it. Never the token: only its hash is
-    kept, so the plaintext exists in the response that made the link and
-    wherever its owner pasted it. `status` is `active`, `used_up`,
-    `expired` or `revoked`."""
-
-    id: str
-    role: str
-    max_uses: int
-    uses: int
-    created_by: str
-    created_at: str
-    expires_at: str
-    status: str
-    request_id: str | None = field(default=None, compare=False)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> InviteLink:
-        return cls(
-            id=_str(data.get("id")),
-            role=_str(data.get("role")),
-            max_uses=_int(data.get("max_uses")),
-            uses=_int(data.get("uses")),
-            created_by=_str(data.get("created_by")),
-            created_at=_str(data.get("created_at")),
-            expires_at=_str(data.get("expires_at")),
-            status=_str(data.get("status")),
-            request_id=request_id,
-        )
-
-
-@dataclass(frozen=True)
-class InviteLinkList:
-    """`GET /api/org/invite-links`: the links not revoked, with their uses."""
-
-    data: list[InviteLink]
-    request_id: str | None = field(default=None, compare=False)
-
-    def __iter__(self) -> Any:
-        return iter(self.data)
-
-    def __len__(self) -> int:
-        return len(self.data)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> InviteLinkList:
-        return cls(
-            data=[InviteLink.from_dict(link) for link in _dicts(data.get("data"))],
-            request_id=request_id,
-        )
-
-
-@dataclass(frozen=True)
-class CreatedInviteLink:
-    """A new link. `token` and `url` are in this answer and nowhere else --
-    a lost link is revoked and replaced, never shown again."""
-
-    link: InviteLink
-    token: str = field(repr=False)
-    url: str = field(repr=False)
-    request_id: str | None = field(default=None, compare=False)
-
-    @classmethod
-    def from_dict(
-        cls, data: dict[str, Any], *, request_id: str | None = None
-    ) -> CreatedInviteLink:
-        return cls(
-            link=InviteLink.from_dict(data),
-            token=_str(data.get("token")),
-            url=_str(data.get("url")),
-            request_id=request_id,
-        )
-
-
-@dataclass(frozen=True)
-class LinkPreview:
-    """What an anonymous lookup may know about a join link: whose org,
-    which role, and whether the link still works -- not how many have used
-    it."""
-
-    org_name: str
-    role: str
-    expires_at: str
-    status: str
-    request_id: str | None = field(default=None, compare=False)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> LinkPreview:
-        return cls(
-            org_name=_str(data.get("org_name")),
-            role=_str(data.get("role")),
-            expires_at=_str(data.get("expires_at")),
-            status=_str(data.get("status")),
-            request_id=request_id,
-        )
-
-
-# --- org management ---------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class OrgInfo:
-    """`GET /api/org`: the organisation and the caller's place in it. Any
-    member may read it."""
-
-    id: str
-    name: str
-    created_at: str
-    role: str
-    request_id: str | None = field(default=None, compare=False)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> OrgInfo:
-        return cls(
-            id=_str(data.get("id")),
-            name=_str(data.get("name")),
-            created_at=_str(data.get("created_at")),
-            role=_str(data.get("role")),
-            request_id=request_id,
-        )
-
-
-@dataclass(frozen=True)
-class OrgClosed:
-    """The answer to `org.close`: the closure plus what each side effect
-    reported, kept honest rather than assumed. A None count means that step
-    could not be confirmed; `subscription` names what happened to the Stripe
-    subscription; `identity_removed` is False when the IdP still holds the
-    org. A repeat by the owner keeps the first closure and re-runs the side
-    effects, which is how a Stripe or IdP failure is retried."""
-
-    status: str
-    closed_at: str
-    already_closed: bool
-    conversations_deleted: int
-    retention_days: int
-    members_mailed: int
-    members_not_mailed: int
-    api_keys_revoked: int | None = None
-    invites_revoked: int | None = None
-    invite_links_revoked: int | None = None
-    subscription: str | None = None
-    identity_removed: bool | None = None
-    request_id: str | None = field(default=None, compare=False)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> OrgClosed:
-        identity = data.get("identity_removed")
-        return cls(
-            status=_str(data.get("status"), "closed"),
-            closed_at=_str(data.get("closed_at")),
-            already_closed=data.get("already_closed") is True,
-            conversations_deleted=_int(data.get("conversations_deleted")),
-            retention_days=_int(data.get("retention_days"), 30),
-            members_mailed=_int(data.get("members_mailed")),
-            members_not_mailed=_int(data.get("members_not_mailed")),
-            api_keys_revoked=_opt_int(data.get("api_keys_revoked")),
-            invites_revoked=_opt_int(data.get("invites_revoked")),
-            invite_links_revoked=_opt_int(data.get("invite_links_revoked")),
-            subscription=_opt_str(data.get("subscription")),
-            identity_removed=identity if isinstance(identity, bool) else None,
-            request_id=request_id,
-        )
-
-
-@dataclass(frozen=True)
-class ModelPolicyRow:
-    """One row of the model allow-list pane: a model the plan permits, the
-    org's switch on it, and whether the switch can be turned off at all
-    (the house model is always allowed, whatever is sent)."""
-
-    id: str
-    label: str
-    allowed: bool
-    locked: bool = False
-    partner: bool = False
-    research_preview: bool = False
-    context_window: int | None = None
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> ModelPolicyRow:
-        context_window = data.get("context_window")
-        return cls(
-            id=_str(data.get("id")),
-            label=_str(data.get("label")),
-            allowed=data.get("allowed") is True,
-            locked=data.get("locked") is True,
-            partner=data.get("partner") is True,
-            research_preview=data.get("research_preview") is True,
-            context_window=(
-                context_window
-                if isinstance(context_window, int) and not isinstance(context_window, bool)
-                else None
-            ),
-        )
-
-
-@dataclass(frozen=True)
-class ModelPolicy:
-    """`GET /api/org/models`: the plan's models with the org's switch on
-    each. `restricted` is False while every model is allowed; `unlisted`
-    names ids the org switched off that the plan or the gateway no longer
-    offers -- harmless, but a stale entry an admin can clear."""
-
-    house_model: str
-    data: list[ModelPolicyRow]
-    unlisted: list[str]
-    restricted: bool
-    request_id: str | None = field(default=None, compare=False)
-
-    def __iter__(self) -> Any:
-        return iter(self.data)
-
-    def __len__(self) -> int:
-        return len(self.data)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> ModelPolicy:
-        return cls(
-            house_model=_str(data.get("house_model")),
-            data=[ModelPolicyRow.from_dict(m) for m in _dicts(data.get("data"))],
-            unlisted=_strs(data.get("unlisted")),
-            restricted=data.get("restricted") is True,
-            request_id=request_id,
-        )
-
-
-@dataclass(frozen=True)
-class SharingPolicy:
-    """`GET /api/org/sharing`: whether members may share conversations by
-    link. Switching it off stops every existing link answering at once,
-    without revoking them; switching it back on brings them back."""
-
-    enabled: bool
-    request_id: str | None = field(default=None, compare=False)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> SharingPolicy:
-        return cls(enabled=data.get("enabled") is True, request_id=request_id)
-
-
-@dataclass(frozen=True)
-class OrgShare:
-    """One share link as the org's admins see it: every link any member
-    made, with `created_by`. Never the tokens -- the store does not hold
-    them. Revoke is `org.shares.revoke`."""
-
-    id: str
-    conversation_id: str
-    title: str
-    message_count: int
-    created_at: str
-    view_count: int
-    status: str
-    created_by: str
-    include_attachments: bool = False
-    expires_at: str | None = None
-    revoked_at: str | None = None
-    request_id: str | None = field(default=None, compare=False)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> OrgShare:
-        return cls(
-            id=_str(data.get("id")),
-            conversation_id=_str(data.get("conversation_id")),
-            title=_str(data.get("title")),
-            message_count=_int(data.get("message_count")),
-            created_at=_str(data.get("created_at")),
-            view_count=_int(data.get("view_count")),
-            status=_str(data.get("status")),
-            created_by=_str(data.get("created_by")),
-            include_attachments=data.get("include_attachments") is True,
-            expires_at=_opt_str(data.get("expires_at")),
-            revoked_at=_opt_str(data.get("revoked_at")),
-            request_id=request_id,
-        )
-
-
-@dataclass(frozen=True)
-class OrgShareList:
-    """`GET /api/org/shares`: every link the org's members made, newest
-    first, with who made each."""
-
-    data: list[OrgShare]
-    request_id: str | None = field(default=None, compare=False)
-
-    def __iter__(self) -> Any:
-        return iter(self.data)
-
-    def __len__(self) -> int:
-        return len(self.data)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> OrgShareList:
-        return cls(
-            data=[OrgShare.from_dict(s) for s in _dicts(data.get("data"))],
-            request_id=request_id,
-        )
-
-
-@dataclass(frozen=True)
-class RevokedOrgShare:
-    """The answer to `org.shares.revoke`."""
-
-    status: str
-    request_id: str | None = field(default=None, compare=False)
-
-    @classmethod
-    def from_dict(
-        cls, data: dict[str, Any], *, request_id: str | None = None
-    ) -> RevokedOrgShare:
-        return cls(status=_str(data.get("status"), "revoked"), request_id=request_id)
-
-
-@dataclass(frozen=True)
-class SsoSettings:
-    """`GET /api/org/sso`: whether SSO is enforced, plus `blockers`, what
-    would stop it being turned on -- the preflight runs on the read, so the
-    pane can say why the switch is unavailable before it is flipped."""
-
-    sso_required: bool
-    blockers: list[dict[str, Any]]
-    request_id: str | None = field(default=None, compare=False)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> SsoSettings:
-        blockers = data.get("blockers")
-        return cls(
-            sso_required=data.get("sso_required") is True,
-            blockers=_dicts(blockers),
-            request_id=request_id,
-        )
-
-
-@dataclass(frozen=True)
-class RecoveryCode:
-    """A break-glass sign-in code for an SSO lock-out. `code` is in this
-    answer and nowhere else; a mint supersedes any unused one."""
-
-    id: str
-    created_at: str
-    expires_at: str
-    created_by: str
-    used_at: str | None = None
-    code: str | None = field(default=None, repr=False)
-    shown_once: bool | None = None
-    request_id: str | None = field(default=None, compare=False)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> RecoveryCode:
-        shown_once = data.get("shown_once")
-        return cls(
-            id=_str(data.get("id")),
-            created_at=_str(data.get("created_at")),
-            expires_at=_str(data.get("expires_at")),
-            created_by=_str(data.get("created_by")),
-            used_at=_opt_str(data.get("used_at")),
-            code=_opt_str(data.get("code")),
-            shown_once=shown_once if isinstance(shown_once, bool) else None,
-            request_id=request_id,
-        )
-
-
-@dataclass(frozen=True)
-class SsoPolicySet:
-    """The answer to `org.sso.set`. Enforcing answers with the minted
-    `recovery` code -- there is no way into the enforced state without being
-    handed the way back out; relaxing answers without one."""
-
-    sso_required: bool
-    recovery: RecoveryCode | None
-    request_id: str | None = field(default=None, compare=False)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> SsoPolicySet:
-        recovery = data.get("recovery")
-        return cls(
-            sso_required=data.get("sso_required") is True,
-            recovery=(
-                RecoveryCode.from_dict(recovery) if isinstance(recovery, dict) else None
-            ),
-            request_id=request_id,
-        )
-
-
-@dataclass(frozen=True)
-class DnsRecord:
-    """The TXT record an org publishes to prove it owns a domain."""
-
-    type: str
-    host: str
-    name: str
-    value: str
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> DnsRecord:
-        return cls(
-            type=_str(data.get("type"), "TXT"),
-            host=_str(data.get("host")),
-            name=_str(data.get("name")),
-            value=_str(data.get("value")),
-        )
-
-
-@dataclass(frozen=True)
-class DomainChallenge:
-    """`GET /api/org/domains/{domain}/challenge`: the record to publish.
-    Stable once minted, so a mid-propagation re-open shows the same one."""
-
-    record: DnsRecord
-    request_id: str | None = field(default=None, compare=False)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> DomainChallenge:
-        record = data.get("record")
-        return cls(
-            record=DnsRecord.from_dict(record if isinstance(record, dict) else {}),
-            request_id=request_id,
-        )
-
-
-@dataclass(frozen=True)
-class DomainClaim:
-    """One claimed domain: the claim, and whether it has been proven by the
-    DNS check (which decides whose address gets the SSO button and where a
-    JIT-provisioned user lands -- a security boundary, not a form field)."""
-
-    domain: str
-    verified: bool
-    created_at: str
-    verified_at: str | None = None
-    verified_by: str | None = None
-    request_id: str | None = field(default=None, compare=False)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> DomainClaim:
-        return cls(
-            domain=_str(data.get("domain")),
-            verified=data.get("verified") is True,
-            created_at=_str(data.get("created_at")),
-            verified_at=_opt_str(data.get("verified_at")),
-            verified_by=_opt_str(data.get("verified_by")),
-            request_id=request_id,
-        )
-
-
-@dataclass(frozen=True)
-class DomainClaimList:
-    """`GET /api/org/domains`: the org's claimed domains."""
-
-    data: list[DomainClaim]
-    request_id: str | None = field(default=None, compare=False)
-
-    def __iter__(self) -> Any:
-        return iter(self.data)
-
-    def __len__(self) -> int:
-        return len(self.data)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> DomainClaimList:
-        return cls(
-            data=[DomainClaim.from_dict(d) for d in _dicts(data.get("data"))],
-            request_id=request_id,
-        )
-
-
-@dataclass(frozen=True)
-class DomainVerification:
-    """The answer to `org.domains.verify`: the claim's state after one DNS
-    check. `verified` True is proven; False with `detail` means the record
-    is not there yet (202 -- publish it, or wait for propagation), which is
-    why `found` names what the resolver actually saw."""
-
-    domain: str
-    verified: bool
-    verified_at: str | None
-    verified_by: str | None
-    method: str | None
-    last_checked_at: str | None
-    last_error: str | None
-    record: DnsRecord
-    detail: str | None = None
-    found: list[str] = field(default_factory=list)
-    request_id: str | None = field(default=None, compare=False)
-
-    @classmethod
-    def from_dict(
-        cls, data: dict[str, Any], *, request_id: str | None = None
-    ) -> DomainVerification:
-        record = data.get("record")
-        return cls(
-            domain=_str(data.get("domain")),
-            verified=data.get("verified") is True,
-            verified_at=_opt_str(data.get("verified_at")),
-            verified_by=_opt_str(data.get("verified_by")),
-            method=_opt_str(data.get("method")),
-            last_checked_at=_opt_str(data.get("last_checked_at")),
-            last_error=_opt_str(data.get("last_error")),
-            record=DnsRecord.from_dict(record if isinstance(record, dict) else {}),
-            detail=_opt_str(data.get("detail")),
-            found=_strs(data.get("found")),
-            request_id=request_id,
-        )
-
-
-@dataclass(frozen=True)
-class IdpConfig:
-    """One attached identity provider, as the settings pane lists it.
-    Never the client secret: it went to the IdP and is not stored here."""
-
-    provider: str
-    kind: str
-    name: str
-    issuer: str | None
-    created_at: str
-    request_id: str | None = field(default=None, compare=False)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> IdpConfig:
-        return cls(
-            provider=_str(data.get("provider")),
-            kind=_str(data.get("kind")),
-            name=_str(data.get("name")),
-            issuer=_opt_str(data.get("issuer")),
-            created_at=_str(data.get("created_at")),
-            request_id=request_id,
-        )
-
-
-@dataclass(frozen=True)
-class IdpConfigList:
-    """`GET /api/org/idp`: the org's identity providers."""
-
-    data: list[IdpConfig]
-    request_id: str | None = field(default=None, compare=False)
-
-    def __iter__(self) -> Any:
-        return iter(self.data)
-
-    def __len__(self) -> int:
-        return len(self.data)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> IdpConfigList:
-        return cls(
-            data=[IdpConfig.from_dict(i) for i in _dicts(data.get("data"))],
-            request_id=request_id,
-        )
-
-
-@dataclass(frozen=True)
-class MfaPolicy:
-    """`GET /api/org/mfa`: whether every member must have an authenticator.
-    Applies to password sign-in; a member arriving through the org's own
-    SSO provider has that provider's factors."""
-
-    mfa_required: bool
-    request_id: str | None = field(default=None, compare=False)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> MfaPolicy:
-        return cls(mfa_required=data.get("mfa_required") is True, request_id=request_id)
-
-
-# --- plans and billing --------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class Plan:
-    """One plan of the public catalog (`GET /api/plans`), cheapest first.
-    On a plan sold per seat the price, the allowance and the default overage
-    cap are each per seat, and the seats share one pool. `models` names the
-    model ids the plan includes; `limits` is the plan's limits object,
-    kept as the server shapes it."""
-
-    code: str
-    name: str
-    price_cents_monthly: int
-    price_cents_annual: int
-    included_tokens: int
-    overage_enabled: bool
-    default_overage_cap_micros: int
-    trial_days: int
-    per_seat: bool = False
-    included_tokens_per_seat: int | None = None
-    models: list[str] = field(default_factory=list)
-    limits: dict[str, Any] = field(default_factory=dict)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Plan:
-        return cls(
-            code=_str(data.get("code")),
-            name=_str(data.get("name")),
-            price_cents_monthly=_int(data.get("price_cents_monthly")),
-            price_cents_annual=_int(data.get("price_cents_annual")),
-            included_tokens=_int(data.get("included_tokens")),
-            overage_enabled=data.get("overage_enabled") is True,
-            default_overage_cap_micros=_int(data.get("default_overage_cap_micros")),
-            trial_days=_int(data.get("trial_days")),
-            per_seat=data.get("per_seat") is True,
-            included_tokens_per_seat=_opt_int(data.get("included_tokens_per_seat")),
-            models=_strs(data.get("models")),
-            limits=_dict(data.get("limits")),
-        )
-
-
-@dataclass(frozen=True)
-class PlanCatalog:
-    """`GET /api/plans`: the catalog and, beside it, the price table -- the
-    label, multiplier and list price per million tokens for every model
-    sold, kept as sent -- and the `default_model`."""
-
-    data: list[Plan]
-    models: list[dict[str, Any]]
-    default_model: str
-    request_id: str | None = field(default=None, compare=False)
-
-    def __iter__(self) -> Any:
-        return iter(self.data)
-
-    def __len__(self) -> int:
-        return len(self.data)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> PlanCatalog:
-        return cls(
-            data=[Plan.from_dict(p) for p in _dicts(data.get("data"))],
-            models=_dicts(data.get("models")),
-            default_model=_str(data.get("default_model")),
-            request_id=request_id,
-        )
-
-
-@dataclass(frozen=True)
-class PlanHistoryEvent:
-    """One row of the append-only billing trail (`GET /api/plan/history`),
-    newest first: which plan and status moved to which, who or what moved it
-    (a person's subject, or `stripe:<event id>`), and the reason given."""
-
-    to_plan: str
-    to_status: str
-    kind: str
-    actor: str
-    created_at: str
-    from_plan: str | None = None
-    from_status: str | None = None
-    reason: str | None = None
-    metadata: dict[str, Any] = field(default_factory=dict)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> PlanHistoryEvent:
-        return cls(
-            to_plan=_str(data.get("to_plan")),
-            to_status=_str(data.get("to_status")),
-            kind=_str(data.get("kind")),
-            actor=_str(data.get("actor")),
-            created_at=_str(data.get("created_at")),
-            from_plan=_opt_str(data.get("from_plan")),
-            from_status=_opt_str(data.get("from_status")),
-            reason=_opt_str(data.get("reason")),
-            metadata=_dict(data.get("metadata")),
-        )
-
-
-@dataclass(frozen=True)
-class PlanHistory:
-    data: list[PlanHistoryEvent]
-    request_id: str | None = field(default=None, compare=False)
-
-    def __iter__(self) -> Any:
-        return iter(self.data)
-
-    def __len__(self) -> int:
-        return len(self.data)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> PlanHistory:
-        return cls(
-            data=[PlanHistoryEvent.from_dict(r) for r in _dicts(data.get("data"))],
-            request_id=request_id,
-        )
-
-
-@dataclass(frozen=True)
-class CheckoutLink:
-    """The Stripe URL to redirect the browser to, from `billing.checkout`
-    (start a subscription) or `billing.portal` (card, plan, cancel)."""
-
-    url: str
-    request_id: str | None = field(default=None, compare=False)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> CheckoutLink:
-        return cls(url=_str(data.get("url")), request_id=request_id)
-
-
-@dataclass(frozen=True)
-class BillingStatus:
-    """`GET /api/billing/status`: what a billing page renders, in one read.
-    `entitlements` is the plan facts any member may read; `billing_enabled`
-    says whether the buy/manage buttons should exist at all, `collection_*`
-    how the org pays, and `dunning` the late-payment schedule when it is
-    late (None when it is not)."""
-
-    entitlements: Entitlements
-    billing_enabled: bool
-    collection_method: str | None
-    days_until_due: int | None
-    dunning: dict[str, Any] | None
-    request_id: str | None = field(default=None, compare=False)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> BillingStatus:
-        dunning = data.get("dunning")
-        collection = data.get("collection_method")
-        days = data.get("days_until_due")
-        return cls(
-            entitlements=Entitlements.from_dict(data),
-            billing_enabled=data.get("billing_enabled") is True,
-            collection_method=collection if isinstance(collection, str) else None,
-            days_until_due=(
-                days if isinstance(days, int) and not isinstance(days, bool) else None
-            ),
-            dunning=dict(dunning) if isinstance(dunning, dict) else None,
-            request_id=request_id,
-        )
-
-
-@dataclass(frozen=True)
-class Invoice:
-    """One invoice of the org's, newest first in `billing.invoices`:
-    status and amounts, and Stripe's hosted page and PDF links, which is
-    where an invoice is paid."""
-
-    id: str
-    number: str
-    status: str
-    collection_method: str
-    currency: str
-    amount_due_micros: int
-    amount_remaining_micros: int
-    issued_at: str
-    due_at: str | None = None
-    paid_at: str | None = None
-    hosted_invoice_url: str | None = None
-    invoice_pdf: str | None = None
-    request_id: str | None = field(default=None, compare=False)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> Invoice:
-        return cls(
-            id=_str(data.get("id")),
-            number=_str(data.get("number")),
-            status=_str(data.get("status")),
-            collection_method=_str(data.get("collection_method")),
-            currency=_str(data.get("currency")),
-            amount_due_micros=_int(data.get("amount_due_micros")),
-            amount_remaining_micros=_int(data.get("amount_remaining_micros")),
-            issued_at=_str(data.get("issued_at")),
-            due_at=_opt_str(data.get("due_at")),
-            paid_at=_opt_str(data.get("paid_at")),
-            hosted_invoice_url=_opt_str(data.get("hosted_invoice_url")),
-            invoice_pdf=_opt_str(data.get("invoice_pdf")),
-            request_id=request_id,
-        )
-
-
-@dataclass(frozen=True)
-class InvoiceList:
-    """`GET /api/billing/invoices`: the org's invoices, newest first."""
-
-    data: list[Invoice]
-    request_id: str | None = field(default=None, compare=False)
-
-    def __iter__(self) -> Any:
-        return iter(self.data)
-
-    def __len__(self) -> int:
-        return len(self.data)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> InvoiceList:
-        return cls(
-            data=[Invoice.from_dict(i) for i in _dicts(data.get("data"))],
-            request_id=request_id,
-        )
-
-
-# --- passkeys, MFA, account switching, speech -----------------------------------------
+# --- passkeys, MFA, account switching -------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -3853,9 +2613,7 @@ class PasskeyLoginStart:
     request_id: str | None = field(default=None, compare=False)
 
     @classmethod
-    def from_dict(
-        cls, data: dict[str, Any], *, request_id: str | None = None
-    ) -> PasskeyLoginStart:
+    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> PasskeyLoginStart:
         options = data.get("options")
         return cls(
             challenge=_str(data.get("challenge")),
@@ -4054,20 +2812,6 @@ class LoggedOut:
         )
 
 
-@dataclass(frozen=True)
-class Transcription:
-    """`POST /api/speech/transcribe`: one clip's words. The audio is held
-    for the length of the request and nowhere else -- not logged, not
-    stored."""
-
-    text: str
-    request_id: str | None = field(default=None, compare=False)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], *, request_id: str | None = None) -> Transcription:
-        return cls(text=_str(data.get("text")), request_id=request_id)
-
-
 # --- edge pairing and sync ----------------------------------------------------------
 
 
@@ -4208,15 +2952,11 @@ class EdgeSyncStatus:
             paired_at=_opt_str(data.get("paired_at")),
             last_synced_at=_opt_str(data.get("last_synced_at")),
             last_attempt_at=_opt_str(data.get("last_attempt_at")),
-            offline=(
-                data.get("offline") if isinstance(data.get("offline"), bool) else None
-            ),
+            offline=(data.get("offline") if isinstance(data.get("offline"), bool) else None),
             pending=_opt_int(data.get("pending")),
             pending_messages=_opt_int(data.get("pending_messages")),
             pending_capped=(
-                data.get("pending_capped")
-                if isinstance(data.get("pending_capped"), bool)
-                else None
+                data.get("pending_capped") if isinstance(data.get("pending_capped"), bool) else None
             ),
             stopped=_opt_str(data.get("stopped")),
             last_error=_opt_str(data.get("last_error")),

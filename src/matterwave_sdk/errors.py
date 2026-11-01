@@ -34,6 +34,13 @@ class MatterWaveError(Exception):
     """Base class for everything this package raises."""
 
 
+class MatterWaveConfigError(MatterWaveError, ValueError):
+    """A client setting that cannot be used: no base URL, one that is not
+    http(s), a negative retry count or wait, an empty idempotency key. A
+    `ValueError` as well, as it always was, and a `MatterWaveError`, so one
+    `except` covers everything the client raises."""
+
+
 class MissingAPIKeyError(MatterWaveError):
     """A keyed operation was called with no key configured: neither an
     `api_key` argument nor `MATTERWAVE_API_KEY` in the environment."""
@@ -189,7 +196,9 @@ class ParseError(MatterWaveError):
     propagates, because it says which field the model got wrong. `body`
     carries the text that would not parse."""
 
-    def __init__(self, message: str, *, cause: BaseException | None = None, body: Any = None) -> None:
+    def __init__(
+        self, message: str, *, cause: BaseException | None = None, body: Any = None
+    ) -> None:
         super().__init__(message)
         self.__cause__ = cause
         self.body = body
@@ -251,6 +260,13 @@ class McpToolError(McpError):
         self.request_id = request_id
         self.status = status
         self.error = error if error is not None else {}
+
+
+class APIDeprecationWarning(FutureWarning):
+    """A route the API has marked for retirement with `Deprecation` and
+    `Sunset` headers: raised once per route per process, naming the route
+    and the dates. A `FutureWarning`, so it shows by default; the
+    `warnings` filters silence it or turn it into an error."""
 
 
 def error_class_for(status_code: int) -> type[APIError]:

@@ -142,7 +142,7 @@ async def _adropping(body: str) -> AsyncIterator[bytes]:
 
 
 def test_the_event_parser_reads_names_ids_comments_and_crlf() -> None:
-    raw = ": mw-heartbeat\r\n\r\nid: g:0\r\nevent: delta\r\ndata: {\"a\":\r\ndata: 1}\r\n\r\ndata: x"
+    raw = ': mw-heartbeat\r\n\r\nid: g:0\r\nevent: delta\r\ndata: {"a":\r\ndata: 1}\r\n\r\ndata: x'
     events = list(sse_events(raw.splitlines(keepends=True)))
     assert [(e.event, e.data, e.id) for e in events] == [
         ("delta", '{"a":\n1}', "g:0"),
@@ -201,7 +201,13 @@ def test_tool_parts_unknown_events_and_notices(api, client: MatterWave) -> None:
         sse_frame("message", USER)
         + sse_frame(
             "part_start",
-            {"index": 0, "type": "tool_call", "id": "call_0", "name": "web_search", "arguments": "{}"},
+            {
+                "index": 0,
+                "type": "tool_call",
+                "id": "call_0",
+                "name": "web_search",
+                "arguments": "{}",
+            },
             f"{GEN}:0",
         )
         + sse_frame(
@@ -291,9 +297,7 @@ def test_a_body_that_ends_cleanly_before_done_also_resumes(api, client, sleeps) 
 
 
 def test_an_edit_resumes_through_the_send_route(api, client, sleeps) -> None:
-    edit = api.post(f"/api/conversations/{CONV}/messages/m-user/edit").mock(
-        return_value=_sse(HEAD)
-    )
+    edit = api.post(f"/api/conversations/{CONV}/messages/m-user/edit").mock(return_value=_sse(HEAD))
     resume = api.post(f"/api/conversations/{CONV}/messages").mock(return_value=_sse(TAIL))
     list(client.conversations.edit(CONV, "m-user", "Hi again"))
     assert edit.call_count == 1 and resume.call_count == 1
@@ -301,9 +305,7 @@ def test_an_edit_resumes_through_the_send_route(api, client, sleeps) -> None:
 
 
 def test_a_regenerate_resumes_with_the_placeholder_body(api, client, sleeps) -> None:
-    api.post(f"/api/conversations/{CONV}/messages/m-asst/regenerate").mock(
-        return_value=_sse(HEAD)
-    )
+    api.post(f"/api/conversations/{CONV}/messages/m-asst/regenerate").mock(return_value=_sse(HEAD))
     resume = api.post(f"/api/conversations/{CONV}/messages").mock(return_value=_sse(TAIL))
     list(client.conversations.regenerate(CONV, "m-asst", model="grt-nano"))
     assert json.loads(resume.calls[0].request.content) == {
@@ -402,7 +404,9 @@ def test_a_stream_misused_by_the_caller_is_not_resumed(api, client, sleeps) -> N
 
 
 @pytest.mark.asyncio
-async def test_the_async_stream_resumes_the_same_way(api, async_client: AsyncMatterWave, sleeps) -> None:
+async def test_the_async_stream_resumes_the_same_way(
+    api, async_client: AsyncMatterWave, sleeps
+) -> None:
     route = api.post(f"/api/conversations/{CONV}/messages").mock(
         side_effect=[_sse(_adropping(HEAD)), _sse(TAIL)]
     )
@@ -557,7 +561,13 @@ def test_tree_active_leaf_fork_and_context(api, client: MatterWave) -> None:
     api.get(f"/api/conversations/{CONV}/context").mock(
         return_value=httpx.Response(
             200,
-            json={"model": "grt-nano", "context_window": 8192, "used_tokens": None, "compactable": True, "estimated": True},
+            json={
+                "model": "grt-nano",
+                "context_window": 8192,
+                "used_tokens": None,
+                "compactable": True,
+                "estimated": True,
+            },
         )
     )
 
@@ -683,7 +693,9 @@ def test_compact_with_nothing_to_fold_is_a_conflict(api, client: MatterWave) -> 
 
 def test_an_app_route_404_reads_the_detail(api, client: MatterWave) -> None:
     api.get(f"/api/conversations/{CONV}").mock(
-        return_value=httpx.Response(404, json={"detail": "No such conversation", "request_id": "r-1"})
+        return_value=httpx.Response(
+            404, json={"detail": "No such conversation", "request_id": "r-1"}
+        )
     )
     with pytest.raises(NotFoundError) as caught:
         client.conversations.get(CONV)
@@ -735,9 +747,7 @@ def test_delete_sends_delete_and_reads_the_status(api, client: MatterWave) -> No
 
 
 @pytest.mark.asyncio
-async def test_the_async_delete_reads_the_same_body(
-    api, async_client: AsyncMatterWave
-) -> None:
+async def test_the_async_delete_reads_the_same_body(api, async_client: AsyncMatterWave) -> None:
     api.delete(f"/api/conversations/{CONV}").mock(
         return_value=httpx.Response(200, json={"status": "deleted"})
     )
@@ -757,9 +767,7 @@ def test_pin_unpin_archive_and_unarchive_toggle_by_method(api, client: MatterWav
         return_value=httpx.Response(200, json=conversation())
     )
     archive = api.put(f"/api/conversations/{CONV}/archive").mock(
-        return_value=httpx.Response(
-            200, json=conversation(archived_at="2026-10-18T10:00:00+00:00")
-        )
+        return_value=httpx.Response(200, json=conversation(archived_at="2026-10-18T10:00:00+00:00"))
     )
     up = api.delete(f"/api/conversations/{CONV}/archive").mock(
         return_value=httpx.Response(200, json=conversation())
@@ -779,9 +787,7 @@ def test_pin_unpin_archive_and_unarchive_toggle_by_method(api, client: MatterWav
 
 
 @pytest.mark.asyncio
-async def test_the_async_pin_sends_the_same_verb(
-    api, async_client: AsyncMatterWave
-) -> None:
+async def test_the_async_pin_sends_the_same_verb(api, async_client: AsyncMatterWave) -> None:
     route = api.put(f"/api/conversations/{CONV}/pin").mock(
         return_value=httpx.Response(200, json=conversation(pinned_at="2026-10-18T10:00:00+00:00"))
     )
@@ -808,9 +814,7 @@ def test_a_pin_that_409s_for_a_temporary_conversation(api, client: MatterWave) -
     assert caught.value.message == "A temporary conversation is not kept, so it cannot be pinned."
 
 
-def test_a_fork_of_a_temporary_conversation_is_the_same_conflict(
-    api, client: MatterWave
-) -> None:
+def test_a_fork_of_a_temporary_conversation_is_the_same_conflict(api, client: MatterWave) -> None:
     api.post(f"/api/conversations/{CONV}/fork").mock(
         return_value=httpx.Response(
             409,
@@ -1038,7 +1042,8 @@ def test_a_context_frame_without_usage_keeps_the_counts_unknown() -> None:
 def test_done_carries_truncated_and_the_finish_reason() -> None:
     # A round cut by the token limit persists `truncated` with `finish_reason: "length"`.
     frame = f.frame_from_event(
-        "done", message("assistant", "Half a sen", "a9", "u9", truncated=True, finish_reason="length")
+        "done",
+        message("assistant", "Half a sen", "a9", "u9", truncated=True, finish_reason="length"),
     )
     assert isinstance(frame, f.DoneFrame)
     assert frame.message.truncated and frame.message.finish_reason == "length"
