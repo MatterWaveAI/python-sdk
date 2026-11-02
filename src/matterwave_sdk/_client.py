@@ -57,7 +57,7 @@ from ._account import (
     Sessions,
     Speech,
 )
-from ._base import EmbeddingInput, Message, Request, Tool, ToolChoice
+from ._base import EmbeddingInput, Message, MessageParam, Request, Tool, ToolChoice, ToolParam
 from ._connectors import AsyncConnections, AsyncPresets, Connections, Presets
 from ._mcp import AsyncMcp, Mcp
 from ._org import (
@@ -658,7 +658,7 @@ class Completions:
     @overload
     def create(
         self,
-        messages: Sequence[Message],
+        messages: Sequence[MessageParam],
         *,
         model: str | None = None,
         stream: Literal[False] = False,
@@ -672,7 +672,7 @@ class Completions:
         stop: str | Sequence[str] | None = None,
         n: int | None = None,
         user: str | None = None,
-        tools: Sequence[Tool] | None = None,
+        tools: Sequence[ToolParam] | None = None,
         tool_choice: ToolChoice | None = None,
         response_format: dict[str, Any] | None = None,
         conversation_id: str | None = None,
@@ -686,7 +686,7 @@ class Completions:
     @overload
     def create(
         self,
-        messages: Sequence[Message],
+        messages: Sequence[MessageParam],
         *,
         model: str | None = None,
         stream: Literal[True],
@@ -700,7 +700,7 @@ class Completions:
         stop: str | Sequence[str] | None = None,
         n: int | None = None,
         user: str | None = None,
-        tools: Sequence[Tool] | None = None,
+        tools: Sequence[ToolParam] | None = None,
         tool_choice: ToolChoice | None = None,
         response_format: dict[str, Any] | None = None,
         conversation_id: str | None = None,
@@ -713,7 +713,7 @@ class Completions:
 
     def create(
         self,
-        messages: Sequence[Message],
+        messages: Sequence[MessageParam],
         *,
         model: str | None = None,
         stream: bool = False,
@@ -727,7 +727,7 @@ class Completions:
         stop: str | Sequence[str] | None = None,
         n: int | None = None,
         user: str | None = None,
-        tools: Sequence[Tool] | None = None,
+        tools: Sequence[ToolParam] | None = None,
         tool_choice: ToolChoice | None = None,
         response_format: dict[str, Any] | None = None,
         conversation_id: str | None = None,
@@ -779,7 +779,7 @@ class Completions:
 
     def parse(
         self,
-        messages: Sequence[Message],
+        messages: Sequence[MessageParam],
         *,
         response_model: type[ModelT],
         timeout: float | None = None,
@@ -1623,7 +1623,7 @@ class AsyncCompletions:
     @overload
     async def create(
         self,
-        messages: Sequence[Message],
+        messages: Sequence[MessageParam],
         *,
         model: str | None = None,
         stream: Literal[False] = False,
@@ -1637,7 +1637,7 @@ class AsyncCompletions:
         stop: str | Sequence[str] | None = None,
         n: int | None = None,
         user: str | None = None,
-        tools: Sequence[Tool] | None = None,
+        tools: Sequence[ToolParam] | None = None,
         tool_choice: ToolChoice | None = None,
         response_format: dict[str, Any] | None = None,
         conversation_id: str | None = None,
@@ -1651,7 +1651,7 @@ class AsyncCompletions:
     @overload
     async def create(
         self,
-        messages: Sequence[Message],
+        messages: Sequence[MessageParam],
         *,
         model: str | None = None,
         stream: Literal[True],
@@ -1665,7 +1665,7 @@ class AsyncCompletions:
         stop: str | Sequence[str] | None = None,
         n: int | None = None,
         user: str | None = None,
-        tools: Sequence[Tool] | None = None,
+        tools: Sequence[ToolParam] | None = None,
         tool_choice: ToolChoice | None = None,
         response_format: dict[str, Any] | None = None,
         conversation_id: str | None = None,
@@ -1678,7 +1678,7 @@ class AsyncCompletions:
 
     async def create(
         self,
-        messages: Sequence[Message],
+        messages: Sequence[MessageParam],
         *,
         model: str | None = None,
         stream: bool = False,
@@ -1692,7 +1692,7 @@ class AsyncCompletions:
         stop: str | Sequence[str] | None = None,
         n: int | None = None,
         user: str | None = None,
-        tools: Sequence[Tool] | None = None,
+        tools: Sequence[ToolParam] | None = None,
         tool_choice: ToolChoice | None = None,
         response_format: dict[str, Any] | None = None,
         conversation_id: str | None = None,
@@ -1736,7 +1736,7 @@ class AsyncCompletions:
 
     async def parse(
         self,
-        messages: Sequence[Message],
+        messages: Sequence[MessageParam],
         *,
         response_model: type[ModelT],
         timeout: float | None = None,

@@ -13,7 +13,7 @@ successful call needs to be found in the server's logs.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -2390,6 +2390,63 @@ def vision_of(models: Sequence[Any] | None, model_id: str | None) -> VisionVerdi
         if supports is False:
             return "no"
         return "unknown"
+    return "unknown"
+
+
+# --- agent mode ----------------------------------------------------------------
+#
+# The two flags a client reads before offering its agent mode, whose tools run
+# on the user's machine: whether the model can call tools, and whether the org
+# lets clients run local agent tools. Each is tri-state, like `supports_vision`.
+
+ToolsVerdict = Literal["yes", "no", "unknown"]
+
+
+def tools_of(models: Sequence[Any] | None, model_id: str | None) -> ToolsVerdict:
+    """What the model list says about `model_id`'s tool calling, as `"yes"`,
+    `"no"` or `"unknown"`: `vision_of`'s rules for `supports_tools`.
+
+    `"no"` is the only refusing verdict, the one that greys out agent mode:
+    no model chosen, a model the list does not have, and `supports_tools`
+    missing or None are all `"unknown"`, since a bare llama.cpp or vLLM
+    build says nothing and its model may well call tools. `models` is
+    `app_models().data`, or the raw `/api/models` rows as dicts."""
+    if model_id is None or models is None:
+        return "unknown"
+    for entry in models:
+        if isinstance(entry, Mapping):
+            found = entry.get("id") == model_id
+            supports = entry.get("supports_tools")
+        else:
+            found = getattr(entry, "id", None) == model_id
+            supports = getattr(entry, "supports_tools", None)
+        if not found:
+            continue
+        if supports is True:
+            return "yes"
+        if supports is False:
+            return "no"
+        return "unknown"
+    return "unknown"
+
+
+def local_agent_tools_of(me: Any) -> ToolsVerdict:
+    """Whether the org lets clients run local agent tools, from `me()` (a
+    `Me`, or the raw `/api/me` body as a dict): `"no"` only when the server
+    says `local_agent_tools: false`, `"yes"` when it says true, and
+    `"unknown"` when it says nothing (an older server), which a client
+    treats as allowed."""
+    if me is None:
+        return "unknown"
+    value = (
+        me.get("local_agent_tools")
+        if isinstance(me, Mapping)
+        else getattr(me, "local_agent_tools", None)
+    )
+    if value is True:
+        return "yes"
+    if value is False:
+        return "no"
     return "unknown"
 
 

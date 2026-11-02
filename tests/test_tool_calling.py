@@ -21,7 +21,9 @@ from matterwave_sdk import (
     MatterWaveError,
     Me,
     ToolCall,
+    local_agent_tools_of,
     tool_message,
+    tools_of,
 )
 
 PROMPT = [{"role": "user", "content": "Read the README and the licence."}]
@@ -290,3 +292,43 @@ def test_final_completion_refuses_a_stream_cut_before_its_finish_reason(
     stream = client.chat.completions.create(messages=PROMPT, stream=True)
     with pytest.raises(MatterWaveError, match="without a finish reason"):
         stream.final_completion()
+
+
+ROWS = [
+    {"id": "grt", "supports_tools": True},
+    {"id": "old", "supports_tools": False},
+    {"id": "mum", "supports_tools": None},
+    {"id": "bare"},
+]
+
+
+def test_tools_of_reads_the_rows_like_vision_of() -> None:
+    assert [tools_of(ROWS, r["id"]) for r in ROWS] == ["yes", "no", "unknown", "unknown"]
+    assert tools_of(ROWS, "missing") == "unknown"
+    assert tools_of(ROWS, None) == "unknown"
+    assert tools_of(None, "grt") == "unknown"
+    models = [AppModel.from_dict({"id": r["id"], **r}) for r in ROWS]
+    assert [tools_of(models, m.id) for m in models] == ["yes", "no", "unknown", "unknown"]
+
+
+def test_local_agent_tools_of_says_no_only_when_the_org_does() -> None:
+    base = {"subject": "u-1", "kind": "key", "roles": [], "org_id": "o-1"}
+    assert local_agent_tools_of(Me.from_dict({**base, "local_agent_tools": False})) == "no"
+    assert local_agent_tools_of(Me.from_dict({**base, "local_agent_tools": True})) == "yes"
+    assert local_agent_tools_of(Me.from_dict(base)) == "unknown"
+    assert local_agent_tools_of({"local_agent_tools": False}) == "no"
+    assert local_agent_tools_of({}) == "unknown"
+    assert local_agent_tools_of(None) == "unknown"
+
+
+def test_plain_dicts_and_agent_tools_go_straight_to_create(api, client: MatterWave) -> None:
+    from matterwave_sdk import agent
+
+    api.post("/v1/chat/completions").mock(
+        return_value=httpx.Response(200, json=completion_body("ok"))
+    )
+    messages: list[dict[str, object]] = [{"role": "user", "content": "hi"}]
+    client.chat.completions.create(messages, tools=agent.tools_for_mode("plan"))
+    sent = json.loads(api.calls.last.request.content)
+    assert sent["messages"] == messages
+    assert [t["function"]["name"] for t in sent["tools"]] == list(agent.READ_ONLY_TOOLS)
