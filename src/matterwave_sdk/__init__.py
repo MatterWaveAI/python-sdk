@@ -33,7 +33,7 @@ for a person's token.
 share, with its path, edit, diff and approval helpers.
 """
 
-from . import agent, frames, webhooks
+from . import agent, frames, pi, webhooks
 from ._account import (
     Account,
     AsyncAccount,
@@ -639,6 +639,7 @@ __all__ = [
     "PersonAuth",
     "PersonSession",
     "PersonToken",
+    "pi",
     "Plan",
     "PlanCatalog",
     "PlanChange",
