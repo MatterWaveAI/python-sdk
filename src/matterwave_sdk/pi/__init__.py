@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Iterator, Mapping
 from typing import Any
 
 from .config import (
@@ -55,6 +55,11 @@ class PiResource:
         kwargs.setdefault("client", self._client)
         return PiRpcSession(**kwargs)
 
+    def stream_prompt(self, message: str, **kwargs: Any) -> Iterator[PiEvent]:
+        """Spawn a managed `PiRpcSession`, send `prompt(message)`, yield `PiEvent`s, and close."""
+        with self.create_rpc_session(**kwargs) as session:
+            yield from session.prompt(message)
+
 
 class AsyncPiResource:
     """Pi 1.0 (`pi --mode rpc`) configuration and async session helpers bound to `AsyncMatterWave`."""
@@ -94,6 +99,12 @@ class AsyncPiResource:
         """Create an `AsyncPiRpcSession` pre-configured with `client=self._client`."""
         kwargs.setdefault("client", self._client)
         return AsyncPiRpcSession(**kwargs)
+
+    async def stream_prompt(self, message: str, **kwargs: Any) -> AsyncIterator[PiEvent]:
+        """Spawn a managed `AsyncPiRpcSession`, send `prompt(message)`, yield `PiEvent`s, and close."""
+        async with self.create_rpc_session(**kwargs) as session:
+            async for event in session.prompt(message):
+                yield event
 
 
 __all__ = [

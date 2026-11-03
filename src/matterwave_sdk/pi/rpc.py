@@ -374,6 +374,80 @@ class PiRpcSession:
         data = resp.get("data")
         return dict(data) if isinstance(data, Mapping) else resp
 
+    def steer(
+        self,
+        message: str,
+        *,
+        images: Sequence[Any] | None = None,
+    ) -> dict[str, Any]:
+        """Send a `steer` command to interrupt or steer the agent mid-run."""
+        cmd: dict[str, Any] = {"type": "steer", "message": message}
+        if images is not None:
+            cmd["images"] = list(images)
+        if self._streaming:
+            req_id = self._next_id()
+            cmd["id"] = req_id
+            self._write_json(cmd)
+            return {
+                "id": req_id,
+                "type": "response",
+                "command": "steer",
+                "success": True,
+                "disposition": "queued",
+            }
+        resp = self.send_command(cmd)
+        data = resp.get("data")
+        return {**resp, **dict(data)} if isinstance(data, Mapping) else resp
+
+    def follow_up(
+        self,
+        message: str,
+        *,
+        images: Sequence[Any] | None = None,
+    ) -> dict[str, Any]:
+        """Queue a `follow_up` message after the current agent run finishes."""
+        cmd: dict[str, Any] = {"type": "follow_up", "message": message}
+        if images is not None:
+            cmd["images"] = list(images)
+        if self._streaming:
+            req_id = self._next_id()
+            cmd["id"] = req_id
+            self._write_json(cmd)
+            return {
+                "id": req_id,
+                "type": "response",
+                "command": "follow_up",
+                "success": True,
+                "disposition": "queued",
+            }
+        resp = self.send_command(cmd)
+        data = resp.get("data")
+        return {**resp, **dict(data)} if isinstance(data, Mapping) else resp
+
+    def new_session(self, parent_session: str | None = None) -> dict[str, Any]:
+        """Start a new session (`new_session`), optionally referencing a `parent_session`."""
+        cmd: dict[str, Any] = {"type": "new_session"}
+        if parent_session is not None:
+            cmd["parentSession"] = parent_session
+        resp = self.send_command(cmd)
+        data = resp.get("data")
+        return {**resp, **dict(data)} if isinstance(data, Mapping) else resp
+
+    def get_messages(self) -> dict[str, Any]:
+        """Retrieve all messages in the current session (`get_messages`)."""
+        resp = self.send_command({"type": "get_messages"})
+        data = resp.get("data")
+        return {**resp, **dict(data)} if isinstance(data, Mapping) else resp
+
+    def compact(self, custom_instructions: str | None = None) -> dict[str, Any]:
+        """Compact the session context (`compact`)."""
+        cmd: dict[str, Any] = {"type": "compact"}
+        if custom_instructions is not None:
+            cmd["customInstructions"] = custom_instructions
+        resp = self.send_command(cmd)
+        data = resp.get("data")
+        return {**resp, **dict(data)} if isinstance(data, Mapping) else resp
+
     def close(self) -> None:
         """Terminate the underlying Pi RPC subprocess and close its streams."""
         proc = self._proc
@@ -584,6 +658,80 @@ class AsyncPiRpcSession:
         resp = await self.send_command({"type": "get_state"})
         data = resp.get("data")
         return dict(data) if isinstance(data, Mapping) else resp
+
+    async def steer(
+        self,
+        message: str,
+        *,
+        images: Sequence[Any] | None = None,
+    ) -> dict[str, Any]:
+        """Send a `steer` command to interrupt or steer the agent mid-run."""
+        cmd: dict[str, Any] = {"type": "steer", "message": message}
+        if images is not None:
+            cmd["images"] = list(images)
+        if self._streaming:
+            req_id = self._next_id()
+            cmd["id"] = req_id
+            await self._write_json(cmd)
+            return {
+                "id": req_id,
+                "type": "response",
+                "command": "steer",
+                "success": True,
+                "disposition": "queued",
+            }
+        resp = await self.send_command(cmd)
+        data = resp.get("data")
+        return {**resp, **dict(data)} if isinstance(data, Mapping) else resp
+
+    async def follow_up(
+        self,
+        message: str,
+        *,
+        images: Sequence[Any] | None = None,
+    ) -> dict[str, Any]:
+        """Queue a `follow_up` message after the current agent run finishes."""
+        cmd: dict[str, Any] = {"type": "follow_up", "message": message}
+        if images is not None:
+            cmd["images"] = list(images)
+        if self._streaming:
+            req_id = self._next_id()
+            cmd["id"] = req_id
+            await self._write_json(cmd)
+            return {
+                "id": req_id,
+                "type": "response",
+                "command": "follow_up",
+                "success": True,
+                "disposition": "queued",
+            }
+        resp = await self.send_command(cmd)
+        data = resp.get("data")
+        return {**resp, **dict(data)} if isinstance(data, Mapping) else resp
+
+    async def new_session(self, parent_session: str | None = None) -> dict[str, Any]:
+        """Start a new session (`new_session`), optionally referencing a `parent_session`."""
+        cmd: dict[str, Any] = {"type": "new_session"}
+        if parent_session is not None:
+            cmd["parentSession"] = parent_session
+        resp = await self.send_command(cmd)
+        data = resp.get("data")
+        return {**resp, **dict(data)} if isinstance(data, Mapping) else resp
+
+    async def get_messages(self) -> dict[str, Any]:
+        """Retrieve all messages in the current session (`get_messages`)."""
+        resp = await self.send_command({"type": "get_messages"})
+        data = resp.get("data")
+        return {**resp, **dict(data)} if isinstance(data, Mapping) else resp
+
+    async def compact(self, custom_instructions: str | None = None) -> dict[str, Any]:
+        """Compact the session context (`compact`)."""
+        cmd: dict[str, Any] = {"type": "compact"}
+        if custom_instructions is not None:
+            cmd["customInstructions"] = custom_instructions
+        resp = await self.send_command(cmd)
+        data = resp.get("data")
+        return {**resp, **dict(data)} if isinstance(data, Mapping) else resp
 
     async def aclose(self) -> None:
         """Terminate the underlying Pi RPC subprocess and close its streams."""

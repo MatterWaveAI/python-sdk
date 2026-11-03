@@ -73,6 +73,56 @@ MOCK_PI_RPC_SCRIPT = textwrap.dedent(
                 "command": "abort",
                 "success": True,
             })
+        elif cmd_type == "steer":
+            send({
+                "id": cmd_id,
+                "type": "response",
+                "command": "steer",
+                "success": True,
+                "data": {"disposition": "steered", "message": cmd.get("message", "")},
+            })
+        elif cmd_type == "follow_up":
+            send({
+                "id": cmd_id,
+                "type": "response",
+                "command": "follow_up",
+                "success": True,
+                "data": {"disposition": "queued", "message": cmd.get("message", "")},
+            })
+        elif cmd_type == "new_session":
+            state["sessionId"] = "sess_mock_2"
+            state["messageCount"] = 0
+            send({
+                "id": cmd_id,
+                "type": "response",
+                "command": "new_session",
+                "success": True,
+                "data": {"cancelled": False, "parentSession": cmd.get("parentSession")},
+            })
+        elif cmd_type == "get_messages":
+            send({
+                "id": cmd_id,
+                "type": "response",
+                "command": "get_messages",
+                "success": True,
+                "data": {
+                    "messages": [
+                        {"role": "user", "content": "Hello"},
+                        {"role": "assistant", "content": "Hello world!"},
+                    ]
+                },
+            })
+        elif cmd_type == "compact":
+            send({
+                "id": cmd_id,
+                "type": "response",
+                "command": "compact",
+                "success": True,
+                "data": {
+                    "summary": "Compacted context",
+                    "customInstructions": cmd.get("customInstructions"),
+                },
+            })
         elif cmd_type == "prompt":
             msg = cmd.get("message", "")
             state["messageCount"] += 1
@@ -243,6 +293,26 @@ def test_sync_pi_rpc_session_prompt_state_model_and_abort(tmp_path: Path) -> Non
         assert abort_resp["command"] == "abort"
         assert abort_resp["success"] is True
 
+        steer_resp = session.steer("Focus on types")
+        assert steer_resp["disposition"] == "steered"
+        assert steer_resp["message"] == "Focus on types"
+
+        followup_resp = session.follow_up("Run pytest next")
+        assert followup_resp["disposition"] == "queued"
+        assert followup_resp["message"] == "Run pytest next"
+
+        msgs_resp = session.get_messages()
+        assert len(msgs_resp["messages"]) == 2
+
+        compact_resp = session.compact("Keep public API")
+        assert compact_resp["summary"] == "Compacted context"
+        assert compact_resp["customInstructions"] == "Keep public API"
+
+        new_sess_resp = session.new_session("sess_mock_1")
+        assert new_sess_resp["cancelled"] is False
+        assert new_sess_resp["parentSession"] == "sess_mock_1"
+        assert session.get_state()["sessionId"] == "sess_mock_2"
+
 
 def test_sync_pi_rpc_session_enforces_path_confinement_and_deny_list(tmp_path: Path) -> None:
     with PiRpcSession(command=_mock_command(), workspace_root=tmp_path) as session:
@@ -284,6 +354,23 @@ async def test_async_pi_rpc_session_prompt_state_model_and_abort(tmp_path: Path)
         abort_resp = await session.abort()
         assert abort_resp["command"] == "abort"
         assert abort_resp["success"] is True
+
+        steer_resp = await session.steer("Async steer")
+        assert steer_resp["disposition"] == "steered"
+
+        followup_resp = await session.follow_up("Async follow up")
+        assert followup_resp["disposition"] == "queued"
+
+        msgs_resp = await session.get_messages()
+        assert len(msgs_resp["messages"]) == 2
+
+        compact_resp = await session.compact("Async compact")
+        assert compact_resp["summary"] == "Compacted context"
+        assert compact_resp["customInstructions"] == "Async compact"
+
+        new_sess_resp = await session.new_session("sess_mock_1")
+        assert new_sess_resp["cancelled"] is False
+        assert new_sess_resp["parentSession"] == "sess_mock_1"
 
         with pytest.raises(PathRefused) as exc_info:
             _ = [e async for e in session.prompt("escape")]
@@ -330,6 +417,23 @@ def test_sync_client_pi_namespace(tmp_path: Path) -> None:
         assert session._env["MATTERWAVE_API_KEY"] == "mw_bound_sync_key"
         state = session.get_state()
         assert state["sessionId"] == "sess_mock_1"
+
+    streamed = list(
+        client.pi.stream_prompt(
+            "Stream from sync resource",
+            command=_mock_command(),
+            workspace_root=tmp_path,
+        )
+    )
+    assert [e.type for e in streamed] == [
+        "agent_start",
+        "message_update",
+        "tool_execution_start",
+        "tool_execution_end",
+        "message_update",
+        "agent_end",
+    ]
+    assert "".join(e.delta or "" for e in streamed) == "Hello world!"
     client.close()
 
 
@@ -372,4 +476,22 @@ async def test_async_client_pi_namespace(tmp_path: Path) -> None:
         assert session._env["MATTERWAVE_API_KEY"] == "mw_bound_async_key"
         state = await session.get_state()
         assert state["sessionId"] == "sess_mock_1"
+
+    streamed = [
+        e
+        async for e in client.pi.stream_prompt(
+            "Stream from async resource",
+            command=_mock_command(),
+            workspace_root=tmp_path,
+        )
+    ]
+    assert [e.type for e in streamed] == [
+        "agent_start",
+        "message_update",
+        "tool_execution_start",
+        "tool_execution_end",
+        "message_update",
+        "agent_end",
+    ]
+    assert "".join(e.delta or "" for e in streamed) == "Hello world!"
     await client.close()
