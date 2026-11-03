@@ -45,6 +45,7 @@ def test_ci_runs_every_local_check_on_every_python() -> None:
         "uv run mypy",
         "uv run pytest",
         "sh scripts/check-ticket-ids.sh",
+        "MATTERWAVE_SIBLING_SDK",
     ):
         assert check in CI, check
     assert re.search(r'python: \["3\.10", "3\.11", "3\.12", "3\.13"\]', CI)

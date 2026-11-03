@@ -362,9 +362,7 @@ class PiRpcSession:
 
     def set_model(self, provider: str, model_id: str) -> dict[str, Any]:
         """Switch the active provider and model in the Pi session."""
-        resp = self.send_command(
-            {"type": "set_model", "provider": provider, "modelId": model_id}
-        )
+        resp = self.send_command({"type": "set_model", "provider": provider, "modelId": model_id})
         data = resp.get("data")
         return dict(data) if isinstance(data, Mapping) else resp
 

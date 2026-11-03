@@ -58,12 +58,17 @@ jobs:
       - name: Check out the TypeScript SDK beside this repo
         env:
           BRANCH: ${{ github.head_ref || github.ref_name }}
+          BASE_BRANCH: ${{ github.base_ref || 'develop' }}
         run: |
           git clone --depth 1 --branch "$BRANCH" https://github.com/MatterWaveAI/typescript-sdk ../typescript-sdk \
+            || git clone --depth 1 --branch "$BASE_BRANCH" https://github.com/MatterWaveAI/typescript-sdk ../typescript-sdk \
+            || git clone --depth 1 --branch develop https://github.com/MatterWaveAI/typescript-sdk ../typescript-sdk \
             || git clone --depth 1 https://github.com/MatterWaveAI/typescript-sdk ../typescript-sdk
       - name: The TypeScript SDK's agent contract matches contract.json
         run: uv run python scripts/gen_agent_contract.py --check --ts-sdk ../typescript-sdk
       - run: uv run pytest
+        env:
+          MATTERWAVE_SIBLING_SDK: ../typescript-sdk
 
   # Every commit on the branch, not just the tip: a secret removed in a
   # later commit is still in the history anyone can clone.

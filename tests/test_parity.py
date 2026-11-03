@@ -27,7 +27,8 @@ from matterwave_sdk._client import ConversationStream, MatterWave, Stream
 REPO = Path(__file__).resolve().parent.parent
 SURFACE = REPO / "tests" / "surface.json"
 PARITY = REPO / "tests" / "parity.json"
-SIBLING = Path(os.environ.get("MATTERWAVE_SIBLING_SDK") or REPO.parent / "typescript-sdk")
+CONFIGURED = os.environ.get("MATTERWAVE_SIBLING_SDK")
+SIBLING = Path(CONFIGURED or REPO.parent / "typescript-sdk")
 
 
 def camel(name: str) -> str:
@@ -108,7 +109,7 @@ def test_every_difference_listed_is_still_a_difference() -> None:
 
 
 @pytest.mark.skipif(
-    not (SIBLING / "tests" / "surface.json").exists(),
+    not CONFIGURED and not (SIBLING / "tests" / "surface.json").exists(),
     reason="the TypeScript SDK's checkout is not beside this one",
 )
 def test_the_typescript_sdk_differs_only_where_listed() -> None:

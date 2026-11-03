@@ -4,7 +4,7 @@
     uv run python scripts/check_reference.py reference
 
 pdoc writes one page per public module (`matterwave_sdk.html`, and
-`matterwave_sdk/agent.html`, `frames.html`, `webhooks.html`) with an anchor per
+`matterwave_sdk/agent.html`, `frames.html`, `pi.html`, `webhooks.html`) with an anchor per
 documented member. Every name in a module's `__all__` (or, without one, every
 class and function it defines) must have its anchor on that module's page, so
 a symbol pdoc could not render, or a module the build skipped, fails here
@@ -24,6 +24,7 @@ MODULES = {
     "matterwave_sdk": "matterwave_sdk.html",
     "matterwave_sdk.agent": "matterwave_sdk/agent.html",
     "matterwave_sdk.frames": "matterwave_sdk/frames.html",
+    "matterwave_sdk.pi": "matterwave_sdk/pi.html",
     "matterwave_sdk.webhooks": "matterwave_sdk/webhooks.html",
 }
 

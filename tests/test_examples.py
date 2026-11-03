@@ -32,6 +32,7 @@ NAMES = (
     "webhook_receiver",
     "device_sign_in",
     "pagination",
+    "pi_rpc",
 )
 
 
@@ -229,3 +230,48 @@ def test_pagination(api, capsys) -> None:
     assert out[1:6] == [f"match: Invoice {i}" for i in range(5)]
     assert out[6] == "pinned: Tp1"
     assert api.routes[1].call_count == 1  # five hits needed no second search page
+
+
+def test_pi_rpc(api, client: MatterWave, capsys) -> None:
+    api.get("/v1/models").respond(
+        200,
+        json={
+            "object": "list",
+            "data": [
+                {"id": "grt-1", "object": "model", "created": 1700000000, "owned_by": "matterwave"},
+                {
+                    "id": "grt-1-mini",
+                    "object": "model",
+                    "created": 1700000000,
+                    "owned_by": "matterwave",
+                },
+            ],
+        },
+    )
+    script = (
+        "import json, sys\n"
+        "for raw in sys.stdin:\n"
+        "    cmd = json.loads(raw)\n"
+        "    if cmd['type'] == 'get_state':\n"
+        "        print(json.dumps({'id': cmd.get('id'), 'type': 'response', 'command': 'get_state', "
+        "'success': True, 'data': {'sessionId': 'sess_1', 'modelId': 'grt-1'}}), flush=True)\n"
+        "    elif cmd['type'] == 'prompt':\n"
+        "        print(json.dumps({'id': cmd.get('id'), 'type': 'response', 'command': 'prompt', "
+        "'success': True, 'data': {'disposition': 'started'}}), flush=True)\n"
+        "        print(json.dumps({'type': 'message_update', 'delta': 'Hello '}), flush=True)\n"
+        "        print(json.dumps({'type': 'message_update', 'delta': 'from Pi.'}), flush=True)\n"
+        "        print(json.dumps({'type': 'agent_end'}), flush=True)\n"
+    )
+    assert (
+        load("pi_rpc").run(
+            client,
+            "Summarize main.py",
+            command=[sys.executable, "-u", "-c", script],
+            preset_id="preset_1",
+            temporary=True,
+        )
+        == 0
+    )
+    assert capsys.readouterr().out == (
+        f"[provider: {BASE_URL}/v1 (2 models)]\nHello from Pi.\n[session sess_1: grt-1]\n"
+    )

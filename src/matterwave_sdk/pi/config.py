@@ -85,9 +85,7 @@ DEFAULT_PI_MODELS: tuple[PiModelConfig, ...] = (
     },
 )
 
-_DEFAULTS_BY_ID: dict[str, PiModelConfig] = {
-    m["id"]: m for m in DEFAULT_PI_MODELS if "id" in m
-}
+_DEFAULTS_BY_ID: dict[str, PiModelConfig] = {m["id"]: m for m in DEFAULT_PI_MODELS if "id" in m}
 
 
 def _extract_api_key(client_or_api_key: Any) -> str | None:
@@ -125,7 +123,11 @@ def _extract_api_key(client_or_api_key: Any) -> str | None:
 
 def _extract_base_url(client_or_api_key: Any, explicit_base_url: str | None) -> str:
     candidate = explicit_base_url
-    if candidate is None and not isinstance(client_or_api_key, str) and client_or_api_key is not None:
+    if (
+        candidate is None
+        and not isinstance(client_or_api_key, str)
+        and client_or_api_key is not None
+    ):
         direct_url = getattr(client_or_api_key, "base_url", None)
         if isinstance(direct_url, str) and direct_url.strip():
             candidate = direct_url.strip()
@@ -220,7 +222,8 @@ def _model_to_pi_config(item: Any) -> PiModelConfig | None:
         return base  # type: ignore[return-value]
 
     is_reasoning = any(
-        token in model_id.lower() for token in ("grt", "reason", "o1", "o3", "r1", "thinking", "code")
+        token in model_id.lower()
+        for token in ("grt", "reason", "o1", "o3", "r1", "thinking", "code")
     )
     return {
         "id": model_id,
