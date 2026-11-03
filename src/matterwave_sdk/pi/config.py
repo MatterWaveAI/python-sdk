@@ -283,3 +283,48 @@ def build_pi_provider_config(
         "headers": headers,
         "models": models,
     }
+
+
+async def async_build_pi_provider_config(
+    client: Any,
+    *,
+    preset_id: str | None = None,
+    temporary: bool = False,
+) -> dict[str, Any]:
+    """Asynchronously build a Pi 1.0 provider configuration dictionary from an `AsyncMatterWave` client."""
+    api_key = _extract_api_key(client) or f"${_base.API_KEY_ENV}"
+    base_url = _extract_base_url(client, None)
+    headers = _extract_default_headers(client)
+    if preset_id:
+        headers["X-MatterWave-Preset-Id"] = preset_id
+    if temporary:
+        headers["X-MatterWave-Temporary"] = "true"
+
+    models: list[PiModelConfig] = []
+    models_ns = getattr(client, "models", None)
+    list_fn = getattr(models_ns, "list", None) if models_ns is not None else None
+    if callable(list_fn):
+        try:
+            listed = list_fn()
+            if inspect.isawaitable(listed):
+                listed = await listed
+            items = getattr(listed, "data", listed)
+            for item in items:
+                converted = _model_to_pi_config(item)
+                if converted is not None:
+                    models.append(converted)
+        except Exception:
+            models = []
+
+    if not models:
+        models = [dict(m) for m in DEFAULT_PI_MODELS]  # type: ignore[misc]
+
+    return {
+        "name": "MatterWave",
+        "baseUrl": f"{base_url}{_base.API_PREFIX}",
+        "apiKey": api_key,
+        "api": "openai-completions",
+        "authHeader": True,
+        "headers": headers,
+        "models": models,
+    }

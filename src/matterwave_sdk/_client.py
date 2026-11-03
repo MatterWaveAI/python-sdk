@@ -57,7 +57,7 @@ from ._account import (
     Sessions,
     Speech,
 )
-from ._base import EmbeddingInput, Message, MessageParam, Request, Tool, ToolChoice, ToolParam
+from ._base import EmbeddingInput, MessageParam, Request, ToolChoice, ToolParam
 from ._connectors import AsyncConnections, AsyncPresets, Connections, Presets
 from ._mcp import AsyncMcp, Mcp
 from ._org import (
@@ -146,6 +146,7 @@ from .models import (
     SearchResults,
     UserInstructions,
 )
+from .pi import AsyncPiResource, PiResource
 
 USER_AGENT = _base.USER_AGENT
 
@@ -1445,6 +1446,12 @@ class MatterWave:
         self.sync = Sync(self)
         self.presets = Presets(self)
         self.connections = Connections(self)
+        self._pi = PiResource(self)
+
+    @property
+    def pi(self) -> PiResource:
+        """Pi 1.0 (`pi --mode rpc`) provider configuration and RPC session helpers."""
+        return self._pi
 
     @property
     def base_url(self) -> str:
@@ -1486,6 +1493,7 @@ class MatterWave:
         for name, value in vars(self).items():
             if not name.startswith("_"):
                 setattr(view, name, type(value)(view))
+        view._pi = PiResource(view)
         return view
 
     @property
@@ -2225,6 +2233,12 @@ class AsyncMatterWave:
         self.sync = AsyncSync(self)
         self.presets = AsyncPresets(self)
         self.connections = AsyncConnections(self)
+        self._pi = AsyncPiResource(self)
+
+    @property
+    def pi(self) -> AsyncPiResource:
+        """Pi 1.0 (`pi --mode rpc`) provider configuration and async RPC session helpers."""
+        return self._pi
 
     @property
     def base_url(self) -> str:
@@ -2257,6 +2271,7 @@ class AsyncMatterWave:
         for name, value in vars(self).items():
             if not name.startswith("_"):
                 setattr(view, name, type(value)(view))
+        view._pi = AsyncPiResource(view)
         return view
 
     @property

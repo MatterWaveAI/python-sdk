@@ -382,6 +382,7 @@ from .models import (
     tools_of,
     vision_of,
 )
+from .pi import AsyncPiResource, PiResource
 
 __all__ = [
     "__version__",
@@ -440,6 +441,7 @@ __all__ = [
     "AsyncPasskeys",
     "AsyncPersonAuth",
     "AsyncPersonSession",
+    "AsyncPiResource",
     "AsyncPlans",
     "AsyncPolicy",
     "AsyncPreferencesClient",
@@ -640,6 +642,7 @@ __all__ = [
     "PersonSession",
     "PersonToken",
     "pi",
+    "PiResource",
     "Plan",
     "PlanCatalog",
     "PlanChange",

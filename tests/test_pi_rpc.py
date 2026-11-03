@@ -12,9 +12,11 @@ import pytest
 from matterwave_sdk import AsyncMatterWave, MatterWave, MissingAPIKeyError, Model, ModelList, pi
 from matterwave_sdk.agent import PathRefused
 from matterwave_sdk.pi import (
+    AsyncPiResource,
     AsyncPiRpcSession,
     PiEvent,
     PiModelConfig,
+    PiResource,
     PiRpcSession,
     build_pi_env,
     build_pi_provider_config,
@@ -286,3 +288,88 @@ async def test_async_pi_rpc_session_prompt_state_model_and_abort(tmp_path: Path)
         with pytest.raises(PathRefused) as exc_info:
             _ = [e async for e in session.prompt("escape")]
         assert exc_info.value.reason == "parent"
+
+
+# --- client.pi resource namespace --------------------------------------------
+
+
+def test_sync_client_pi_namespace(tmp_path: Path) -> None:
+    client = MatterWave(
+        api_key="mw_bound_sync_key",
+        base_url="https://api.matterwave.test",
+        default_headers={"X-Bound": "sync"},
+    )
+    assert isinstance(client.pi, PiResource)
+    assert client.pi is client.pi
+
+    env = client.pi.build_env(
+        preset_id="preset_sync",
+        temporary=True,
+        extra_env={"EXTRA_KEY": "val"},
+    )
+    assert env["MATTERWAVE_API_KEY"] == "mw_bound_sync_key"
+    assert env["MATTERWAVE_BASE_URL"] == "https://api.matterwave.test"
+    assert env["MATTERWAVE_PRESET_ID"] == "preset_sync"
+    assert env["MATTERWAVE_TEMPORARY"] == "1"
+    assert env["EXTRA_KEY"] == "val"
+
+    client.models = MagicMock()  # type: ignore[misc]
+    client.models.list.return_value = ModelList(
+        data=[Model(id="grt-1", created=1700000000, owned_by="matterwave")]
+    )
+    cfg = client.pi.build_provider_config(preset_id="preset_sync", temporary=True)
+    assert cfg["baseUrl"] == "https://api.matterwave.test/v1"
+    assert cfg["apiKey"] == "mw_bound_sync_key"
+    assert cfg["headers"]["X-Bound"] == "sync"
+    assert cfg["headers"]["X-MatterWave-Preset-Id"] == "preset_sync"
+    assert cfg["headers"]["X-MatterWave-Temporary"] == "true"
+    assert [m["id"] for m in cfg["models"]] == ["grt-1"]
+
+    with client.pi.create_rpc_session(command=_mock_command(), workspace_root=tmp_path) as session:
+        assert isinstance(session, PiRpcSession)
+        assert session._env["MATTERWAVE_API_KEY"] == "mw_bound_sync_key"
+        state = session.get_state()
+        assert state["sessionId"] == "sess_mock_1"
+    client.close()
+
+
+@pytest.mark.asyncio
+async def test_async_client_pi_namespace(tmp_path: Path) -> None:
+    from unittest.mock import AsyncMock
+
+    client = AsyncMatterWave(
+        api_key="mw_bound_async_key",
+        base_url="https://async.matterwave.test",
+        default_headers={"X-Bound": "async"},
+    )
+    assert isinstance(client.pi, AsyncPiResource)
+    assert client.pi is client.pi
+
+    env = client.pi.build_env(preset_id="preset_async", temporary=False)
+    assert env["MATTERWAVE_API_KEY"] == "mw_bound_async_key"
+    assert env["MATTERWAVE_BASE_URL"] == "https://async.matterwave.test"
+    assert env["MATTERWAVE_PRESET_ID"] == "preset_async"
+    assert env["MATTERWAVE_TEMPORARY"] == "0"
+
+    client.models = MagicMock()  # type: ignore[misc]
+    client.models.list = AsyncMock(
+        return_value=ModelList(
+            data=[Model(id="grt-1-mini", created=1700000000, owned_by="matterwave")]
+        )
+    )
+    cfg = await client.pi.build_provider_config(preset_id="preset_async", temporary=True)
+    assert cfg["baseUrl"] == "https://async.matterwave.test/v1"
+    assert cfg["apiKey"] == "mw_bound_async_key"
+    assert cfg["headers"]["X-Bound"] == "async"
+    assert cfg["headers"]["X-MatterWave-Preset-Id"] == "preset_async"
+    assert cfg["headers"]["X-MatterWave-Temporary"] == "true"
+    assert [m["id"] for m in cfg["models"]] == ["grt-1-mini"]
+
+    async with client.pi.create_rpc_session(
+        command=_mock_command(), workspace_root=tmp_path
+    ) as session:
+        assert isinstance(session, AsyncPiRpcSession)
+        assert session._env["MATTERWAVE_API_KEY"] == "mw_bound_async_key"
+        state = await session.get_state()
+        assert state["sessionId"] == "sess_mock_1"
+    await client.close()

@@ -211,6 +211,7 @@
   "client.passkeys.startLogin",
   "client.passkeys.startRegistration",
   "client.passkeys.verifyRegistration",
+  "client.pi",
   "client.plans.list",
   "client.policy.stats",
   "client.preferences.get",
