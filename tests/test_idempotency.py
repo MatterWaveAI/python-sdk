@@ -122,6 +122,22 @@ def test_with_options_supplies_the_callers_key_on_every_attempt(
     assert [key_of(call) for call in route.calls] == ["job-42", "job-42"]
 
 
+def test_an_explicit_idempotency_key_lifts_the_write_retry_restriction(
+    api, client: MatterWave, sleeps
+) -> None:
+    route = api.post("/api/keys").mock(
+        side_effect=[
+            httpx.Response(502, json=error_body("bad gateway", "server_error", "upstream_error")),
+            httpx.ReadError("reset mid-reply"),
+            httpx.Response(201, json=KEY),
+        ]
+    )
+    created = client.with_options(idempotency_key="job-99").keys.create("ci")
+    assert created.id == "k-1"
+    assert [key_of(call) for call in route.calls] == ["job-99", "job-99", "job-99"]
+    assert len(sleeps) == 2
+
+
 def test_the_callers_key_is_for_writes_only(api, client: MatterWave) -> None:
     route = api.get("/api/me").mock(return_value=httpx.Response(200, json=ME))
     client.with_options(idempotency_key="job-42").me()

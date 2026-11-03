@@ -1449,10 +1449,13 @@ def should_retry(
     return code not in NON_RETRYABLE_429_CODES
 
 
-def retry_after_failure(exc: httpx.HTTPError, request: Request) -> bool:
+def retry_after_failure(
+    exc: httpx.HTTPError, request: Request, *, safe_to_repeat: bool | None = None
+) -> bool:
     """Whether a request whose send raised may go again: any request that is
     safe to repeat, and any other only when it never left the client."""
-    return request.safe_to_repeat or isinstance(exc, UNSENT_ERRORS)
+    repeatable = request.safe_to_repeat if safe_to_repeat is None else safe_to_repeat
+    return repeatable or isinstance(exc, UNSENT_ERRORS)
 
 
 def backoff_s(

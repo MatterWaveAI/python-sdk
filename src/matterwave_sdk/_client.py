@@ -230,6 +230,19 @@ class _Config:
             return None
         return self.idempotency_key or _base.new_idempotency_key()
 
+    def has_explicit_idempotency_key(self, request: Request) -> bool:
+        """Whether the caller supplied an explicit idempotency key for this
+        write (`with_options(idempotency_key=...)` or an `Idempotency-Key`
+        header), lifting the write retry restriction."""
+        if not request.is_write:
+            return False
+        if self.idempotency_key is not None:
+            return True
+        return any(
+            name.lower() == _base.IDEMPOTENCY_HEADER.lower()
+            for name in (*self.default_headers, *request.headers)
+        )
+
     def bearer(self, request: Request) -> str | None:
         """The credential a request carries: none for a public route (so a
         token callback is not asked for one it would not send), else the
@@ -1564,6 +1577,9 @@ class MatterWave:
         so one long call need not hold the whole client at its pace."""
         attempt_limit = self._config.max_retries if max_retries is None else max_retries
         idempotency_key = self._config.idempotency_key_for(request)
+        safe_to_repeat = request.safe_to_repeat or self._config.has_explicit_idempotency_key(
+            request
+        )
         attempt = 0
         bearer = self._config.bearer(request)
         while True:
@@ -1588,7 +1604,9 @@ class MatterWave:
                 )
             except httpx.HTTPError as exc:
                 _log.failure(request, exc, since)
-                if attempt >= attempt_limit or not _base.retry_after_failure(exc, request):
+                if attempt >= attempt_limit or not _base.retry_after_failure(
+                    exc, request, safe_to_repeat=safe_to_repeat
+                ):
                     raise _connection_error(exc, request) from exc
                 wait = _base.backoff_s(attempt, None)
                 _log.retry(request, wait, attempt)
@@ -1610,7 +1628,7 @@ class MatterWave:
             if (
                 attempt < attempt_limit
                 and delay <= self._config.max_retry_wait
-                and _base.should_retry(response, body, safe_to_repeat=request.safe_to_repeat)
+                and _base.should_retry(response, body, safe_to_repeat=safe_to_repeat)
             ):
                 response.close()
                 _log.retry(request, delay, attempt)
@@ -2326,6 +2344,9 @@ class AsyncMatterWave:
         call's own `timeout` and `max_retries` winning over the client's."""
         attempt_limit = self._config.max_retries if max_retries is None else max_retries
         idempotency_key = self._config.idempotency_key_for(request)
+        safe_to_repeat = request.safe_to_repeat or self._config.has_explicit_idempotency_key(
+            request
+        )
         attempt = 0
         bearer = await self._config.async_bearer(request)
         while True:
@@ -2350,7 +2371,9 @@ class AsyncMatterWave:
                 )
             except httpx.HTTPError as exc:
                 _log.failure(request, exc, since)
-                if attempt >= attempt_limit or not _base.retry_after_failure(exc, request):
+                if attempt >= attempt_limit or not _base.retry_after_failure(
+                    exc, request, safe_to_repeat=safe_to_repeat
+                ):
                     raise _connection_error(exc, request) from exc
                 wait = _base.backoff_s(attempt, None)
                 _log.retry(request, wait, attempt)
@@ -2372,7 +2395,7 @@ class AsyncMatterWave:
             if (
                 attempt < attempt_limit
                 and delay <= self._config.max_retry_wait
-                and _base.should_retry(response, body, safe_to_repeat=request.safe_to_repeat)
+                and _base.should_retry(response, body, safe_to_repeat=safe_to_repeat)
             ):
                 await response.aclose()
                 _log.retry(request, delay, attempt)

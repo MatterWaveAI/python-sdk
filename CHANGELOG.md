@@ -268,12 +268,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `account.delete` takes `confirm=` by keyword and has no default: the
   caller types the phrase `"delete my account"` every time.
   `org.close(confirm=...)` and `org.idps.attach(name=..., issuer=...,
-  client_id=..., client_secret=...)` take their arguments by keyword only.
-- A POST or PATCH is retried only after a 429 or a connection that was
-  never made. After a 5xx or a reply cut short the first copy may have taken
-  effect -- a message stored and billed, a key minted -- so the error is
-  raised instead. GET, PUT, DELETE and the read-only MCP calls retry as
-  before.
+  client_id=..., client_secret=...)` take their arguments by keyword only,
+  and `org.idps.attach` refuses a blank `name`, `client_id` or
+  `client_secret` before sending.
+- An unkeyed POST or PATCH is retried only after a 429 or a connection that
+  was never made; when the caller supplies an explicit `idempotency_key`
+  (`client.with_options(idempotency_key=...)` or an `Idempotency-Key`
+  header), the write retry restriction is lifted and 5xx responses and
+  dropped connections are retried with the same key. GET, PUT, DELETE and
+  the read-only MCP calls retry as before.
 - A bad base URL, a negative `max_retries` and the like raise
   `MatterWaveConfigError`, still a `ValueError`.
 - Every action in the workflows is pinned to a commit, and the workflow

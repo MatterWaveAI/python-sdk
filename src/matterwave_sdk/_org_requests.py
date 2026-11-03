@@ -267,7 +267,7 @@ def attach_idp_request(
         raise ValueError("issuer must be an https:// URL")
     if not client_id.strip():
         raise ValueError("client_id must not be blank")
-    if not client_secret:
+    if not client_secret.strip():
         raise ValueError("client_secret must not be blank")
     body: dict[str, Any] = {
         "kind": "oidc",

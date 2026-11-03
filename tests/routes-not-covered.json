@@ -1,6 +1,6 @@
 {
   "prefixes": {
-    "/api/v1/apps/": "The app platform: whether the SDKs cover it is an open scope decision.",
+    "/api/v1/apps/": "First-party web shell and app-container routes, driven by the browser session rather than the SDKs.",
     "/api/unsubscribe": "The email footer's one-click unsubscribe, keyed by the link's own token."
   },
   "routes": {
