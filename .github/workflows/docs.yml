@@ -5,8 +5,9 @@ name: docs
 
 on:
   push:
-    branches: ["**"]
+    branches: [develop, main]
   pull_request:
+    branches: [develop, main]
   workflow_dispatch:
 
 permissions:
@@ -16,8 +17,8 @@ jobs:
   reference:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           enable-cache: true
       - run: uv sync --frozen
@@ -25,7 +26,7 @@ jobs:
         run: uv run --with pdoc==15.0.4 pdoc -o reference matterwave_sdk
       - name: Every public name has its page
         run: uv run python scripts/check_reference.py reference
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: api-reference
           path: reference
