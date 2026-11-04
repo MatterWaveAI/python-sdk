@@ -37,6 +37,7 @@ import httpx
 
 from . import _base, _log
 from . import _org_requests as org_req
+from . import _platform_requests as platform_req
 from ._account import (
     Account,
     AsyncAccount,
@@ -72,6 +73,27 @@ from ._org import (
 )
 from ._org_models import DeviceDecision, DeviceLookup
 from ._pagination import async_items_of, async_pages_of, items_of, pages_of
+from ._platform_models import (
+    CheckpointList,
+    ConnectorCatalogList,
+    CredentialProxyResponse,
+    DecisionTrail,
+    EnforceClaimsResult,
+    GuardrailEvaluation,
+    HitlInteraction,
+    HitlInteractionList,
+    OAuthAuthenticator,
+    OidcConfig,
+    OidcSyncResult,
+    ReliabilityMetrics,
+    ReliabilitySloReport,
+    ReliabilityTrends,
+    ReplayRunResult,
+    ResumeRunResult,
+    TelemetryExecutionMetrics,
+    TelemetryStackStatus,
+    ToolPlan,
+)
 from ._resources import (
     Admin,
     Announcements,
@@ -1542,6 +1564,239 @@ class MatterWave:
             _base.parse_json_object(response), request_id=_base.request_id_of(response)
         )
 
+    def get_oidc_config(self) -> OidcConfig:
+        """`GET /api/v1/oidc/config`: the deployment's OIDC identity provider
+        configuration and connection status."""
+        response = self._send(platform_req.get_oidc_config_request())
+        return OidcConfig.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    def sync_agent_key_oidc(self, key_id: str) -> OidcSyncResult:
+        """`POST /api/v1/agent-keys/{key_id}/oidc-sync`: synchronize OIDC
+        client credentials and A2A permission claims for `key_id`."""
+        response = self._send(platform_req.sync_agent_key_oidc_request(key_id))
+        return OidcSyncResult.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    def enforce_oidc_claims(self, payload: Mapping[str, Any]) -> EnforceClaimsResult:
+        """`POST /api/v1/oidc/enforce-claims`: evaluate an agent key's A2A
+        permission envelope against a proposed run request."""
+        response = self._send(platform_req.enforce_oidc_claims_request(payload))
+        return EnforceClaimsResult.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    def list_connector_catalog(
+        self,
+        category: str | None = None,
+        q: str | None = None,
+    ) -> ConnectorCatalogList:
+        """`GET /api/v1/connectors/catalog`: list providers in the universal
+        connector catalog, optionally filtered by `category` or search `q`."""
+        response = self._send(platform_req.list_connector_catalog_request(category=category, q=q))
+        return ConnectorCatalogList.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    def register_oauth_authenticator(self, payload: Mapping[str, Any]) -> OAuthAuthenticator:
+        """`POST /api/v1/oauth/register`: register an OAuth authenticator for
+        a connector catalog provider."""
+        response = self._send(platform_req.register_oauth_authenticator_request(payload))
+        return OAuthAuthenticator.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    def proxy_oauth_request(
+        self,
+        credential_id: str,
+        endpoint: str,
+        method: str = "GET",
+        *,
+        params: Mapping[str, Any] | None = None,
+        headers: Mapping[str, str] | None = None,
+        body: Any = None,
+        dry_run: bool | None = None,
+    ) -> CredentialProxyResponse:
+        """`POST /api/v1/oauth/proxy/{credential_id}`: proxy an outbound API
+        request through the server-side credential broker."""
+        response = self._send(
+            platform_req.proxy_oauth_request_request(
+                credential_id,
+                endpoint,
+                method=method,
+                params=params,
+                headers=headers,
+                body=body,
+                dry_run=dry_run,
+            )
+        )
+        return CredentialProxyResponse.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    def get_run_decision_trail(self, run_id: str) -> DecisionTrail:
+        """`GET /api/v1/runs/{run_id}/decision-trail`: retrieve the execution
+        decision graph and statistics for `run_id`."""
+        response = self._send(platform_req.get_run_decision_trail_request(run_id))
+        return DecisionTrail.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    def replay_run(
+        self,
+        run_id: str,
+        mode: str = "simulated",
+        overrides: Mapping[str, Any] | None = None,
+        *,
+        from_step_id: str | None = None,
+    ) -> ReplayRunResult:
+        """`POST /api/v1/runs/{run_id}/replay`: replay a run in `simulated`,
+        `strict`, or `counterfactual` mode and compare outcomes."""
+        response = self._send(
+            platform_req.replay_run_request(
+                run_id, mode=mode, overrides=overrides, from_step_id=from_step_id
+            )
+        )
+        return ReplayRunResult.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    def list_run_checkpoints(self, run_id: str) -> CheckpointList:
+        """`GET /api/v1/runs/{run_id}/checkpoints`: list persisted checkpoints
+        for `run_id`."""
+        response = self._send(platform_req.list_run_checkpoints_request(run_id))
+        return CheckpointList.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    def resume_run(
+        self,
+        run_id: str,
+        checkpoint_id: str | None = None,
+        *,
+        state_overrides: Mapping[str, Any] | None = None,
+    ) -> ResumeRunResult:
+        """`POST /api/v1/runs/{run_id}/resume`: resume a run from
+        `checkpoint_id` (or its latest checkpoint when omitted)."""
+        response = self._send(
+            platform_req.resume_run_request(run_id, checkpoint_id, state_overrides=state_overrides)
+        )
+        return ResumeRunResult.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    def get_reliability_metrics(self, agent_id: str | None = None) -> ReliabilityMetrics:
+        """`GET /api/v1/reliability/metrics`: retrieve aggregate reliability
+        metrics for the organisation or `agent_id`."""
+        response = self._send(platform_req.get_reliability_metrics_request(agent_id=agent_id))
+        return ReliabilityMetrics.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    def get_reliability_slo(self) -> ReliabilitySloReport:
+        """`GET /api/v1/reliability/slo`: retrieve the service-level objective
+        compliance report."""
+        response = self._send(platform_req.get_reliability_slo_request())
+        return ReliabilitySloReport.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    def get_reliability_trends(self) -> ReliabilityTrends:
+        """`GET /api/v1/reliability/trends`: retrieve historical reliability
+        trend buckets and detected anomalies."""
+        response = self._send(platform_req.get_reliability_trends_request())
+        return ReliabilityTrends.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    def get_telemetry_status(self) -> TelemetryStackStatus:
+        """`GET /api/v1/telemetry/status`: retrieve the status of the platform
+        telemetry and observability stack."""
+        response = self._send(platform_req.get_telemetry_status_request())
+        return TelemetryStackStatus.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    def get_execution_telemetry(self, execution_id: str) -> TelemetryExecutionMetrics:
+        """`GET /api/v1/telemetry/executions/{execution_id}/metrics`: retrieve
+        per-step telemetry metrics for `execution_id`."""
+        response = self._send(platform_req.get_execution_telemetry_request(execution_id))
+        return TelemetryExecutionMetrics.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    def list_hitl_interactions(self, *, status: str | None = None) -> HitlInteractionList:
+        """`GET /api/v1/hitl/interactions`: list human-in-the-loop interaction
+        requests, optionally filtered by `status`."""
+        response = self._send(platform_req.list_hitl_interactions_request(status=status))
+        return HitlInteractionList.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    def respond_hitl_interaction(
+        self,
+        interaction_id: str,
+        decision: str,
+        *,
+        response_data: Mapping[str, Any] | None = None,
+        responded_by: str | None = None,
+    ) -> HitlInteraction:
+        """`POST /api/v1/hitl/interactions/{interaction_id}/respond`: submit a
+        decision (`approved`, `rejected`, or `modified`) for a HITL interaction."""
+        response = self._send(
+            platform_req.respond_hitl_interaction_request(
+                interaction_id,
+                decision,
+                response_data=response_data,
+                responded_by=responded_by,
+            )
+        )
+        return HitlInteraction.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    def evaluate_guardrails(
+        self,
+        rail_type: str,
+        content: str,
+        *,
+        tool_name: str | None = None,
+        tool_args: Mapping[str, Any] | None = None,
+        policies: Sequence[str] | None = None,
+    ) -> GuardrailEvaluation:
+        """`POST /api/v1/guardrails/evaluate`: evaluate content or tool calls
+        against `input`, `dialog`, `retrieval`, `execution`, or `output` rails."""
+        response = self._send(
+            platform_req.evaluate_guardrails_request(
+                rail_type,
+                content,
+                tool_name=tool_name,
+                tool_args=tool_args,
+                policies=policies,
+            )
+        )
+        return GuardrailEvaluation.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    def plan_tools(
+        self,
+        goal: str,
+        available_tools: Sequence[str] | None = None,
+        *,
+        constraints: Mapping[str, Any] | None = None,
+    ) -> ToolPlan:
+        """`POST /api/v1/tools/plan`: generate a dependency-ordered tool
+        execution plan for `goal`."""
+        response = self._send(
+            platform_req.plan_tools_request(goal, available_tools, constraints=constraints)
+        )
+        return ToolPlan.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
     def close(self) -> None:
         """Close the client's own connections and refuse anything further:
         a request sent after close raises `MatterWaveError`, and an
@@ -2312,6 +2567,203 @@ class AsyncMatterWave:
     async def app_models(self) -> AppModelList:
         response = await self._send(_base.app_models_request())
         return AppModelList.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    async def get_oidc_config(self) -> OidcConfig:
+        response = await self._send(platform_req.get_oidc_config_request())
+        return OidcConfig.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    async def sync_agent_key_oidc(self, key_id: str) -> OidcSyncResult:
+        response = await self._send(platform_req.sync_agent_key_oidc_request(key_id))
+        return OidcSyncResult.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    async def enforce_oidc_claims(self, payload: Mapping[str, Any]) -> EnforceClaimsResult:
+        response = await self._send(platform_req.enforce_oidc_claims_request(payload))
+        return EnforceClaimsResult.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    async def list_connector_catalog(
+        self,
+        category: str | None = None,
+        q: str | None = None,
+    ) -> ConnectorCatalogList:
+        response = await self._send(
+            platform_req.list_connector_catalog_request(category=category, q=q)
+        )
+        return ConnectorCatalogList.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    async def register_oauth_authenticator(self, payload: Mapping[str, Any]) -> OAuthAuthenticator:
+        response = await self._send(platform_req.register_oauth_authenticator_request(payload))
+        return OAuthAuthenticator.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    async def proxy_oauth_request(
+        self,
+        credential_id: str,
+        endpoint: str,
+        method: str = "GET",
+        *,
+        params: Mapping[str, Any] | None = None,
+        headers: Mapping[str, str] | None = None,
+        body: Any = None,
+        dry_run: bool | None = None,
+    ) -> CredentialProxyResponse:
+        response = await self._send(
+            platform_req.proxy_oauth_request_request(
+                credential_id,
+                endpoint,
+                method=method,
+                params=params,
+                headers=headers,
+                body=body,
+                dry_run=dry_run,
+            )
+        )
+        return CredentialProxyResponse.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    async def get_run_decision_trail(self, run_id: str) -> DecisionTrail:
+        response = await self._send(platform_req.get_run_decision_trail_request(run_id))
+        return DecisionTrail.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    async def replay_run(
+        self,
+        run_id: str,
+        mode: str = "simulated",
+        overrides: Mapping[str, Any] | None = None,
+        *,
+        from_step_id: str | None = None,
+    ) -> ReplayRunResult:
+        response = await self._send(
+            platform_req.replay_run_request(
+                run_id, mode=mode, overrides=overrides, from_step_id=from_step_id
+            )
+        )
+        return ReplayRunResult.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    async def list_run_checkpoints(self, run_id: str) -> CheckpointList:
+        response = await self._send(platform_req.list_run_checkpoints_request(run_id))
+        return CheckpointList.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    async def resume_run(
+        self,
+        run_id: str,
+        checkpoint_id: str | None = None,
+        *,
+        state_overrides: Mapping[str, Any] | None = None,
+    ) -> ResumeRunResult:
+        response = await self._send(
+            platform_req.resume_run_request(run_id, checkpoint_id, state_overrides=state_overrides)
+        )
+        return ResumeRunResult.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    async def get_reliability_metrics(self, agent_id: str | None = None) -> ReliabilityMetrics:
+        response = await self._send(platform_req.get_reliability_metrics_request(agent_id=agent_id))
+        return ReliabilityMetrics.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    async def get_reliability_slo(self) -> ReliabilitySloReport:
+        response = await self._send(platform_req.get_reliability_slo_request())
+        return ReliabilitySloReport.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    async def get_reliability_trends(self) -> ReliabilityTrends:
+        response = await self._send(platform_req.get_reliability_trends_request())
+        return ReliabilityTrends.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    async def get_telemetry_status(self) -> TelemetryStackStatus:
+        response = await self._send(platform_req.get_telemetry_status_request())
+        return TelemetryStackStatus.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    async def get_execution_telemetry(self, execution_id: str) -> TelemetryExecutionMetrics:
+        response = await self._send(platform_req.get_execution_telemetry_request(execution_id))
+        return TelemetryExecutionMetrics.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    async def list_hitl_interactions(self, *, status: str | None = None) -> HitlInteractionList:
+        response = await self._send(platform_req.list_hitl_interactions_request(status=status))
+        return HitlInteractionList.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    async def respond_hitl_interaction(
+        self,
+        interaction_id: str,
+        decision: str,
+        *,
+        response_data: Mapping[str, Any] | None = None,
+        responded_by: str | None = None,
+    ) -> HitlInteraction:
+        response = await self._send(
+            platform_req.respond_hitl_interaction_request(
+                interaction_id,
+                decision,
+                response_data=response_data,
+                responded_by=responded_by,
+            )
+        )
+        return HitlInteraction.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    async def evaluate_guardrails(
+        self,
+        rail_type: str,
+        content: str,
+        *,
+        tool_name: str | None = None,
+        tool_args: Mapping[str, Any] | None = None,
+        policies: Sequence[str] | None = None,
+    ) -> GuardrailEvaluation:
+        response = await self._send(
+            platform_req.evaluate_guardrails_request(
+                rail_type,
+                content,
+                tool_name=tool_name,
+                tool_args=tool_args,
+                policies=policies,
+            )
+        )
+        return GuardrailEvaluation.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    async def plan_tools(
+        self,
+        goal: str,
+        available_tools: Sequence[str] | None = None,
+        *,
+        constraints: Mapping[str, Any] | None = None,
+    ) -> ToolPlan:
+        response = await self._send(
+            platform_req.plan_tools_request(goal, available_tools, constraints=constraints)
+        )
+        return ToolPlan.from_dict(
             _base.parse_json_object(response), request_id=_base.request_id_of(response)
         )
 
