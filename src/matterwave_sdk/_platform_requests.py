@@ -24,6 +24,9 @@ TELEMETRY_EXECUTIONS_PATH = "/api/v1/telemetry/executions"
 HITL_INTERACTIONS_PATH = "/api/v1/hitl/interactions"
 GUARDRAILS_EVALUATE_PATH = "/api/v1/guardrails/evaluate"
 TOOLS_PLAN_PATH = "/api/v1/tools/plan"
+RERANK_PATH = "/v1/rerank"
+AUDIO_SPEECH_PATH = "/v1/audio/speech"
+GRT_SUITE_PATH = "/api/v1/models/grt-suite"
 
 
 def _get(path: str, params: Mapping[str, str] | None = None) -> Request:
@@ -227,3 +230,53 @@ def plan_tools_request(
     if constraints is not None:
         payload["constraints"] = dict(constraints)
     return _post(TOOLS_PLAN_PATH, payload)
+
+
+def rerank_request(
+    query: str,
+    documents: Sequence[str],
+    *,
+    model: str = "MatterWaveAI/grt-30m-reranker",
+    top_n: int | None = None,
+    return_documents: bool = True,
+) -> Request:
+    cleaned_query = _required("query", query)
+    cleaned_model = _required("model", model)
+    docs_list = list(documents)
+    if not docs_list:
+        raise ValueError("documents must not be empty")
+    payload: dict[str, Any] = {
+        "model": cleaned_model,
+        "query": cleaned_query,
+        "documents": docs_list,
+        "return_documents": return_documents,
+    }
+    if top_n is not None:
+        payload["top_n"] = top_n
+    return _post(RERANK_PATH, payload)
+
+
+def synthesize_speech_request(
+    input: str,
+    *,
+    model: str = "MatterWaveAI/grt-30m-tts",
+    voice: str = "aurora",
+    response_format: str = "json",
+    speed: float = 1.0,
+) -> Request:
+    cleaned_input = _required("input", input)
+    cleaned_model = _required("model", model)
+    cleaned_voice = _required("voice", voice)
+    cleaned_format = _required("response_format", response_format)
+    payload: dict[str, Any] = {
+        "model": cleaned_model,
+        "input": cleaned_input,
+        "voice": cleaned_voice,
+        "response_format": cleaned_format,
+        "speed": speed,
+    }
+    return _post(AUDIO_SPEECH_PATH, payload)
+
+
+def get_grt_suite_request() -> Request:
+    return _get(GRT_SUITE_PATH)

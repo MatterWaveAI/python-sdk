@@ -514,3 +514,248 @@ class ToolPlan(Wire):
     total_estimated_time_ms: int
     confidence: float
     request_id: str | None = field(default=None, compare=False)
+
+
+GRT_WHITEPAPER_SHA256 = (
+    "79219257df919cc598a75f7ae0968988ed0d33ffc1777469f9a9da39a558819d"
+)
+
+
+@dataclass(frozen=True)
+class GrtHfModelSpec(Wire):
+    """Metadata and SHA256 verification digests for one official
+    `MatterWaveAI/grt-30m*` HuggingFace model."""
+
+    id: str
+    alias: str
+    name: str
+    hf_repo_id: str
+    hf_url: str
+    path: str
+    architecture: str
+    model_type: str
+    pipeline_tag: str
+    input: list[str]
+    reasoning: bool
+    vocab_size: int
+    hidden_size: int
+    context_window: int
+    weight_sha256: str | None
+    config_sha256: str
+    whitepaper_sha256: str = GRT_WHITEPAPER_SHA256
+
+    def __getitem__(self, key: str) -> Any:
+        return getattr(self, key)
+
+
+GRT_HF_MODELS: tuple[GrtHfModelSpec, ...] = (
+    GrtHfModelSpec(
+        id="MatterWaveAI/grt-30m",
+        alias="grt-30m",
+        name="MatterWave GRT-30M (Base Causal LM)",
+        hf_repo_id="MatterWaveAI/grt-30m",
+        hf_url="https://huggingface.co/MatterWaveAI/grt-30m",
+        path="release/30m",
+        architecture="GRTForCausalLM",
+        model_type="grt",
+        pipeline_tag="text-generation",
+        input=["text"],
+        reasoning=False,
+        vocab_size=151669,
+        hidden_size=256,
+        context_window=2048,
+        weight_sha256="205f76f3ed59fee0ed54bb8133ea1b1a64527994c68776066057b4707f1b2456",
+        config_sha256="5ffa4facb3cfba2b39512bbc54c7b7ecda637c70f40fd18ede13396cd8e5a86b",
+    ),
+    GrtHfModelSpec(
+        id="MatterWaveAI/grt-30m-chat",
+        alias="grt-30m-chat",
+        name="MatterWave GRT-30M Chat (Instruction & Tool Tuned)",
+        hf_repo_id="MatterWaveAI/grt-30m-chat",
+        hf_url="https://huggingface.co/MatterWaveAI/grt-30m-chat",
+        path="release/30m-chat",
+        architecture="GRTForCausalLM",
+        model_type="grt",
+        pipeline_tag="text-generation",
+        input=["text"],
+        reasoning=False,
+        vocab_size=151669,
+        hidden_size=256,
+        context_window=2048,
+        weight_sha256="ee613803cb7b2c618def7e6c79476e1aab4e887cc08e234204b6bad12ad772bc",
+        config_sha256="c2b264a05e11914a8e41c1610f3c81e15d38151c459a1c66caaaa0381d804685",
+    ),
+    GrtHfModelSpec(
+        id="MatterWaveAI/grt-30m-mor",
+        alias="grt-30m-mor",
+        name="MatterWave GRT-30M MoR (Mixture-of-Recursions)",
+        hf_repo_id="MatterWaveAI/grt-30m-mor",
+        hf_url="https://huggingface.co/MatterWaveAI/grt-30m-mor",
+        path="release/30m-mor",
+        architecture="GRTForCausalLM",
+        model_type="grt",
+        pipeline_tag="text-generation",
+        input=["text"],
+        reasoning=True,
+        vocab_size=151669,
+        hidden_size=256,
+        context_window=2048,
+        weight_sha256="5633a578073e808d18fe3e52fb0fbf0005dc015b6bb10a1bff339f5d83225a07",
+        config_sha256="bf652df2d4107c7e7ef3c23d0854436aedb0030f0821f97939ed6ed858254013",
+    ),
+    GrtHfModelSpec(
+        id="MatterWaveAI/grt-30m-embedding",
+        alias="grt-30m-embedding",
+        name="MatterWave GRT-30M Embedding (Dense Vector Encoder)",
+        hf_repo_id="MatterWaveAI/grt-30m-embedding",
+        hf_url="https://huggingface.co/MatterWaveAI/grt-30m-embedding",
+        path="release/30m-embedding",
+        architecture="GRTModel",
+        model_type="grt",
+        pipeline_tag="feature-extraction",
+        input=["text"],
+        reasoning=False,
+        vocab_size=151669,
+        hidden_size=256,
+        context_window=2048,
+        weight_sha256="5cdab387c5e2ee9bb3907acaccfccfaa7cc10060c21e3f265ce981a4a7d38226",
+        config_sha256="c987cec1b71deba4a1749a939032309921872ae2a6c21378f8160edb29b210df",
+    ),
+    GrtHfModelSpec(
+        id="MatterWaveAI/grt-30m-reranker",
+        alias="grt-30m-reranker",
+        name="MatterWave GRT-30M Reranker (Cross-Encoder Reranking)",
+        hf_repo_id="MatterWaveAI/grt-30m-reranker",
+        hf_url="https://huggingface.co/MatterWaveAI/grt-30m-reranker",
+        path="release/30m-reranker",
+        architecture="GRTForSequenceClassification",
+        model_type="grt",
+        pipeline_tag="text-classification",
+        input=["text"],
+        reasoning=False,
+        vocab_size=151669,
+        hidden_size=256,
+        context_window=2048,
+        weight_sha256="6d090decc4426a1c21a372c1bd718a6b80626e2c7b460c9ab79b713d84320ef9",
+        config_sha256="6f401b7ed6af93ed7fc93eedc6de44ad67f2f19ecdc5b3c96dcc92ee564750fc",
+    ),
+    GrtHfModelSpec(
+        id="MatterWaveAI/grt-30m-vl",
+        alias="grt-30m-vl",
+        name="MatterWave GRT-30M Vision-Language (Multimodal VL)",
+        hf_repo_id="MatterWaveAI/grt-30m-vl",
+        hf_url="https://huggingface.co/MatterWaveAI/grt-30m-vl",
+        path="release/30m-vl",
+        architecture="GRTVLForConditionalGeneration",
+        model_type="grt_vl",
+        pipeline_tag="image-text-to-text",
+        input=["text", "image"],
+        reasoning=False,
+        vocab_size=151669,
+        hidden_size=256,
+        context_window=2048,
+        weight_sha256="b21667c9d39c67513671af4fe4480551f26ac738b23821902fd78ae55a4f1dfe",
+        config_sha256="0fd2f34d415723412d54055ecb174bcbb60cccaf43235af52b6c13826e6bb859",
+    ),
+    GrtHfModelSpec(
+        id="MatterWaveAI/grt-30m-tts",
+        alias="grt-30m-tts",
+        name="MatterWave GRT-30M TTS (Neural Speech Synthesis)",
+        hf_repo_id="MatterWaveAI/grt-30m-tts",
+        hf_url="https://huggingface.co/MatterWaveAI/grt-30m-tts",
+        path="release/30m-tts",
+        architecture="GRTTTSForConditionalGeneration",
+        model_type="grt_tts",
+        pipeline_tag="text-to-speech",
+        input=["text"],
+        reasoning=False,
+        vocab_size=151669,
+        hidden_size=256,
+        context_window=2048,
+        weight_sha256="9df117cf2d9fdd14a972495293628bfea4ab503ee4fbcb270ffb667763e314f4",
+        config_sha256="74dca6d26f2726ae96033446d5d418a152aef8368a8e49aa49bb15f6364ca75a",
+    ),
+    GrtHfModelSpec(
+        id="MatterWaveAI/grt-30m-omni",
+        alias="grt-30m-omni",
+        name="MatterWave GRT-30M Omni (Any-to-Any Multimodal)",
+        hf_repo_id="MatterWaveAI/grt-30m-omni",
+        hf_url="https://huggingface.co/MatterWaveAI/grt-30m-omni",
+        path="release/30m-omni",
+        architecture="GRTOmniForConditionalGeneration",
+        model_type="grt_omni",
+        pipeline_tag="any-to-any",
+        input=["text", "image"],
+        reasoning=True,
+        vocab_size=151669,
+        hidden_size=256,
+        context_window=2048,
+        weight_sha256="b314996ce883a0c875de18da67f5d23103c507c79b7421b8b8c52cef95d2fbf7",
+        config_sha256="5bc88f708534280522872f046e89deade537f286a78bc261c1e039d03fa6d0cf",
+    ),
+    GrtHfModelSpec(
+        id="MatterWaveAI/grt-30m-tokenizer",
+        alias="grt-30m-tokenizer",
+        name="MatterWave GRT-30M Tokenizer (151,669-Token Vocabulary)",
+        hf_repo_id="MatterWaveAI/grt-30m-tokenizer",
+        hf_url="https://huggingface.co/MatterWaveAI/grt-30m-tokenizer",
+        path="release/30m-tokenizer",
+        architecture="GRTTokenizer",
+        model_type="grt",
+        pipeline_tag="feature-extraction",
+        input=["text"],
+        reasoning=False,
+        vocab_size=151669,
+        hidden_size=256,
+        context_window=2048,
+        weight_sha256=None,
+        config_sha256="4c7ed24fcbaf5b1c62ec160296e682eb7b700ea19d88f0a8e01e363b125d505f",
+    ),
+)
+
+
+@dataclass(frozen=True)
+class RerankResult(Wire):
+    """One ranked document from `POST /v1/rerank`."""
+
+    index: int
+    relevance_score: float
+    document: dict[str, Any] | str | None = None
+
+
+@dataclass(frozen=True)
+class RerankResponse(Wire):
+    """`POST /v1/rerank`: cross-encoder document reranking response."""
+
+    model: str
+    results: list[RerankResult]
+    id: str | None = None
+    usage: dict[str, int] | None = None
+    request_id: str | None = field(default=None, compare=False)
+
+
+@dataclass(frozen=True)
+class SpeechSynthesisResponse(Wire):
+    """`POST /v1/audio/speech`: neural speech synthesis response from `MatterWaveAI/grt-30m-tts`."""
+
+    model: str
+    voice: str
+    format: str
+    sample_rate: int
+    audio_base64: str
+    id: str | None = None
+    duration_ms: int | None = None
+    phoneme_tokens: list[int] | None = None
+    request_id: str | None = field(default=None, compare=False)
+
+
+@dataclass(frozen=True)
+class GrtSuiteManifest(Wire):
+    """`GET /api/v1/models/grt-suite`: the 9-model `MatterWaveAI/grt-30m*` suite manifest."""
+
+    models: list[dict[str, Any]]
+    suite: str = "grt-30m"
+    organization: str = "MatterWaveAI"
+    whitepaper_sha256: str = GRT_WHITEPAPER_SHA256
+    total: int = 9
+    request_id: str | None = field(default=None, compare=False)

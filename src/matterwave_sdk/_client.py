@@ -79,6 +79,7 @@ from ._platform_models import (
     CredentialProxyResponse,
     DecisionTrail,
     EnforceClaimsResult,
+    GrtSuiteManifest,
     GuardrailEvaluation,
     HitlInteraction,
     HitlInteractionList,
@@ -89,7 +90,9 @@ from ._platform_models import (
     ReliabilitySloReport,
     ReliabilityTrends,
     ReplayRunResult,
+    RerankResponse,
     ResumeRunResult,
+    SpeechSynthesisResponse,
     TelemetryExecutionMetrics,
     TelemetryStackStatus,
     ToolPlan,
@@ -1797,6 +1800,62 @@ class MatterWave:
             _base.parse_json_object(response), request_id=_base.request_id_of(response)
         )
 
+    def rerank(
+        self,
+        query: str,
+        documents: Sequence[str],
+        *,
+        model: str = "MatterWaveAI/grt-30m-reranker",
+        top_n: int | None = None,
+        return_documents: bool = True,
+    ) -> RerankResponse:
+        """`POST /v1/rerank`: score and order candidate `documents` against
+        `query` using `MatterWaveAI/grt-30m-reranker`."""
+        response = self._send(
+            platform_req.rerank_request(
+                query,
+                documents,
+                model=model,
+                top_n=top_n,
+                return_documents=return_documents,
+            )
+        )
+        return RerankResponse.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    def synthesize_speech(
+        self,
+        input: str,
+        *,
+        model: str = "MatterWaveAI/grt-30m-tts",
+        voice: str = "aurora",
+        response_format: str = "json",
+        speed: float = 1.0,
+    ) -> SpeechSynthesisResponse:
+        """`POST /v1/audio/speech`: synthesize speech audio from `input` text
+        using `MatterWaveAI/grt-30m-tts`."""
+        response = self._send(
+            platform_req.synthesize_speech_request(
+                input,
+                model=model,
+                voice=voice,
+                response_format=response_format,
+                speed=speed,
+            )
+        )
+        return SpeechSynthesisResponse.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    def get_grt_suite(self) -> GrtSuiteManifest:
+        """`GET /api/v1/models/grt-suite`: retrieve the 9-model
+        `MatterWaveAI/grt-30m*` HuggingFace suite manifest and SHA256 digests."""
+        response = self._send(platform_req.get_grt_suite_request())
+        return GrtSuiteManifest.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
     def close(self) -> None:
         """Close the client's own connections and refuse anything further:
         a request sent after close raises `MatterWaveError`, and an
@@ -2764,6 +2823,56 @@ class AsyncMatterWave:
             platform_req.plan_tools_request(goal, available_tools, constraints=constraints)
         )
         return ToolPlan.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    async def rerank(
+        self,
+        query: str,
+        documents: Sequence[str],
+        *,
+        model: str = "MatterWaveAI/grt-30m-reranker",
+        top_n: int | None = None,
+        return_documents: bool = True,
+    ) -> RerankResponse:
+        response = await self._send(
+            platform_req.rerank_request(
+                query,
+                documents,
+                model=model,
+                top_n=top_n,
+                return_documents=return_documents,
+            )
+        )
+        return RerankResponse.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    async def synthesize_speech(
+        self,
+        input: str,
+        *,
+        model: str = "MatterWaveAI/grt-30m-tts",
+        voice: str = "aurora",
+        response_format: str = "json",
+        speed: float = 1.0,
+    ) -> SpeechSynthesisResponse:
+        response = await self._send(
+            platform_req.synthesize_speech_request(
+                input,
+                model=model,
+                voice=voice,
+                response_format=response_format,
+                speed=speed,
+            )
+        )
+        return SpeechSynthesisResponse.from_dict(
+            _base.parse_json_object(response), request_id=_base.request_id_of(response)
+        )
+
+    async def get_grt_suite(self) -> GrtSuiteManifest:
+        response = await self._send(platform_req.get_grt_suite_request())
+        return GrtSuiteManifest.from_dict(
             _base.parse_json_object(response), request_id=_base.request_id_of(response)
         )
 

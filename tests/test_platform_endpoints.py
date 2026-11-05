@@ -11,12 +11,16 @@ import pytest
 from conftest import REQUEST_ID
 
 from matterwave_sdk import (
+    GRT_HF_MODELS,
+    GRT_WHITEPAPER_SHA256,
     AsyncMatterWave,
     CheckpointList,
     ConnectorCatalogList,
     CredentialProxyResponse,
     DecisionTrail,
     EnforceClaimsResult,
+    GrtHfModelSpec,
+    GrtSuiteManifest,
     GuardrailEvaluation,
     HitlInteraction,
     HitlInteractionList,
@@ -28,7 +32,9 @@ from matterwave_sdk import (
     ReliabilitySloReport,
     ReliabilityTrends,
     ReplayRunResult,
+    RerankResponse,
     ResumeRunResult,
+    SpeechSynthesisResponse,
     TelemetryExecutionMetrics,
     TelemetryStackStatus,
     ToolPlan,
@@ -1023,3 +1029,168 @@ def test_validation_rejects_blank_required_inputs(client: MatterWave) -> None:
         client.evaluate_guardrails("", "hello")
     with pytest.raises(ValueError, match="goal"):
         client.plan_tools("   ")
+    with pytest.raises(ValueError, match="query"):
+        client.rerank("   ", ["doc 1"])
+    with pytest.raises(ValueError, match="documents"):
+        client.rerank("query", [])
+    with pytest.raises(ValueError, match="input"):
+        client.synthesize_speech("   ")
+
+
+def test_grt_hf_models_catalog_rerank_tts_and_suite(api, client: MatterWave) -> None:
+    assert len(GRT_HF_MODELS) == 9
+    expected_ids = [
+        "MatterWaveAI/grt-30m",
+        "MatterWaveAI/grt-30m-chat",
+        "MatterWaveAI/grt-30m-mor",
+        "MatterWaveAI/grt-30m-embedding",
+        "MatterWaveAI/grt-30m-reranker",
+        "MatterWaveAI/grt-30m-vl",
+        "MatterWaveAI/grt-30m-tts",
+        "MatterWaveAI/grt-30m-omni",
+        "MatterWaveAI/grt-30m-tokenizer",
+    ]
+    assert [m.id for m in GRT_HF_MODELS] == expected_ids
+    for spec in GRT_HF_MODELS:
+        assert isinstance(spec, GrtHfModelSpec)
+        assert spec["id"] == spec.id
+        assert spec.vocab_size == 151669
+        assert spec.whitepaper_sha256 == GRT_WHITEPAPER_SHA256
+
+    rerank_route = api.post("/v1/rerank").mock(
+        return_value=httpx.Response(
+            200,
+            headers=H,
+            json={
+                "id": "rerank-01",
+                "model": "MatterWaveAI/grt-30m-reranker",
+                "results": [
+                    {
+                        "index": 1,
+                        "relevance_score": 0.965,
+                        "document": {"text": "Fermionic antisymmetric attention"},
+                    },
+                    {
+                        "index": 0,
+                        "relevance_score": 0.312,
+                        "document": {"text": "General background note"},
+                    },
+                ],
+                "usage": {"total_tokens": 24},
+            },
+        )
+    )
+    ranked = client.rerank(
+        "fermionic attention",
+        ["General background note", "Fermionic antisymmetric attention"],
+        top_n=2,
+    )
+    assert isinstance(ranked, RerankResponse)
+    assert ranked.model == "MatterWaveAI/grt-30m-reranker"
+    assert len(ranked.results) == 2
+    assert ranked.results[0].index == 1
+    assert ranked.results[0].relevance_score == 0.965
+    assert body_of(rerank_route) == {
+        "model": "MatterWaveAI/grt-30m-reranker",
+        "query": "fermionic attention",
+        "documents": ["General background note", "Fermionic antisymmetric attention"],
+        "return_documents": True,
+        "top_n": 2,
+    }
+
+    tts_route = api.post("/v1/audio/speech").mock(
+        return_value=httpx.Response(
+            200,
+            headers=H,
+            json={
+                "id": "tts-01",
+                "model": "MatterWaveAI/grt-30m-tts",
+                "voice": "aurora",
+                "format": "json",
+                "sample_rate": 24000,
+                "duration_ms": 520,
+                "audio_base64": "UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=",
+                "phoneme_tokens": [12, 44, 108],
+            },
+        )
+    )
+    speech = client.synthesize_speech("Topological gauge invariance.")
+    assert isinstance(speech, SpeechSynthesisResponse)
+    assert speech.model == "MatterWaveAI/grt-30m-tts"
+    assert speech.voice == "aurora"
+    assert speech.sample_rate == 24000
+    assert body_of(tts_route) == {
+        "model": "MatterWaveAI/grt-30m-tts",
+        "input": "Topological gauge invariance.",
+        "voice": "aurora",
+        "response_format": "json",
+        "speed": 1.0,
+    }
+
+    api.get("/api/v1/models/grt-suite").mock(
+        return_value=httpx.Response(
+            200,
+            headers=H,
+            json={
+                "suite": "grt-30m",
+                "organization": "MatterWaveAI",
+                "whitepaper_sha256": GRT_WHITEPAPER_SHA256,
+                "total": 9,
+                "models": [spec.__dict__ for spec in GRT_HF_MODELS],
+            },
+        )
+    )
+    suite = client.get_grt_suite()
+    assert isinstance(suite, GrtSuiteManifest)
+    assert suite.total == 9
+    assert len(suite.models) == 9
+
+
+@pytest.mark.asyncio()
+async def test_async_rerank_tts_and_grt_suite(api, async_client: AsyncMatterWave) -> None:
+    api.post("/v1/rerank").mock(
+        return_value=httpx.Response(
+            200,
+            headers=H,
+            json={
+                "id": "rerank-async",
+                "model": "MatterWaveAI/grt-30m-reranker",
+                "results": [{"index": 0, "relevance_score": 0.99, "document": {"text": "doc"}}],
+            },
+        )
+    )
+    ranked = await async_client.rerank("query", ["doc"])
+    assert ranked.results[0].relevance_score == 0.99
+
+    api.post("/v1/audio/speech").mock(
+        return_value=httpx.Response(
+            200,
+            headers=H,
+            json={
+                "id": "tts-async",
+                "model": "MatterWaveAI/grt-30m-tts",
+                "voice": "aurora",
+                "format": "json",
+                "sample_rate": 24000,
+                "audio_base64": "AAAA",
+            },
+        )
+    )
+    speech = await async_client.synthesize_speech("Hello async")
+    assert speech.sample_rate == 24000
+
+    api.get("/api/v1/models/grt-suite").mock(
+        return_value=httpx.Response(
+            200,
+            headers=H,
+            json={
+                "suite": "grt-30m",
+                "organization": "MatterWaveAI",
+                "whitepaper_sha256": GRT_WHITEPAPER_SHA256,
+                "total": 9,
+                "models": [spec.__dict__ for spec in GRT_HF_MODELS],
+            },
+        )
+    )
+    suite = await async_client.get_grt_suite()
+    assert suite.total == 9
